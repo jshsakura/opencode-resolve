@@ -10,9 +10,9 @@ test("exports plugin functions", () => {
   assert.equal(typeof OpencodeResolve, "function")
 })
 
-test("injects only default coder and reviewer agents", async () => {
+test("injects only default coder and reviewer agents using the OpenCode default model", async () => {
   const { config } = await runPlugin({
-    model: "zai-coding-plan/glm-5",
+    model: "provider/default-model",
     agent: {
       plan: { model: "existing/plan" },
       build: { model: "existing/build" },
@@ -21,13 +21,20 @@ test("injects only default coder and reviewer agents", async () => {
 
   assert.equal(config.agent.plan.model, "existing/plan")
   assert.equal(config.agent.build.model, "existing/build")
-  assert.equal(config.agent.coder.model, "zai-coding-plan/glm-5")
-  assert.equal(config.agent.reviewer.model, "openai/gpt-5")
+  assert.equal(config.agent.coder.model, "provider/default-model")
+  assert.equal(config.agent.reviewer.model, "provider/default-model")
   assert.equal(config.agent.coder.mode, "subagent")
   assert.equal(config.agent.reviewer.mode, "subagent")
   assert.equal(config.agent.reviewer.permission.edit, "deny")
   assert.equal(config.agent.architect, undefined)
   assert.equal(config.agent["gpt-coder"], undefined)
+})
+
+test("omits agent models when no explicit or OpenCode default model exists", async () => {
+  const { config } = await runPlugin({})
+
+  assert.equal("model" in config.agent.coder, false)
+  assert.equal("model" in config.agent.reviewer, false)
 })
 
 test("adds context7 preset without overwriting existing context7 config", async () => {
@@ -114,6 +121,10 @@ test("per-agent enabled flag can enable optional agents and disable listed agent
   const project = await createProject({
     "opencode-resolve.json": {
       enabled: ["coder", "reviewer"],
+      models: {
+        gpt: "custom/gpt",
+        reviewer: "gpt",
+      },
       agents: {
         coder: {
           enabled: false,
@@ -131,8 +142,8 @@ test("per-agent enabled flag can enable optional agents and disable listed agent
     const { config } = await runPlugin({}, project)
 
     assert.equal(config.agent.coder, undefined)
-    assert.equal(config.agent.reviewer.model, "openai/gpt-5")
-    assert.equal(config.agent.architect.model, "openai/gpt-5")
+    assert.equal(config.agent.reviewer.model, "custom/gpt")
+    assert.equal(config.agent.architect.model, "custom/gpt")
     assert.equal(config.agent.architect.mode, "subagent")
     assert.equal("enabled" in config.agent.architect, false)
   } finally {

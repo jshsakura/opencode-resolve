@@ -48,16 +48,7 @@ type ResolvePluginOptions = ResolveConfig & {
 
 type UnknownRecord = Record<string, unknown>
 
-const DEFAULT_MODELS: Record<ResolveAgentName | "glm" | "gpt", string> = {
-  glm: "zai-coding-plan/glm-5",
-  gpt: "openai/gpt-5",
-  coder: "zai-coding-plan/glm-5",
-  reviewer: "openai/gpt-5",
-  architect: "openai/gpt-5",
-  "gpt-coder": "openai/gpt-5",
-  debugger: "zai-coding-plan/glm-5",
-  researcher: "zai-coding-plan/glm-5",
-}
+const DEFAULT_MODELS: Partial<Record<ResolveAgentName | "glm" | "gpt", string>> = {}
 
 const DEFAULT_ENABLED: ResolveAgentName[] = ["coder", "reviewer"]
 
@@ -221,6 +212,7 @@ async function loadResolveConfig(directory: string, opencodeConfig: Config, opti
 function applyResolveConfig(config: Config, resolveConfig: ResolveConfig) {
   const enabled = new Set(resolveConfig.enabled ?? DEFAULT_ENABLED)
   const models = { ...DEFAULT_MODELS, ...resolveConfig.models }
+  const defaultModel = typeof config.model === "string" ? config.model : undefined
 
   config.agent ??= {}
 
@@ -230,13 +222,14 @@ function applyResolveConfig(config: Config, resolveConfig: ResolveConfig) {
     if (!isEnabled) continue
 
     const base = DEFAULT_AGENT_CONFIG[name]
-    const { enabled: _enabled, ...agentOverride } = override ?? {}
-    const model = resolveModel(agentOverride.model ?? models[name], models)
-    config.agent[name] = {
+    const { enabled: _enabled, model: requestedModel, ...agentOverride } = override ?? {}
+    const model = resolveModel(requestedModel ?? models[name] ?? defaultModel, models)
+    const agentConfig = {
       ...base,
       ...agentOverride,
-      model,
     }
+    if (model) agentConfig.model = model
+    config.agent[name] = agentConfig
   }
 
   if (resolveConfig.context7 !== false) {
@@ -267,7 +260,7 @@ function applyResolveConfig(config: Config, resolveConfig: ResolveConfig) {
 function defaultResolveConfig(): ResolveConfig {
   return {
     enabled: DEFAULT_ENABLED,
-    models: DEFAULT_MODELS,
+    models: {},
     agents: {},
     preserveNative: true,
     context7: true,

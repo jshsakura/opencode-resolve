@@ -7,14 +7,15 @@ Lightweight OpenCode plugin for focused task resolution with minimal agents and 
 
 `opencode-resolve` keeps native OpenCode `plan` and `build` behavior intact. It only injects a small set of optional agents so you can keep the useful early Oh My OpenCode-style persistence without a heavy multi-agent swarm.
 
+The package defines roles, not provider choices. Users decide which model, if any, is pinned to each role.
+
 ## Features
 
 - Preserves native OpenCode `plan` and `build` behavior.
 - Injects only `coder` and `reviewer` by default.
-- Uses GLM-style defaults for coding and GPT-style defaults for review.
+- Uses your OpenCode default model unless you explicitly pin agent models.
 - Adds a Context7 MCP preset only when one is not already configured.
 - Validates config strictly so typos fail fast.
-- Keeps Telegram notifications and remote control as companion-plugin concerns.
 
 ## Install From npm
 
@@ -40,23 +41,36 @@ Manual config fallback:
 }
 ```
 
-The default model IDs assume your OpenCode provider configuration can access Z.AI/GLM and OpenAI/GPT models. Override `models` if your provider IDs differ.
+By default, resolve agents inherit your top-level OpenCode `model`. If no top-level model is configured, the plugin leaves agent models unset and lets OpenCode choose its normal fallback.
 
 ## Defaults
 
 Enabled by default:
 
-- `coder`: GLM-based implementation agent for edits, tests, and iteration.
-- `reviewer`: GPT-based Oracle-style review agent for requirements fit, correctness, security, tests, and maintainability.
+- `coder`: implementation agent for edits, tests, and iteration.
+- `reviewer`: Oracle-style review agent for requirements fit, correctness, security, tests, and maintainability.
 
 Available but disabled unless configured:
 
-- `architect`: GPT-based design and task decomposition.
-- `gpt-coder`: GPT-based difficult implementation fallback.
+- `architect`: design and task decomposition.
+- `gpt-coder`: difficult implementation fallback.
 - `debugger`: failure reproduction and root-cause analysis.
 - `researcher`: codebase and documentation research.
 
 The plugin also adds a `context7` MCP preset when one is not already configured.
+
+## Model Policy
+
+`opencode-resolve` does not ship provider-specific role defaults. It will not force GLM, GPT, or any other provider for new users.
+
+Model resolution order for each agent:
+
+1. `agents.<name>.model`
+2. `models.<name>` alias mapping
+3. top-level OpenCode `model`
+4. OpenCode's own fallback when no model is configured
+
+Use the default config when every resolve role should follow your current OpenCode model. Pin models only when you intentionally want fixed role behavior, such as a cheaper coding model and a stronger review model.
 
 ## Develop Locally
 
@@ -102,12 +116,6 @@ Example:
 ```json
 {
   "enabled": ["coder", "reviewer"],
-  "models": {
-    "glm": "zai-coding-plan/glm-5",
-    "gpt": "openai/gpt-5",
-    "coder": "glm",
-    "reviewer": "gpt"
-  },
   "preserveNative": true,
   "context7": true,
   "commands": false,
@@ -116,8 +124,33 @@ Example:
       "enabled": false
     },
     "gpt-coder": {
-      "enabled": false,
-      "model": "gpt"
+      "enabled": false
+    }
+  }
+}
+```
+
+To pin role-specific models, define aliases yourself. This is user policy, not a package default:
+
+```json
+{
+  "enabled": ["coder", "reviewer"],
+  "models": {
+    "glm": "zai-coding-plan/glm-5.1",
+    "gpt": "openai/gpt-5",
+    "coder": "glm",
+    "reviewer": "gpt"
+  }
+}
+```
+
+You can also pin a single role directly without aliases:
+
+```json
+{
+  "agents": {
+    "reviewer": {
+      "model": "openai/gpt-5"
     }
   }
 }
@@ -159,6 +192,8 @@ Supported model aliases:
 - `glm`
 - `gpt`
 - every supported agent name
+
+Aliases only resolve when you define them in `models`. Without a model override, agents use the top-level OpenCode `model`; without that, the plugin leaves `agent.<name>.model` unset.
 
 Supported agent modes are `subagent`, `primary`, and `all`. Supported permission values are `ask`, `allow`, and `deny`.
 
@@ -221,24 +256,3 @@ The release workflow runs `npm ci`, `npm run typecheck`, `npm test`, and `npm pu
 - Make the smallest correct change.
 - Verify when practical.
 - Use reviewer for final requirement/risk checks instead of running many agents by default.
-
-## Companion Plugins
-
-`opencode-resolve` intentionally stays focused on agent injection and task resolution. Use notification or remote-control plugins alongside it instead of baking those concerns into this package.
-
-Recommended companion:
-
-- [`opencode-telegram-bot-plugin`](https://github.com/jshsakura/opencode-telegram-bot-plugin): Telegram notifications and permission-response support for OpenCode sessions.
-
-Install and configure the Telegram plugin separately. It needs its own bot token/chat setup; see that plugin's README for details.
-
-Example:
-
-```json
-{
-  "plugin": [
-    "opencode-resolve",
-    "opencode-telegram-bot-plugin"
-  ]
-}
-```

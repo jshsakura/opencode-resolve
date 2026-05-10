@@ -1,16 +1,7 @@
 import { access, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, isAbsolute, join, resolve } from "node:path";
-const DEFAULT_MODELS = {
-    glm: "zai-coding-plan/glm-5",
-    gpt: "openai/gpt-5",
-    coder: "zai-coding-plan/glm-5",
-    reviewer: "openai/gpt-5",
-    architect: "openai/gpt-5",
-    "gpt-coder": "openai/gpt-5",
-    debugger: "zai-coding-plan/glm-5",
-    researcher: "zai-coding-plan/glm-5",
-};
+const DEFAULT_MODELS = {};
 const DEFAULT_ENABLED = ["coder", "reviewer"];
 const VALID_AGENT_NAMES = ["coder", "reviewer", "architect", "gpt-coder", "debugger", "researcher"];
 const VALID_AGENT_NAME_SET = new Set(VALID_AGENT_NAMES);
@@ -166,6 +157,7 @@ async function loadResolveConfig(directory, opencodeConfig, options) {
 function applyResolveConfig(config, resolveConfig) {
     const enabled = new Set(resolveConfig.enabled ?? DEFAULT_ENABLED);
     const models = { ...DEFAULT_MODELS, ...resolveConfig.models };
+    const defaultModel = typeof config.model === "string" ? config.model : undefined;
     config.agent ??= {};
     for (const name of Object.keys(DEFAULT_AGENT_CONFIG)) {
         const override = resolveConfig.agents?.[name];
@@ -173,13 +165,15 @@ function applyResolveConfig(config, resolveConfig) {
         if (!isEnabled)
             continue;
         const base = DEFAULT_AGENT_CONFIG[name];
-        const { enabled: _enabled, ...agentOverride } = override ?? {};
-        const model = resolveModel(agentOverride.model ?? models[name], models);
-        config.agent[name] = {
+        const { enabled: _enabled, model: requestedModel, ...agentOverride } = override ?? {};
+        const model = resolveModel(requestedModel ?? models[name] ?? defaultModel, models);
+        const agentConfig = {
             ...base,
             ...agentOverride,
-            model,
         };
+        if (model)
+            agentConfig.model = model;
+        config.agent[name] = agentConfig;
     }
     if (resolveConfig.context7 !== false) {
         config.mcp ??= {};
@@ -207,7 +201,7 @@ function applyResolveConfig(config, resolveConfig) {
 function defaultResolveConfig() {
     return {
         enabled: DEFAULT_ENABLED,
-        models: DEFAULT_MODELS,
+        models: {},
         agents: {},
         preserveNative: true,
         context7: true,

@@ -18,6 +18,7 @@ test("postinstall creates OpenCode config and resolve config", async () => {
 
     assert.deepEqual(opencodeConfig.plugin, ["opencode-resolve"])
     assert.deepEqual(resolveConfig.enabled, ["coder", "reviewer"])
+    assert.equal("models" in resolveConfig, false)
   } finally {
     await rm(configHome, { recursive: true, force: true })
   }
