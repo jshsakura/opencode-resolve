@@ -228,7 +228,7 @@ The release workflow runs `npm ci`, `npm run typecheck`, `npm test`, and `npm pu
 
 Recommended companion:
 
-- [`@jshsakura/opencode-telegram-bot-plugin`](https://github.com/jshsakura/opencode-telegram-bot-plugin): Telegram notifications and permission-response support for OpenCode sessions.
+- [`opencode-telegram-bot-plugin`](https://github.com/jshsakura/opencode-telegram-bot-plugin): Telegram notifications and permission-response support for OpenCode sessions.
 
 Install and configure the Telegram plugin separately. It needs its own bot token/chat setup; see that plugin's README for details.
 
@@ -238,7 +238,7 @@ Example:
 {
   "plugin": [
     "opencode-resolve",
-    "@jshsakura/opencode-telegram-bot-plugin"
+    "opencode-telegram-bot-plugin"
   ]
 }
 ```
