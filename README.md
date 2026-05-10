@@ -186,6 +186,23 @@ npm publish --dry-run
 
 `npm pack` and `npm publish` run `npm test` first through the `prepack` script.
 
+## Release
+
+Releases are published by GitHub Actions when a version tag is pushed.
+
+Required repository secret:
+
+- `NPM_TOKEN`: npm automation token with publish access.
+
+Release flow:
+
+```sh
+npm version patch
+git push origin main --follow-tags
+```
+
+The release workflow runs `npm ci`, `npm run typecheck`, `npm test`, and `npm publish --access public --provenance`.
+
 ## Design Rules
 
 - Do not overwrite native `plan` or `build` agents.
