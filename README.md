@@ -194,12 +194,14 @@ Required repository secret:
 
 - `NPM_TOKEN`: npm automation token with publish access.
 
-Release flow:
+Tag release flow:
 
 ```sh
 npm version patch
 git push origin main --follow-tags
 ```
+
+You can also run the `Publish to npm` workflow manually from GitHub Actions and choose `patch`, `minor`, `major`, or a specific version.
 
 The release workflow runs `npm ci`, `npm run typecheck`, `npm test`, and `npm publish --access public --provenance`.
 
