@@ -1,6 +1,6 @@
 {
   "name": "opencode-resolve",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "OpenCode plugin that adds a small coder/reviewer agent set while preserving native plan/build behavior.",
   "type": "module",
   "homepage": "https://github.com/jshsakura/opencode-resolve#readme",
@@ -29,6 +29,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "install:local": "npm run build && node scripts/install-local.mjs",
+    "postinstall": "node scripts/postinstall.mjs",
     "prepack": "npm test",
     "test": "npm run build && node --test test/*.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit"

@@ -24,7 +24,15 @@ Install this where OpenCode resolves plugins from. For most users, a global inst
 npm install -g opencode-resolve
 ```
 
-Then add it to your OpenCode config:
+The package automatically registers itself in `~/.config/opencode/opencode.json` during `postinstall` and creates `~/.config/opencode/resolve.json` when missing.
+
+To skip automatic registration:
+
+```sh
+OPENCODE_RESOLVE_SKIP_POSTINSTALL=1 npm install -g opencode-resolve
+```
+
+Manual config fallback:
 
 ```json
 {
