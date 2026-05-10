@@ -1,0 +1,30 @@
+{
+  "enabled": ["coder", "reviewer"],
+  "models": {
+    "glm": "zai-coding-plan/glm-5",
+    "gpt": "openai/gpt-5",
+    "coder": "glm",
+    "reviewer": "gpt",
+    "architect": "gpt",
+    "gpt-coder": "gpt",
+    "debugger": "glm",
+    "researcher": "glm"
+  },
+  "preserveNative": true,
+  "context7": true,
+  "commands": false,
+  "agents": {
+    "architect": {
+      "enabled": false
+    },
+    "gpt-coder": {
+      "enabled": false
+    },
+    "debugger": {
+      "enabled": false
+    },
+    "researcher": {
+      "enabled": false
+    }
+  }
+}
