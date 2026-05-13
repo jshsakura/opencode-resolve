@@ -19,13 +19,18 @@
 {
   // -----------------------------------------------------------------------
   // enabled (string[])
-  // Which resolve agents to inject. Default: ["coder", "reviewer", "resolver"].
-  // The postinstall example includes explorer and deep-reviewer as well so
-  // internal subagents are available out of the box.
+  // Which resolve agents to inject.
+  // Default: ["coder", "resolver", "explorer", "reviewer", "deep-reviewer"].
+  //
+  // Core path: resolver + coder form the fixed-role verified resolve loop.
+  // Internal specialists: explorer, reviewer, deep-reviewer are injected as
+  // subagents by default (OpenCode-native composition), but are NOT the
+  // default execution path. The resolver dispatches them only when justified.
+  //
   // Native OpenCode agents (plan, build) are always preserved and never
   // touched by this list. Per-agent `agents.<name>.enabled` overrides this.
   // -----------------------------------------------------------------------
-  "enabled": ["coder", "reviewer", "resolver", "explorer", "deep-reviewer"],
+  "enabled": ["coder", "resolver", "explorer", "reviewer", "deep-reviewer"],
 
   // -----------------------------------------------------------------------
   // preserveNative (boolean)
@@ -61,11 +66,8 @@
   // -----------------------------------------------------------------------
   // maxParallelSubagents (positive integer)
   // Maximum number of subagents of the SAME ROLE the resolver may dispatch
-  // concurrently. Default: 2 — at most two coders in parallel and at most
-  // two reviewers in parallel. Subagents of different roles may always run
-  // concurrently. This is a soft prompt-level limit, not a runtime cap —
-  // pair with `maxSteps` if you need a stricter ceiling.
-  //   1 = strict per-role serial (one of each role at a time)
+  // concurrently. Default: 2 — at most two coders in parallel.
+  //   1 = strict per-role serial
   //   2 = default
   //   N = up to N of each role
   // -----------------------------------------------------------------------
@@ -75,7 +77,8 @@
   // models (object)
   // Alias map. Keys are either an agent name (coder, reviewer, resolver,
   // architect, gpt-coder, debugger, researcher, explorer, deep-reviewer)
-  // OR one of the well-known aliases (`glm`, `gpt`, `quick`, `deep`).
+  // OR one of the well-known aliases (`glm`, `gpt`, `quick`, `deep`,
+  // `fast`, `strong`, `mini`, `codex`).
   // Values are model identifiers OR another alias.
   //
   // Resolution order for a given agent:
@@ -84,20 +87,25 @@
   //   3. top-level OpenCode `model`
   //   4. OpenCode's own fallback
   //
-  // quick = cheap/fast model for discovery and light review
-  // deep = strong/expensive model for thorough review
+  // By default the models map is empty — all agents inherit the top-level
+  // OpenCode default model. Pin models only when you have measured a
+  // benefit from role-specific model selection.
+  //
+  // Example — one efficient model for everything (recommended default):
+  //   "models": {}
+  //
+  // Example — pin roles to specific models when needed:
+  //   "models": {
+  //     "fast": "openai/gpt-5-mini",
+  //     "strong": "openai/gpt-5.3-codex",
+  //     "coder": "fast",
+  //     "resolver": "strong"
+  //   }
+  //
+  // Legacy aliases (glm, gpt, quick, deep) remain supported for backward
+  // compatibility. New configs should prefer provider-neutral aliases.
   // -----------------------------------------------------------------------
-  "models": {
-    "quick": "zai-coding-plan/glm-5.1",
-    "glm": "zai-coding-plan/glm-5.1",
-    "gpt": "openai/gpt-5.5",
-    "deep": "openai/gpt-5.5",
-    "coder": "glm",
-    "explorer": "quick",
-    "reviewer": "quick",
-    "resolver": "gpt",
-    "deep-reviewer": "deep"
-  },
+  "models": {},
 
   // -----------------------------------------------------------------------
   // agents (object)
@@ -114,7 +122,6 @@
   "agents": {
     "coder": {
       "enabled": true,
-      "model": "glm",
       "mode": "subagent",
       "maxSteps": 20,
       "permission": {
@@ -124,9 +131,37 @@
       }
     },
 
-    "reviewer": {
+    "resolver": {
       "enabled": true,
-      "model": "quick",
+      "mode": "all",
+      "maxSteps": 30,
+      "permission": {
+        "edit": "allow",
+        "bash": "allow",
+        "webfetch": "allow"
+      }
+    },
+
+    // Internal specialist subagents — enabled by default as subagents only.
+    // Core path is resolver→coder. These are dispatched only when justified.
+
+    // Explorer: internal pre-change fast scout for codebase/file/pattern
+    // discovery. Resolver prefers local read/grep/glob for narrow scope;
+    // dispatches explorer only when scope is genuinely unknown.
+    "explorer": {
+      "mode": "subagent",
+      "maxSteps": 6,
+      "permission": {
+        "edit": "deny",
+        "bash": "allow",
+        "webfetch": "allow"
+      }
+    },
+
+    // Reviewer: internal read-only verification-gap auditor. Not part of
+    // the core path. Resolver dispatches only for verification gaps on
+    // non-trivial changes.
+    "reviewer": {
       "mode": "subagent",
       "maxSteps": 8,
       // Reviewer is read-only by design. edit and bash are denied even when
@@ -138,41 +173,12 @@
       }
     },
 
-    "resolver": {
-      "enabled": true,
-      "model": "gpt",
-      "mode": "all",
-      "maxSteps": 30,
-      "permission": {
-        "edit": "allow",
-        "bash": "allow",
-        "webfetch": "allow"
-      }
-    },
-
-    // Explorer: pre-change fast scout for codebase/file/pattern discovery.
-    // Read-only; uses the quick model alias for speed.
-    "explorer": {
-      "enabled": true,
-      "model": "quick",
-      "mode": "subagent",
-      "maxSteps": 6,
-      "permission": {
-        "edit": "deny",
-        "bash": "allow",
-        "webfetch": "allow"
-      }
-    },
-
-    // Deep Reviewer: post-change strong read-only review for risky work.
-    // Read-only; uses the deep model alias for thorough analysis.
+    // Deep Reviewer: internal post-change strong read-only review for
+    // risky/security/architecture/high-impact changes. Resolver dispatches
+    // ONLY for risky, security-sensitive, or high-impact work.
     "deep-reviewer": {
-      "enabled": true,
-      "model": "deep",
       "mode": "subagent",
       "maxSteps": 12,
-      // Deep reviewer is read-only by design. edit and bash are denied even
-      // when autoApprove is true.
       "permission": {
         "edit": "deny",
         "bash": "deny",
@@ -180,28 +186,25 @@
       }
     },
 
-    // Optional agents — disabled by default. Flip enabled:true to use them.
+    // Disabled by default — enable explicitly when needed.
+
     "architect": {
       "enabled": false,
-      "model": "gpt",
       "mode": "subagent",
       "maxSteps": 10
     },
     "gpt-coder": {
       "enabled": false,
-      "model": "gpt",
       "mode": "subagent",
       "maxSteps": 20
     },
     "debugger": {
       "enabled": false,
-      "model": "glm",
       "mode": "subagent",
       "maxSteps": 14
     },
     "researcher": {
       "enabled": false,
-      "model": "quick",
       "mode": "subagent",
       "maxSteps": 8
     }

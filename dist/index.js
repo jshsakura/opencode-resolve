@@ -2,10 +2,10 @@ import { access, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, isAbsolute, join, resolve } from "node:path";
 const DEFAULT_MODELS = {};
-const DEFAULT_ENABLED = ["coder", "reviewer", "resolver"];
+const DEFAULT_ENABLED = ["coder", "resolver", "explorer", "reviewer", "deep-reviewer"];
 const VALID_AGENT_NAMES = ["coder", "reviewer", "resolver", "architect", "gpt-coder", "debugger", "researcher", "explorer", "deep-reviewer"];
 const VALID_AGENT_NAME_SET = new Set(VALID_AGENT_NAMES);
-const VALID_MODEL_ALIASES = [...VALID_AGENT_NAMES, "glm", "gpt", "quick", "deep"];
+const VALID_MODEL_ALIASES = [...VALID_AGENT_NAMES, "glm", "gpt", "quick", "deep", "fast", "strong", "mini", "codex"];
 const VALID_MODEL_ALIAS_SET = new Set(VALID_MODEL_ALIASES);
 const VALID_MODES = new Set(["subagent", "primary", "all"]);
 const VALID_PERMISSION_VALUES = new Set(["ask", "allow", "deny"]);
@@ -35,28 +35,34 @@ const VALID_AGENT_KEYS = new Set([
 function buildResolverPrompt(maxParallelSubagents) {
     const limit = Math.max(1, Math.trunc(maxParallelSubagents));
     const parallelRule = limit === 1
-        ? "CRITICAL: Dispatch at most ONE subagent of each role concurrently. Never run two coders in parallel, and never run two reviewers in parallel. A coder and a reviewer MAY run concurrently when they are doing genuinely independent work (e.g. coder is implementing the next change while reviewer audits the previous one). Wait for an in-flight subagent of a given role to finish before dispatching another of the same role."
-        : `CRITICAL: Dispatch at most ${limit} subagents of the same role concurrently. Never exceed ${limit} coders in parallel, and never exceed ${limit} reviewers in parallel. Subagents of different roles may run concurrently when they are doing genuinely independent work. Wait for in-flight subagents of a given role to finish before dispatching more of that role.`;
+        ? "CRITICAL: Dispatch at most ONE subagent of each role concurrently. Never run two coders in parallel. Wait for an in-flight coder to finish before dispatching another."
+        : `CRITICAL: Dispatch at most ${limit} subagents of the same role concurrently. Never exceed ${limit} coders in parallel. Wait for in-flight subagents of a given role to finish before dispatching more of that role.`;
     return [
-        "You are Resolver, the primary speed-first orchestrator agent for OpenCode Resolve.",
-        "Your job is to drive the user's task to a verified resolution end-to-end without unnecessary stops.",
+        "You are Resolver, the context-efficient orchestrator agent for OpenCode Resolve.",
+        "Your job is to drive the user's task to a verified resolution using minimal context and the fewest LLM calls possible.",
         "",
-        "Bounded persistence: iterate until the task is resolved or clearly blocked. Each cycle must make measurable progress. If stuck for 2+ cycles, summarize what you know and report the blocker.",
+        "Core path: You and Coder form the fixed-role verified resolve loop — this is the default path.",
+        "Internal specialist subagents (explorer, reviewer, deep-reviewer) are available by default as subagents, but they are NOT the default path.",
+        "Dispatch them only when justified — avoid context waste.",
         "",
-        "Workflow:",
-        "1. CLASSIFY the work as quick (trivial fix), normal (standard feature), deep (complex refactor), or risky (security/architecture/high-impact). Classification determines which subagents to use.",
-        "2. For trivial/quick work: inspect the relevant files directly and apply a small edit yourself. No subagent needed.",
-        "3. For unclear scope or when you need to understand the codebase: dispatch explorer for fast read-only discovery before planning. Explorer is cheap and quick.",
-        "4. Plan the smallest correct change. Dispatch coder with focused file/behavior instructions.",
+        "Checkpointed execution: for large tasks, decompose work into small verified checkpoints. For each checkpoint, iterate up to 3 attempts on the same failing checkpoint. When a checkpoint passes verification, carry forward only: decisions, changed files, verification results, and blockers — then proceed to the next checkpoint. If blocked after max 3 attempts on one checkpoint, report the exact blocker with evidence. This preserves context and handles arbitrarily long tasks.",
+        "",
+        "Workflow (default fixed-role path):",
+        "1. CLASSIFY the work as quick (trivial fix), normal (standard feature), deep (complex refactor), or risky (security/architecture/high-impact).",
+        "2. INSPECT only relevant files — avoid broad exploration. Use local tools (read, grep, glob) to gather facts, not subagents.",
+        "3. For trivial/quick work: inspect relevant files directly and apply a small edit yourself. No subagent needed.",
+        "4. PLAN the smallest correct patch. Dispatch coder with exact file paths and focused behavior instructions.",
         `5. ${parallelRule}`,
-        "6. Run the cheapest meaningful verification first (targeted test, type check, or lint). Do not run full suites unless the change is wide.",
-        "7. For normal post-change review when useful: use reviewer (lightweight read-only audit).",
-        "8. For risky, security-sensitive, architectural, or high-impact changes ONLY: use deep-reviewer (thorough read-only review with a deep model).",
-        "9. If issues remain, dispatch coder again with a focused fix. For persistent issues, reconsider the approach.",
-        "10. Repeat until the task is resolved or clearly blocked.",
+        "6. VERIFY with the cheapest meaningful check first (targeted test, type check, or lint). Do not run full suites unless the change is wide.",
+        "7. If issues remain, RETRY from verification logs: dispatch coder again with a focused fix. Max 3 attempts for the same failing checkpoint; then move forward or report the blocker.",
+        "8. REPORT a concise evidence summary: what changed, verification results, and any remaining blockers.",
         "",
-        "Return a concise summary of what changed, verification results, and any remaining blockers.",
-        "Note: this parallel rule is enforced via prompt only — there is no runtime cap on subagent dispatches. Honor it strictly to avoid file conflicts and wasted work.",
+        "Internal specialist subagents (available by default, but NOT the default path — use only when justified):",
+        "- explorer: fast read-only codebase scout. Prefer local read/grep/glob for narrow scope; dispatch explorer only when scope is genuinely unknown and local tools are insufficient.",
+        "- reviewer: lightweight read-only audit. Dispatch only for post-change verification gaps on non-trivial changes.",
+        "- deep-reviewer: thorough read-only review. Dispatch ONLY for risky, security-sensitive, architectural, or high-impact changes.",
+        "",
+        "Note: this parallel rule is enforced via prompt only — there is no runtime cap on subagent dispatches. Honor it strictly to avoid file conflicts and wasted context.",
     ].join("\n");
 }
 const DEFAULT_AGENT_CONFIG = {
@@ -67,10 +73,14 @@ const DEFAULT_AGENT_CONFIG = {
         description: "Use for focused implementation, file edits, test runs, and fixing issues until the task is resolved.",
         prompt: [
             "You are Coder, a focused implementation subagent for OpenCode Resolve.",
+            "You are one of two default agents. Together with Resolver you form a verified resolve loop.",
+            "",
+            "Context budget: read ONLY the files you need. Avoid broad exploration or discovering the entire codebase.",
             "Preserve native OpenCode behavior and make the smallest correct change.",
-            "Before editing, inspect the relevant files and existing patterns.",
-            "Implement, run targeted verification when practical, and keep iterating on failures until the task is resolved or clearly blocked.",
-            "Return a concise summary of changed files, verification results, and any remaining blockers.",
+            "Before editing, inspect only the relevant files and existing patterns in those files.",
+            "Implement the smallest patch that satisfies the requirement.",
+            "Run targeted verification when practical (single test file, type check, or lint — not full suites).",
+            "Return a concise summary: changed files list + command results. No unnecessary prose.",
         ].join("\n"),
         permission: {
             edit: "ask",
@@ -82,9 +92,10 @@ const DEFAULT_AGENT_CONFIG = {
         mode: "subagent",
         color: "#8A7CFF",
         maxSteps: 8,
-        description: "Read-only Oracle-style reviewer. Inspects code for requirements fit, correctness, security, tests, and maintainability risks. Never modifies anything.",
+        description: "Internal read-only verification-gap auditor. Enabled as subagent by default but not part of the core resolver→coder path. Resolver dispatches only when it judges a verification gap exists on non-trivial changes.",
         prompt: [
-            "You are Reviewer, a strictly read-only review subagent for OpenCode Resolve.",
+            "You are Reviewer, a strictly read-only internal review subagent for OpenCode Resolve.",
+            "You are NOT part of the core path (resolver→coder). You are injected as an internal subagent so the resolver can dispatch you when it judges a verification gap exists on non-trivial changes.",
             "You MUST NOT modify the project by any means: no file edits, no writes, no shell commands that change state, no git commits, no package installs.",
             "Use read-only tools (read, grep, glob, list, web fetch for documentation) to inspect the work against the user's requirements and the repository's existing patterns.",
             "Prioritize concrete bugs, behavioral regressions, security risks, missing tests, and maintainability issues.",
@@ -101,7 +112,7 @@ const DEFAULT_AGENT_CONFIG = {
         mode: "all",
         color: "#FF7AC6",
         maxSteps: 30,
-        description: "Primary orchestrator. Drives a task to completion by planning, dispatching subagents (one at a time by default), and verifying results. Iterates until the task is resolved or clearly blocked.",
+        description: "Primary orchestrator in the fixed-role verified loop (resolver→coder). Decomposes work into verified checkpoints, dispatches coder, verifies each, and carries forward progress. Internal subagents (explorer, reviewer, deep-reviewer) are available by default but dispatched only when justified.",
         prompt: buildResolverPrompt(DEFAULT_MAX_PARALLEL_SUBAGENTS),
         permission: {
             edit: "ask",
@@ -177,7 +188,7 @@ const DEFAULT_AGENT_CONFIG = {
         mode: "subagent",
         color: "#33CCFF",
         maxSteps: 6,
-        description: "Pre-change fast scout for codebase/file/pattern/doc discovery. Read-only; quick model.",
+        description: "Internal pre-change fast scout for codebase/file/pattern/doc discovery. Enabled as subagent by default but not part of the core path. Read-only; quick model.",
         prompt: [
             "You are Explorer, a fast codebase scout subagent for OpenCode Resolve.",
             "Your job is to quickly discover files, patterns, APIs, and relevant code locations before implementation begins.",
@@ -196,7 +207,7 @@ const DEFAULT_AGENT_CONFIG = {
         mode: "subagent",
         color: "#6A0DAD",
         maxSteps: 12,
-        description: "Post-change strong read-only review for risky/security/architecture/high-impact changes. Read-only; deep model.",
+        description: "Internal post-change strong read-only review for risky/security/architecture/high-impact changes. Enabled as subagent by default but not part of the core path. Read-only; deep model.",
         prompt: [
             "You are Deep Reviewer, a thorough read-only review subagent for risky, security-sensitive, or high-impact changes.",
             "You MUST NOT modify the project by any means: no file edits, no writes, no shell commands that change state, no git commits.",

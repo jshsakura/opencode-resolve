@@ -10,7 +10,7 @@ test("exports plugin functions", () => {
   assert.equal(typeof OpencodeResolve, "function")
 })
 
-test("injects default coder, reviewer, and resolver agents using the OpenCode default model", async () => {
+test("injects default coder, resolver, and internal specialist subagents using the OpenCode default model", async () => {
   const { config } = await runPlugin({
     model: "provider/default-model",
     agent: {
@@ -22,21 +22,21 @@ test("injects default coder, reviewer, and resolver agents using the OpenCode de
   assert.equal(config.agent.plan.model, "existing/plan")
   assert.equal(config.agent.build.model, "existing/build")
   assert.equal(config.agent.coder.model, "provider/default-model")
-  assert.equal(config.agent.reviewer.model, "provider/default-model")
   assert.equal(config.agent.resolver.model, "provider/default-model")
   assert.equal(config.agent.coder.mode, "subagent")
-  assert.equal(config.agent.reviewer.mode, "subagent")
   assert.equal(config.agent.resolver.mode, "all")
-  assert.equal(config.agent.reviewer.permission.edit, "deny")
-  assert.equal(config.agent.reviewer.permission.bash, "deny")
+  // Internal specialist subagents enabled by default as subagents
+  assert.equal(config.agent.reviewer.mode, "subagent")
+  assert.equal(config.agent.explorer.mode, "subagent")
+  assert.equal(config.agent["deep-reviewer"].mode, "subagent")
+  // Disabled agents remain undefined
   assert.equal(config.agent.architect, undefined)
   assert.equal(config.agent["gpt-coder"], undefined)
-  // explorer and deep-reviewer are NOT in DEFAULT_ENABLED (only in example.json)
-  assert.equal(config.agent.explorer, undefined)
-  assert.equal(config.agent["deep-reviewer"], undefined)
+  assert.equal(config.agent.debugger, undefined)
+  assert.equal(config.agent.researcher, undefined)
 })
 
-test("autoApprove defaults to true and flips ask permissions to allow without touching deny", async () => {
+test("autoApprove defaults to true and flips ask permissions to allow", async () => {
   const { config } = await runPlugin({})
 
   assert.equal(config.agent.coder.permission.edit, "allow")
@@ -45,6 +45,7 @@ test("autoApprove defaults to true and flips ask permissions to allow without to
   assert.equal(config.agent.resolver.permission.edit, "allow")
   assert.equal(config.agent.resolver.permission.bash, "allow")
   assert.equal(config.agent.resolver.permission.webfetch, "allow")
+  // reviewer is now enabled by default as internal subagent — its deny permissions stay deny
   assert.equal(config.agent.reviewer.permission.edit, "deny")
   assert.equal(config.agent.reviewer.permission.bash, "deny")
   assert.equal(config.agent.reviewer.permission.webfetch, "allow")
@@ -65,7 +66,7 @@ test("resolver prompt enforces per-role dispatch limit by default (2)", async ()
   const { config } = await runPlugin({})
 
   assert.match(config.agent.resolver.prompt, /at most 2 subagents of the same role/)
-  assert.match(config.agent.resolver.prompt, /Never exceed 2 coders in parallel, and never exceed 2 reviewers/)
+  assert.match(config.agent.resolver.prompt, /Never exceed 2 coders in parallel/)
 })
 
 test("maxParallelSubagents = 1 produces the strict serial-per-role wording", async () => {
@@ -144,7 +145,10 @@ test("omits agent models when no explicit or OpenCode default model exists", asy
   const { config } = await runPlugin({})
 
   assert.equal("model" in config.agent.coder, false)
+  assert.equal("model" in config.agent.resolver, false)
   assert.equal("model" in config.agent.reviewer, false)
+  assert.equal("model" in config.agent.explorer, false)
+  assert.equal("model" in config.agent["deep-reviewer"], false)
 })
 
 test("adds context7 preset without overwriting existing context7 config", async () => {
@@ -210,7 +214,7 @@ test("plugin options override file config", async () => {
 
   try {
     const { config } = await runPlugin({}, project, {
-      enabled: ["reviewer"],
+      enabled: ["reviewer", "resolver"],
       context7: true,
       models: {
         gpt: "option/gpt",
@@ -464,14 +468,14 @@ test("accepts quick and deep as valid model aliases", async () => {
   }
 })
 
-test("resolver prompt is speed-first and mentions explorer and deep-reviewer", async () => {
+test("resolver prompt is context-efficient and mentions core path with internal subagents", async () => {
   const { config } = await runPlugin({})
 
-  assert.match(config.agent.resolver.prompt, /speed-first/)
+  assert.match(config.agent.resolver.prompt, /context-efficient/)
   assert.match(config.agent.resolver.prompt, /CLASSIFY/)
-  assert.match(config.agent.resolver.prompt, /explorer/)
-  assert.match(config.agent.resolver.prompt, /deep-reviewer/)
-  assert.match(config.agent.resolver.prompt, /Bounded persistence/)
+  assert.match(config.agent.resolver.prompt, /Core path/)
+  assert.match(config.agent.resolver.prompt, /[Ii]nternal specialist subagents/)
+  assert.match(config.agent.resolver.prompt, /max 3/)
 })
 
 async function runPlugin(initialConfig, project, options) {

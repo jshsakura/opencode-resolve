@@ -1,41 +1,25 @@
 {
-  "enabled": ["coder", "reviewer", "resolver", "explorer", "deep-reviewer"],
+  "enabled": ["coder", "resolver", "explorer", "reviewer", "deep-reviewer"],
   "preserveNative": true,
   "context7": true,
   "commands": false,
   "autoApprove": true,
   "maxParallelSubagents": 2,
-  "models": {
-    "quick": "zai-coding-plan/glm-5.1",
-    "glm": "zai-coding-plan/glm-5.1",
-    "gpt": "openai/gpt-5.5",
-    "deep": "openai/gpt-5.5",
-    "coder": "glm",
-    "explorer": "quick",
-    "reviewer": "quick",
-    "resolver": "gpt",
-    "deep-reviewer": "deep",
-    "architect": "gpt",
-    "gpt-coder": "gpt",
-    "debugger": "glm",
-    "researcher": "quick"
-  },
+  "models": {},
   "agents": {
     "coder": {
-      "mode": "all"
-    },
-    "reviewer": {
       "mode": "all"
     },
     "resolver": {
       "enabled": true
     },
     "explorer": {
-      "enabled": true,
+      "mode": "subagent"
+    },
+    "reviewer": {
       "mode": "subagent"
     },
     "deep-reviewer": {
-      "enabled": true,
       "mode": "subagent"
     },
     "architect": {

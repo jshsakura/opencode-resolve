@@ -17,17 +17,11 @@ test("postinstall creates OpenCode config and resolve config", async () => {
     const resolveConfig = await readJson(join(configHome, "resolve.json"))
 
     assert.deepEqual(opencodeConfig.plugin, ["opencode-resolve"])
-    assert.deepEqual(resolveConfig.enabled, ["coder", "reviewer", "resolver", "explorer", "deep-reviewer"])
+    assert.deepEqual(resolveConfig.enabled, ["coder", "resolver", "explorer", "reviewer", "deep-reviewer"])
     assert.equal(resolveConfig.autoApprove, true)
     assert.equal(resolveConfig.maxParallelSubagents, 2)
-    // models matches opencode-resolve.example.json — non-empty with default aliases
-    assert.ok(resolveConfig.models && typeof resolveConfig.models === "object")
-    assert.equal(resolveConfig.models.coder, "glm")
-    assert.equal(resolveConfig.models.resolver, "gpt")
-    assert.equal(resolveConfig.models.explorer, "quick")
-    assert.equal(resolveConfig.models["deep-reviewer"], "deep")
-    assert.equal(resolveConfig.models.quick, "zai-coding-plan/glm-5.1")
-    assert.equal(resolveConfig.models.deep, "openai/gpt-5.5")
+    // models is empty by default — agents inherit the OpenCode default model
+    assert.deepEqual(resolveConfig.models, {})
   } finally {
     await rm(configHome, { recursive: true, force: true })
   }
@@ -78,7 +72,7 @@ test("postinstall is a no-op on an already-up-to-date resolve.json", async () =>
 
   try {
     const existing = {
-      enabled: ["coder", "reviewer", "resolver"],
+      enabled: ["coder", "resolver"],
       autoApprove: true,
       maxParallelSubagents: 1,
     }
