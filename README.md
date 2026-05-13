@@ -153,7 +153,12 @@ npm install -g opencode-resolve
 The `postinstall` script automatically:
 
 1. Adds `opencode-resolve` to `~/.config/opencode/opencode.json` `plugin` array (if not already present).
-2. Creates `~/.config/opencode/resolve.json` from the shipped [`opencode-resolve.example.json`](./opencode-resolve.example.json) when the file does not exist.
+2. Creates `~/.config/opencode/resolve.json` adapted to your current model provider when the file does not exist:
+   - **GLM/ZAI model detected** → mixed GLM + GPT alias preset (`coder` → GLM, `resolver` → GPT).
+   - **OpenAI/GPT model detected** → single-provider GPT preset using your current model for all roles.
+   - **Other or no model** → model-neutral `models: {}` (all roles inherit OpenCode default).
+
+   Existing `resolve.json` files are **never overwritten** — the adaptive preset only applies to first-time creation. To regenerate, delete `resolve.json` and reinstall.
 
 To skip automatic registration:
 
@@ -449,6 +454,18 @@ When you upgrade to a newer version of `opencode-resolve`, the `postinstall` scr
 - **Never** modifies keys you have already set.
 - **Never** rewrites your `enabled` list, `models` map, or `agents` overrides.
 - If `enabled` is set and does not include `"resolver"`, prints a one-line tip suggesting you add it. Your file is left untouched.
+
+### Adaptive first-install preset
+
+When `resolve.json` does **not** exist, postinstall inspects your OpenCode model configuration and writes a provider-adapted `models` block:
+
+| Detected provider | Preset |
+|---|---|
+| GLM / ZAI | Mixed GLM + GPT: coder/explorer → GLM, resolver/reviewer/deep-reviewer → GPT |
+| OpenAI / GPT | Single-provider: all roles use your current OpenAI model |
+| Other or none | Model-neutral: `models: {}` (all roles inherit OpenCode default) |
+
+To change presets at any time, edit `models` in `resolve.json` directly or delete the file and reinstall.
 
 Skip the migration entirely with:
 

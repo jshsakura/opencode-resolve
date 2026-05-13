@@ -1,5 +1,5 @@
 import { constants } from "node:fs"
-import { access, copyFile, mkdir, readFile, writeFile } from "node:fs/promises"
+import { access, mkdir, readFile, writeFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -41,13 +41,105 @@ async function registerPlugin() {
   }
 
   if (!(await exists(resolveConfigPath))) {
-    await assertReadable(exampleConfigPath)
-    await copyFile(exampleConfigPath, resolveConfigPath)
-    console.log(`[${packageName}] created ${resolveConfigPath}`)
+    await createAdaptiveResolveConfig(config)
     return
   }
 
   await migrateResolveConfig()
+}
+
+async function createAdaptiveResolveConfig(opencodeConfig) {
+  await assertReadable(exampleConfigPath)
+  const raw = await readFile(exampleConfigPath, "utf8")
+  const example = JSON.parse(raw)
+
+  const currentModel = detectOpenCodeModel(opencodeConfig)
+  const preset = buildModelPreset(currentModel)
+
+  const resolveConfig = { ...example }
+  if (preset && Object.keys(preset).length > 0) {
+    resolveConfig.models = preset
+  }
+
+  await writeFile(resolveConfigPath, `${JSON.stringify(resolveConfig, null, 2)}\n`)
+
+  const label = getPresetLabel(currentModel)
+  console.log(`[${packageName}] created ${resolveConfigPath} (preset: ${label})`)
+}
+
+function detectOpenCodeModel(config) {
+  // Prefer top-level `model` as primary signal
+  if (typeof config.model === "string" && config.model.length > 0) {
+    return config.model
+  }
+
+  // Check top-level `models` object values if present
+  if (isObject(config.models)) {
+    for (const value of Object.values(config.models)) {
+      if (typeof value === "string" && value.length > 0) {
+        return value
+      }
+    }
+  }
+
+  // Check agent.*.model values if present
+  if (isObject(config.agent)) {
+    for (const agentConfig of Object.values(config.agent)) {
+      if (isObject(agentConfig) && typeof agentConfig.model === "string" && agentConfig.model.length > 0) {
+        return agentConfig.model
+      }
+    }
+  }
+
+  return null
+}
+
+function buildModelPreset(currentModel) {
+  if (!currentModel) return {}
+
+  const lower = currentModel.toLowerCase()
+
+  // GLM / ZAI mixed preset
+  if (lower.includes("glm") || lower.includes("zai")) {
+    return {
+      glm: "zai-coding-plan/glm-5.1",
+      gpt: "openai/gpt-5.5",
+      fast: "glm",
+      strong: "gpt",
+      coder: "glm",
+      resolver: "gpt",
+      reviewer: "gpt",
+      "deep-reviewer": "gpt",
+      explorer: "fast",
+    }
+  }
+
+  // OpenAI / GPT single-provider preset
+  if (lower.includes("openai/") || lower.includes("gpt")) {
+    return {
+      gpt: currentModel,
+      fast: "gpt",
+      strong: "gpt",
+      mini: "gpt",
+      codex: "gpt",
+      coder: "gpt",
+      resolver: "gpt",
+      explorer: "gpt",
+      reviewer: "gpt",
+      "deep-reviewer": "gpt",
+    }
+  }
+
+  // Unknown provider — keep model-neutral
+  return {}
+}
+
+function getPresetLabel(currentModel) {
+  if (!currentModel) return "inherited"
+  const lower = currentModel.toLowerCase()
+  if (lower.includes("glm") || lower.includes("zai")) return "glm+gpt"
+  if (lower.includes("openai/") || lower.includes("gpt")) return "gpt-only"
+  return "inherited"
 }
 
 async function migrateResolveConfig() {

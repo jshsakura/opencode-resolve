@@ -91,6 +91,15 @@
   // OpenCode default model. Pin models only when you have measured a
   // benefit from role-specific model selection.
   //
+  // When resolve.json is created for the first time by postinstall, the
+  // plugin inspects your OpenCode model config and writes an adaptive
+  // preset:
+  //   - GLM/ZAI detected → mixed GLM + GPT aliases
+  //   - OpenAI/GPT detected → single-provider GPT aliases using your model
+  //   - Other or no model → empty (model-neutral inheritance)
+  // Existing resolve.json files are never overwritten. Delete resolve.json
+  // and reinstall to regenerate the preset.
+  //
   // Example — one efficient model for everything (recommended default):
   //   "models": {}
   //
@@ -100,6 +109,19 @@
   //     "strong": "openai/gpt-5.3-codex",
   //     "coder": "fast",
   //     "resolver": "strong"
+  //   }
+  //
+  // Example — GLM + GPT mixed preset (auto-generated for GLM/ZAI users):
+  //   "models": {
+  //     "glm": "zai-coding-plan/glm-5.1",
+  //     "gpt": "openai/gpt-5.5",
+  //     "fast": "glm",
+  //     "strong": "gpt",
+  //     "coder": "glm",
+  //     "resolver": "gpt",
+  //     "reviewer": "gpt",
+  //     "deep-reviewer": "gpt",
+  //     "explorer": "fast"
   //   }
   //
   // Legacy aliases (glm, gpt, quick, deep) remain supported for backward

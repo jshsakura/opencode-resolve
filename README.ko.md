@@ -153,7 +153,12 @@ npm install -g opencode-resolve
 `postinstall` 스크립트가 자동으로:
 
 1. `opencode-resolve`를 `~/.config/opencode/opencode.json`의 `plugin` 배열에 추가 (이미 없는 경우).
-2. `~/.config/opencode/resolve.json`을 배포된 [`opencode-resolve.example.json`](./opencode-resolve.example.json)에서 생성 (파일이 존재하지 않는 경우).
+2. 파일이 존재하지 않는 경우, 현재 모델 프로바이더에 맞게 적응된 `~/.config/opencode/resolve.json`을 생성:
+   - **GLM/ZAI 모델 감지** → GLM + GPT 혼합 별칭 프리셋 (`coder` → GLM, `resolver` → GPT).
+   - **OpenAI/GPT 모델 감지** → 모든 역할에 현재 모델을 사용하는 단일 프로바이더 GPT 프리셋.
+   - **다른 프로바이더 또는 모델 없음** → 모델 중립적 `models: {}` (모든 역할이 OpenCode 기본 모델 상속).
+
+   기존 `resolve.json` 파일은 **절대 덮어쓰지 않습니다** — 적응형 프리셋은 최초 생성 시에만 적용됩니다. 다시 생성하려면 `resolve.json`을 삭제하고 재설치하세요.
 
 자동 등록을 건너뛰려면:
 
@@ -449,6 +454,18 @@ OpenCode를 닫았다가 다시 여세요. 핵심 에이전트는 `resolver`와 
 - 이미 설정한 키는 **절대** 수정하지 않음.
 - `enabled` 목록, `models` 맵, 또는 `agents` 재정의를 **절대** 다시 쓰지 않음.
 - `enabled`가 설정되어 있고 `"resolver"`를 포함하지 않으면, 추가를 제안하는 한 줄 팁을 출력. 파일은 그대로 유지.
+
+### 적응형 최초 설치 프리셋
+
+`resolve.json`이 **존재하지 않을** 때, postinstall은 OpenCode 모델 설정을 검사하고 프로바이더에 맞는 `models` 블록을 작성합니다:
+
+| 감지된 프로바이더 | 프리셋 |
+|---|---|
+| GLM / ZAI | GLM + GPT 혼합: coder/explorer → GLM, resolver/reviewer/deep-reviewer → GPT |
+| OpenAI / GPT | 단일 프로바이더: 모든 역할이 현재 OpenAI 모델 사용 |
+| 다른 프로바이더 또는 없음 | 모델 중립적: `models: {}` (모든 역할이 OpenCode 기본 모델 상속) |
+
+언제든지 프리셋을 변경하려면 `resolve.json`의 `models`를 직접 편집하거나, 파일을 삭제하고 재설치하세요.
 
 마이그레이션을 완전히 건너뛰려면:
 
