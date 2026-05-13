@@ -1,18 +1,36 @@
-# opencode-resolve
+# opencode-resolve — Lightweight Resolver Plugin for OpenCode
+
+**[English](./README.md) | [한국어](./README.ko.md)**
 
 [![npm version](https://img.shields.io/npm/v/opencode-resolve.svg)](https://www.npmjs.com/package/opencode-resolve)
 [![CI](https://github.com/jshsakura/opencode-resolve/actions/workflows/publish.yml/badge.svg)](https://github.com/jshsakura/opencode-resolve/actions/workflows/publish.yml)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
-Small OpenCode plugin that turns a single instruction into a finished, verified change.
+> **opencode-resolve** is a **lightweight resolver plugin for [OpenCode](https://opencode.ai)**. It lives _inside_ your OpenCode session and turns a single instruction into a finished, verified change — that is what _resolving_ means here.
+>
+> It is **not** a standalone application, not a model provider, not a separate CLI you run daily, and not a replacement for your `opencode.json` configuration. It is an OpenCode plugin and nothing more.
 
-`opencode-resolve` ships three roles by default — **resolver** (orchestrator), **coder** (implementer), and **reviewer** (read-only auditor) — and runs them with auto-approved permissions so a task drives to completion without prompting at every step. It defines roles, not model providers: agents inherit your OpenCode default model unless you pin them.
+It ships three roles by default — **resolver** (orchestrator), **coder** (implementer), and **reviewer** (read-only auditor) — and runs them with auto-approved permissions so a task drives to completion without prompting at every step. The resolver plans, dispatches coders and reviewers, verifies, and iterates until the work is done or clearly blocked. It defines roles, not model providers: agents inherit your OpenCode default model unless you pin them.
 
 ```
 # Paste this into any AI coding assistant for fully guided setup
 Install and configure opencode-resolve by following the instructions here:
 https://github.com/jshsakura/opencode-resolve#drop-in-setup-give-to-an-llm
 ```
+
+---
+
+## What this is — and isn't
+
+| ✅ What it is | ❌ What it isn't |
+|---|---|
+| A **lightweight resolver plugin for OpenCode** installed via `opencode plugin opencode-resolve` | A standalone app or separate CLI |
+| A set of agents (resolver, coder, reviewer) injected into OpenCode | A model provider or API key manager |
+| A Context7 MCP auto-registration hook | A replacement for your `opencode.json` config |
+| A config file (`resolve.json`) that lives alongside OpenCode config | Something you invoke manually every time you code |
+| Installed once, then runs automatically inside OpenCode | An alternative to OpenCode itself |
+
+If OpenCode is not installed or not running, opencode-resolve does nothing.
 
 ---
 
