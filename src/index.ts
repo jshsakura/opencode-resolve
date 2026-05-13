@@ -13,6 +13,10 @@ type ResolveAgentName =
   | "gpt-coder"
   | "debugger"
   | "researcher"
+  | "explorer"
+  | "deep-reviewer"
+
+type ModelAlias = ResolveAgentName | "glm" | "gpt" | "quick" | "deep"
 
 type AgentMode = "subagent" | "primary" | "all"
 
@@ -36,7 +40,7 @@ type ResolveAgentConfig = {
 
 type ResolveConfig = {
   enabled?: ResolveAgentName[]
-  models?: Partial<Record<ResolveAgentName | "glm" | "gpt", string>>
+  models?: Partial<Record<ModelAlias, string>>
   agents?: Partial<Record<ResolveAgentName, ResolveAgentConfig>>
   preserveNative?: boolean
   context7?: boolean
@@ -51,13 +55,13 @@ type ResolvePluginOptions = ResolveConfig & {
 
 type UnknownRecord = Record<string, unknown>
 
-const DEFAULT_MODELS: Partial<Record<ResolveAgentName | "glm" | "gpt", string>> = {}
+const DEFAULT_MODELS: Partial<Record<ModelAlias, string>> = {}
 
 const DEFAULT_ENABLED: ResolveAgentName[] = ["coder", "reviewer", "resolver"]
 
-const VALID_AGENT_NAMES = ["coder", "reviewer", "resolver", "architect", "gpt-coder", "debugger", "researcher"] as const
+const VALID_AGENT_NAMES = ["coder", "reviewer", "resolver", "architect", "gpt-coder", "debugger", "researcher", "explorer", "deep-reviewer"] as const
 const VALID_AGENT_NAME_SET = new Set<string>(VALID_AGENT_NAMES)
-const VALID_MODEL_ALIASES = [...VALID_AGENT_NAMES, "glm", "gpt"] as const
+const VALID_MODEL_ALIASES = [...VALID_AGENT_NAMES, "glm", "gpt", "quick", "deep"] as const
 const VALID_MODEL_ALIAS_SET = new Set<string>(VALID_MODEL_ALIASES)
 const VALID_MODES = new Set<string>(["subagent", "primary", "all"])
 const VALID_PERMISSION_VALUES = new Set<string>(["ask", "allow", "deny"])
@@ -93,17 +97,23 @@ function buildResolverPrompt(maxParallelSubagents: number): string {
     : `CRITICAL: Dispatch at most ${limit} subagents of the same role concurrently. Never exceed ${limit} coders in parallel, and never exceed ${limit} reviewers in parallel. Subagents of different roles may run concurrently when they are doing genuinely independent work. Wait for in-flight subagents of a given role to finish before dispatching more of that role.`
 
   return [
-    "You are Resolver, the primary orchestrator agent for OpenCode Resolve.",
+    "You are Resolver, the primary speed-first orchestrator agent for OpenCode Resolve.",
     "Your job is to drive the user's task to a verified resolution end-to-end without unnecessary stops.",
+    "",
+    "Bounded persistence: iterate until the task is resolved or clearly blocked. Each cycle must make measurable progress. If stuck for 2+ cycles, summarize what you know and report the blocker.",
+    "",
     "Workflow:",
-    "1. Understand the requirement. Inspect the relevant files briefly before planning.",
-    "2. Plan the smallest correct change.",
-    "3. Dispatch the coder subagent to implement the change. Pass a focused instruction with the exact files and behavior.",
-    `4. ${parallelRule}`,
-    "5. After implementation, verify when practical (run tests, type checks, or targeted checks).",
-    "6. If issues remain, dispatch the coder again with a focused fix, or apply a small direct edit yourself when it is clearly trivial.",
-    "7. Optionally consult the reviewer subagent for an independent read-only review on risky changes. The reviewer cannot modify anything; treat its output as advice and route any required fixes back through the coder. The same per-role parallel limit applies to the reviewer.",
-    "8. Repeat until the task is resolved or clearly blocked.",
+    "1. CLASSIFY the work as quick (trivial fix), normal (standard feature), deep (complex refactor), or risky (security/architecture/high-impact). Classification determines which subagents to use.",
+    "2. For trivial/quick work: inspect the relevant files directly and apply a small edit yourself. No subagent needed.",
+    "3. For unclear scope or when you need to understand the codebase: dispatch explorer for fast read-only discovery before planning. Explorer is cheap and quick.",
+    "4. Plan the smallest correct change. Dispatch coder with focused file/behavior instructions.",
+    `5. ${parallelRule}`,
+    "6. Run the cheapest meaningful verification first (targeted test, type check, or lint). Do not run full suites unless the change is wide.",
+    "7. For normal post-change review when useful: use reviewer (lightweight read-only audit).",
+    "8. For risky, security-sensitive, architectural, or high-impact changes ONLY: use deep-reviewer (thorough read-only review with a deep model).",
+    "9. If issues remain, dispatch coder again with a focused fix. For persistent issues, reconsider the approach.",
+    "10. Repeat until the task is resolved or clearly blocked.",
+    "",
     "Return a concise summary of what changed, verification results, and any remaining blockers.",
     "Note: this parallel rule is enforced via prompt only — there is no runtime cap on subagent dispatches. Honor it strictly to avoid file conflicts and wasted work.",
   ].join("\n")
@@ -223,6 +233,44 @@ const DEFAULT_AGENT_CONFIG: Record<ResolveAgentName, Required<Pick<ResolveAgentC
       webfetch: "ask",
     },
   },
+  explorer: {
+    mode: "subagent",
+    color: "#33CCFF",
+    maxSteps: 6,
+    description: "Pre-change fast scout for codebase/file/pattern/doc discovery. Read-only; quick model.",
+    prompt: [
+      "You are Explorer, a fast codebase scout subagent for OpenCode Resolve.",
+      "Your job is to quickly discover files, patterns, APIs, and relevant code locations before implementation begins.",
+      "You MUST NOT modify the project by any means: no file edits, no writes, no shell commands that change state.",
+      "Use read-only tools (read, grep, glob, list) and documentation tools (web fetch, Context7) to find what matters.",
+      "Return concise findings with file paths, relevant code snippets, APIs, and constraints.",
+      "Be fast and targeted — the resolver needs your discoveries to plan efficiently.",
+    ].join("\n"),
+    permission: {
+      edit: "deny",
+      bash: "ask",
+      webfetch: "ask",
+    },
+  },
+  "deep-reviewer": {
+    mode: "subagent",
+    color: "#6A0DAD",
+    maxSteps: 12,
+    description: "Post-change strong read-only review for risky/security/architecture/high-impact changes. Read-only; deep model.",
+    prompt: [
+      "You are Deep Reviewer, a thorough read-only review subagent for risky, security-sensitive, or high-impact changes.",
+      "You MUST NOT modify the project by any means: no file edits, no writes, no shell commands that change state, no git commits.",
+      "Use read-only tools to deeply inspect the work against requirements, security best practices, architectural soundness, and behavioral correctness.",
+      "Focus on security vulnerabilities, data integrity risks, breaking API changes, performance regressions, and architectural drift.",
+      "Return findings ordered by severity with file and line references. For each finding, explain the risk and recommend a concrete fix.",
+      "If a fix is needed, describe it precisely and recommend dispatching the coder or resolver agent. Never apply fixes yourself.",
+    ].join("\n"),
+    permission: {
+      edit: "deny",
+      bash: "deny",
+      webfetch: "ask",
+    },
+  },
 }
 
 export const OpencodeResolve: Plugin = async ({ directory }, options) => {
@@ -293,7 +341,7 @@ function applyResolveConfig(config: Config, resolveConfig: ResolveConfig) {
   if (resolveConfig.commands) {
     config.command ??= {}
     config.command["resolve"] ??= {
-      template: "Drive this task to a verified resolution end-to-end. Plan, dispatch one coder at a time, verify, and iterate. $ARGUMENTS",
+      template: "Drive this task to a verified resolution end-to-end. Classify, explore when needed, dispatch focused subagents within the configured per-role limit, verify, and iterate. $ARGUMENTS",
       description: "Run the OpenCode Resolve resolver agent end-to-end",
       agent: "resolver",
       subtask: true,
@@ -438,7 +486,7 @@ function normalizeResolveConfig(value: unknown, source: string): ResolvePluginOp
       if (!VALID_MODEL_ALIAS_SET.has(key)) {
         throw new Error(`Unknown model alias "${key}" in ${source}.models`)
       }
-      result.models[key as ResolveAgentName | "glm" | "gpt"] = expectString(model, `${source}.models.${key}`)
+      result.models[key as ModelAlias] = expectString(model, `${source}.models.${key}`)
     }
   }
 

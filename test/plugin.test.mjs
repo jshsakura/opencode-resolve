@@ -31,6 +31,9 @@ test("injects default coder, reviewer, and resolver agents using the OpenCode de
   assert.equal(config.agent.reviewer.permission.bash, "deny")
   assert.equal(config.agent.architect, undefined)
   assert.equal(config.agent["gpt-coder"], undefined)
+  // explorer and deep-reviewer are NOT in DEFAULT_ENABLED (only in example.json)
+  assert.equal(config.agent.explorer, undefined)
+  assert.equal(config.agent["deep-reviewer"], undefined)
 })
 
 test("autoApprove defaults to true and flips ask permissions to allow without touching deny", async () => {
@@ -383,6 +386,92 @@ test("supports command-specific bash permissions", async () => {
   } finally {
     await project.cleanup()
   }
+})
+
+test("injects explorer and deep-reviewer when enabled via config", async () => {
+  const project = await createProject({
+    "opencode-resolve.json": {
+      enabled: ["coder", "reviewer", "resolver", "explorer", "deep-reviewer"],
+      models: {
+        quick: "provider/cheap",
+        deep: "provider/strong",
+        explorer: "quick",
+        "deep-reviewer": "deep",
+      },
+    },
+  })
+
+  try {
+    const { config } = await runPlugin({}, project)
+
+    // Explorer: read-only scout, deny edit, bash auto-approved to allow
+    assert.equal(config.agent.explorer.mode, "subagent")
+    assert.equal(config.agent.explorer.model, "provider/cheap")
+    assert.equal(config.agent.explorer.permission.edit, "deny")
+    assert.equal(config.agent.explorer.permission.bash, "allow")
+    assert.equal(config.agent.explorer.permission.webfetch, "allow")
+    assert.equal(config.agent.explorer.maxSteps, 6)
+
+    // Deep reviewer: read-only, deny edit and bash
+    assert.equal(config.agent["deep-reviewer"].mode, "subagent")
+    assert.equal(config.agent["deep-reviewer"].model, "provider/strong")
+    assert.equal(config.agent["deep-reviewer"].permission.edit, "deny")
+    assert.equal(config.agent["deep-reviewer"].permission.bash, "deny")
+    assert.equal(config.agent["deep-reviewer"].permission.webfetch, "allow")
+    assert.equal(config.agent["deep-reviewer"].maxSteps, 12)
+  } finally {
+    await project.cleanup()
+  }
+})
+
+test("explorer permissions respect autoApprove: false", async () => {
+  const project = await createProject({
+    "opencode-resolve.json": {
+      enabled: ["explorer"],
+      autoApprove: false,
+    },
+  })
+
+  try {
+    const { config } = await runPlugin({}, project)
+
+    assert.equal(config.agent.explorer.permission.edit, "deny")
+    assert.equal(config.agent.explorer.permission.bash, "ask")
+    assert.equal(config.agent.explorer.permission.webfetch, "ask")
+  } finally {
+    await project.cleanup()
+  }
+})
+
+test("accepts quick and deep as valid model aliases", async () => {
+  const project = await createProject({
+    "opencode-resolve.json": {
+      enabled: ["coder"],
+      models: {
+        quick: "provider/cheap-model",
+        deep: "provider/strong-model",
+        coder: "quick",
+      },
+    },
+  })
+
+  try {
+    const { config } = await runPlugin({}, project)
+
+    assert.equal(config.agent.coder.model, "provider/cheap-model")
+  } finally {
+    await project.cleanup()
+  }
+})
+
+test("resolver prompt is speed-first and mentions explorer and deep-reviewer", async () => {
+  const { config } = await runPlugin({})
+
+  assert.match(config.agent.resolver.prompt, /speed-first/)
+  assert.match(config.agent.resolver.prompt, /CLASSIFY/)
+  assert.match(config.agent.resolver.prompt, /explorer/)
+  assert.match(config.agent.resolver.prompt, /deep-reviewer/)
+  assert.match(config.agent.resolver.prompt, /Bounded persistence/)
 })
 
 async function runPlugin(initialConfig, project, options) {

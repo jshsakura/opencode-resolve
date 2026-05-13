@@ -10,7 +10,7 @@
 >
 > It is **not** a standalone application, not a model provider, not a separate CLI you run daily, and not a replacement for your `opencode.json` configuration. It is an OpenCode plugin and nothing more.
 
-It ships three roles by default — **resolver** (orchestrator), **coder** (implementer), and **reviewer** (read-only auditor) — and runs them with auto-approved permissions so a task drives to completion without prompting at every step. The resolver plans, dispatches coders and reviewers, verifies, and iterates until the work is done or clearly blocked. It defines roles, not model providers: agents inherit your OpenCode default model unless you pin them.
+It exposes three simple roles — **resolver** (orchestrator), **coder** (implementer), and **reviewer** (read-only auditor) — and runs them with auto-approved permissions so a task drives to completion without prompting at every step. The resolver plans, dispatches coders and reviewers, verifies, and iterates until the work is done or clearly blocked. The install template also enables internal **explorer** (fast read-only codebase scout) and **deep-reviewer** (thorough read-only review) subagents so the resolver can move quickly without making the user configure a team by hand. It defines roles, not model providers: agents inherit your OpenCode default model unless you pin them.
 
 ```
 # Paste this into any AI coding assistant for fully guided setup
@@ -62,7 +62,8 @@ If OpenCode is not installed or not running, opencode-resolve does nothing.
 
 ## Features
 
-- **3 default roles** — `resolver` (orchestrator), `coder` (implementer), `reviewer` (read-only auditor)
+- **3 simple user-facing roles** — `resolver` (orchestrator), `coder` (implementer), `reviewer` (read-only auditor)
+- **2 internal subagents in the install template** — `explorer` (fast codebase scout) and `deep-reviewer` (thorough review for risky changes)
 - **Auto-approved permissions** — coder and resolver work without per-action prompts; reviewer stays locked to deny
 - **Context7 MCP** — auto-registers [Context7](https://context7.com) documentation lookup when `context7: true`
 - **Model pinning** — pin different models per role (fast coding on one, deeper review on another)
@@ -219,17 +220,21 @@ This file is auto-created by `postinstall`. If it wasn't created, or you want th
 
 ```json
 {
-  "enabled": ["coder", "reviewer", "resolver"],
+  "enabled": ["coder", "reviewer", "resolver", "explorer", "deep-reviewer"],
   "models": {
+    "quick": "zai-coding-plan/glm-5.1",
     "glm": "zai-coding-plan/glm-5.1",
     "gpt": "openai/gpt-5.5",
+    "deep": "openai/gpt-5.5",
     "coder": "glm",
-    "reviewer": "openai/gpt-4o-mini",
+    "explorer": "quick",
+    "reviewer": "quick",
     "resolver": "gpt",
+    "deep-reviewer": "deep",
     "architect": "gpt",
     "gpt-coder": "gpt",
     "debugger": "glm",
-    "researcher": "glm"
+    "researcher": "quick"
   },
   "preserveNative": true,
   "context7": true,
@@ -237,6 +242,8 @@ This file is auto-created by `postinstall`. If it wasn't created, or you want th
   "agents": {
     "coder":    { "mode": "all" },
     "reviewer": { "mode": "all" },
+    "explorer":     { "enabled": true, "mode": "subagent" },
+    "deep-reviewer":{ "enabled": true, "mode": "subagent" },
     "architect":  { "enabled": false },
     "gpt-coder":  { "enabled": false },
     "debugger":   { "enabled": false },
@@ -251,29 +258,29 @@ This file is auto-created by `postinstall`. If it wasn't created, or you want th
 
 ### Step 4 — Restart OpenCode
 
-Close and reopen OpenCode. The three default agents (`resolver`, `coder`, `reviewer`) should now be available.
+Close and reopen OpenCode. The simple front door remains `resolver`, `coder`, and `reviewer`; the resolver can also use internal `explorer` and `deep-reviewer` subagents from the install template.
 
 ### Why this template
 
 | Setting | Why |
 |---|---|
-| `enabled: ["coder", "reviewer", "resolver"]` | Activates the three default roles |
-| `autoApprove: true` | Coder and resolver work without per-action prompts; reviewer stays locked |
-| `maxParallelSubagents: 2` | Up to two coders and two reviewers may run concurrently per role |
+| `enabled: ["coder", "reviewer", "resolver", "explorer", "deep-reviewer"]` | Activates all five roles — internal subagents available out of the box |
+| `autoApprove: true` | Coder and resolver work without per-action prompts; reviewer/deep-reviewer stay read-only, explorer stays edit-denied |
+| `maxParallelSubagents: 2` | Up to two subagents of the same role may run concurrently |
 | `agents.coder.mode = "all"` | Coder appears in the agent picker, not just as a subagent |
 | `agents.reviewer.mode = "all"` | Reviewer appears in the agent picker too |
 | `context7: true` | Plugin auto-registers Context7 MCP — no manual MCP config needed |
-| `models` aliases | Fast/cheap model for coding (`glm`), stronger model for orchestration (`gpt`), cheapest for review (`gpt-4o-mini`) |
+| `models` aliases | Fast/cheap model for coding and discovery (`quick`/`glm`), stronger model for orchestration and deep review (`gpt`/`deep`) |
 | Other agents disabled | `architect`, `gpt-coder`, `debugger`, `researcher` ship off. Flip `enabled: true` when needed |
 
 ### What happens when you call the resolver
 
-1. **Understand** — Resolver reads the request and inspects relevant files.
-2. **Plan** — Plans the smallest correct change.
+1. **Classify** — Resolver classifies the work as quick, normal, deep, or risky.
+2. **Explore** (when needed) — For unclear scope, dispatches `explorer` for fast read-only codebase discovery.
 3. **Implement** — Dispatches `coder` to implement within the configured per-role concurrency limit.
-4. **Verify** — Runs tests, type checks, or targeted checks when practical.
-5. **Fix** — If issues remain, dispatches `coder` again with a focused fix.
-6. **Review** (optional) — For risky changes, consults `reviewer` for a read-only audit; routes fixes back through `coder`.
+4. **Verify** — Runs the cheapest meaningful verification first (targeted test, type check, or lint).
+5. **Review** — For normal changes, uses `reviewer`; for risky/security/architecture changes, uses `deep-reviewer`.
+6. **Fix** — If issues remain, dispatches `coder` again with a focused fix.
 7. **Iterate** — Repeats until the task is resolved or clearly blocked.
 8. **Report** — Returns a concise summary of changes, verification results, and remaining blockers.
 
@@ -550,9 +557,11 @@ In this setup, `plan`, `resolver`, and `reviewer` use `openai/gpt-5.5`; native `
 
 | Agent | Default | Mode | Edit | Bash | WebFetch | Purpose |
 |---|:---:|---|---|---|---|---|
-| `resolver` | Yes | `all` | ask → allow | ask → allow | ask → allow | Primary orchestrator. Plans, dispatches coders/reviewers within the configured per-role limit, verifies, iterates to completion. |
+| `resolver` | Yes | `all` | ask → allow | ask → allow | ask → allow | Primary orchestrator. Plans, dispatches coders/reviewers/explorers within the configured per-role limit, verifies, iterates to completion. |
 | `coder` | Yes | `subagent` | ask → allow | ask → allow | ask → allow | Focused implementer. Smallest correct change. |
 | `reviewer` | Yes | `subagent` | **deny** | **deny** | ask → allow | Read-only auditor. Cannot modify by any means. |
+| `explorer` | Postinstall | `subagent` | **deny** | ask → allow | ask → allow | Fast read-only codebase scout. Discovers files, patterns, and APIs before coding. |
+| `deep-reviewer` | Postinstall | `subagent` | **deny** | **deny** | ask → allow | Thorough read-only review for risky/security/architecture changes. |
 | `architect` | No | `subagent` | deny | ask → allow | ask → allow | Design and task decomposition. |
 | `gpt-coder` | No | `subagent` | ask → allow | ask → allow | ask → allow | Stronger-reasoning implementation fallback. |
 | `debugger` | No | `subagent` | ask → allow | ask → allow | ask → allow | Reproduction and root-cause analysis. |
@@ -570,19 +579,23 @@ Supported modes:
 
 Supported permission values: `ask`, `allow`, `deny`.
 
-Supported model alias keys: `glm`, `gpt`, and every supported agent name. Aliases only resolve when defined in `models`.
+Supported model alias keys: `glm`, `gpt`, `quick`, `deep`, and every supported agent name. Aliases only resolve when defined in `models`.
 
 `preserveNative` is accepted for readability, but native `plan` and `build` are always preserved. The plugin never rewrites built-in OpenCode agents.
 
 ### Resolver orchestration rules
 
-The resolver's prompt enforces the following behavior:
+The resolver uses a speed-first approach with bounded persistence:
 
-- Plan the smallest correct change before dispatching.
-- Dispatch **only one `coder` subagent at a time** (when `maxParallelSubagents: 1`).
-- After each coder run, verify (tests, type checks, targeted checks) when practical.
-- Optionally consult `reviewer` for an independent read-only audit on risky changes; route any required fixes back through `coder`.
+- **Classify** the work as quick, normal, deep, or risky before planning.
+- For trivial work, inspect directly and apply edits — no subagent needed.
+- For unclear scope, dispatch **explorer** for fast read-only codebase discovery.
+- Dispatch **coder** with focused file/behavior instructions.
+- Run the **cheapest meaningful verification** first.
+- Use **reviewer** for normal post-change read-only review when useful.
+- Use **deep-reviewer** only for risky, security-sensitive, architectural, or high-impact changes.
 - Iterate until the task is resolved or clearly blocked, then return a concise summary.
+- Honor the `maxParallelSubagents` per-role limit.
 
 ---
 
@@ -724,8 +737,9 @@ The release workflow runs `npm ci`, `npm run typecheck`, `npm test`, and `npm pu
 
 - Do not overwrite native `plan` or `build` agents.
 - Keep the default agent set small and role-clear: `resolver` orchestrates, `coder` modifies, `reviewer` only reads.
-- The reviewer never modifies anything — fixes always go through `coder` or `resolver`.
-- The resolver honors `maxParallelSubagents` as a per-role concurrency limit for coder/reviewer dispatch.
+- Explorer and deep-reviewer are internal subagents the resolver uses for speed and quality — they are read-only.
+- The reviewer and deep-reviewer never modify anything — fixes always go through `coder` or `resolver`.
+- The resolver honors `maxParallelSubagents` as a per-role concurrency limit for subagent dispatch.
 - Search and inspect before editing. Make the smallest correct change. Verify when practical.
 
 ---

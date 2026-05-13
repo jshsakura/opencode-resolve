@@ -20,10 +20,12 @@
   // -----------------------------------------------------------------------
   // enabled (string[])
   // Which resolve agents to inject. Default: ["coder", "reviewer", "resolver"].
+  // The postinstall example includes explorer and deep-reviewer as well so
+  // internal subagents are available out of the box.
   // Native OpenCode agents (plan, build) are always preserved and never
   // touched by this list. Per-agent `agents.<name>.enabled` overrides this.
   // -----------------------------------------------------------------------
-  "enabled": ["coder", "reviewer", "resolver"],
+  "enabled": ["coder", "reviewer", "resolver", "explorer", "deep-reviewer"],
 
   // -----------------------------------------------------------------------
   // preserveNative (boolean)
@@ -72,21 +74,29 @@
   // -----------------------------------------------------------------------
   // models (object)
   // Alias map. Keys are either an agent name (coder, reviewer, resolver,
-  // architect, gpt-coder, debugger, researcher) OR one of the well-known
-  // aliases (`glm`, `gpt`). Values are model identifiers OR another alias.
+  // architect, gpt-coder, debugger, researcher, explorer, deep-reviewer)
+  // OR one of the well-known aliases (`glm`, `gpt`, `quick`, `deep`).
+  // Values are model identifiers OR another alias.
   //
   // Resolution order for a given agent:
   //   1. agents.<name>.model
   //   2. models.<name> (resolved through the alias map)
   //   3. top-level OpenCode `model`
   //   4. OpenCode's own fallback
+  //
+  // quick = cheap/fast model for discovery and light review
+  // deep = strong/expensive model for thorough review
   // -----------------------------------------------------------------------
   "models": {
+    "quick": "zai-coding-plan/glm-5.1",
     "glm": "zai-coding-plan/glm-5.1",
     "gpt": "openai/gpt-5.5",
+    "deep": "openai/gpt-5.5",
     "coder": "glm",
+    "explorer": "quick",
+    "reviewer": "quick",
     "resolver": "gpt",
-    "reviewer": "gpt"
+    "deep-reviewer": "deep"
   },
 
   // -----------------------------------------------------------------------
@@ -116,7 +126,7 @@
 
     "reviewer": {
       "enabled": true,
-      "model": "gpt",
+      "model": "quick",
       "mode": "subagent",
       "maxSteps": 8,
       // Reviewer is read-only by design. edit and bash are denied even when
@@ -136,6 +146,36 @@
       "permission": {
         "edit": "allow",
         "bash": "allow",
+        "webfetch": "allow"
+      }
+    },
+
+    // Explorer: pre-change fast scout for codebase/file/pattern discovery.
+    // Read-only; uses the quick model alias for speed.
+    "explorer": {
+      "enabled": true,
+      "model": "quick",
+      "mode": "subagent",
+      "maxSteps": 6,
+      "permission": {
+        "edit": "deny",
+        "bash": "allow",
+        "webfetch": "allow"
+      }
+    },
+
+    // Deep Reviewer: post-change strong read-only review for risky work.
+    // Read-only; uses the deep model alias for thorough analysis.
+    "deep-reviewer": {
+      "enabled": true,
+      "model": "deep",
+      "mode": "subagent",
+      "maxSteps": 12,
+      // Deep reviewer is read-only by design. edit and bash are denied even
+      // when autoApprove is true.
+      "permission": {
+        "edit": "deny",
+        "bash": "deny",
         "webfetch": "allow"
       }
     },
@@ -161,7 +201,7 @@
     },
     "researcher": {
       "enabled": false,
-      "model": "glm",
+      "model": "quick",
       "mode": "subagent",
       "maxSteps": 8
     }
