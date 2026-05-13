@@ -1,17 +1,26 @@
 # opencode-resolve
 
 [![npm version](https://img.shields.io/npm/v/opencode-resolve.svg)](https://www.npmjs.com/package/opencode-resolve)
+[![CI](https://github.com/jshsakura/opencode-resolve/actions/workflows/publish.yml/badge.svg)](https://github.com/jshsakura/opencode-resolve/actions/workflows/publish.yml)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
 Small OpenCode plugin that turns a single instruction into a finished, verified change.
 
 `opencode-resolve` ships three roles by default — **resolver** (orchestrator), **coder** (implementer), and **reviewer** (read-only auditor) — and runs them with auto-approved permissions so a task drives to completion without prompting at every step. It defines roles, not model providers: agents inherit your OpenCode default model unless you pin them.
 
+```
+# Paste this into any AI coding assistant for fully guided setup
+Install and configure opencode-resolve by following the instructions here:
+https://github.com/jshsakura/opencode-resolve#drop-in-setup-give-to-an-llm
+```
+
 ---
 
 ## Table of Contents
 
-- [Roles at a glance](#roles-at-a-glance)
+- [Features](#features)
+- [AI-Powered Setup](#ai-powered-setup)
+- [Prerequisites](#prerequisites)
 - [Quick Start](#quick-start)
 - [Drop-in setup (give to an LLM)](#drop-in-setup-give-to-an-llm)
 - [Default Behavior](#default-behavior)
@@ -23,39 +32,108 @@ Small OpenCode plugin that turns a single instruction into a finished, verified 
 - [Model Setup](#model-setup)
 - [Agent Reference](#agent-reference)
 - [Optional Commands](#optional-commands)
+- [Context7 Integration](#context7-integration)
+- [Keeping Up to Date](#keeping-up-to-date)
 - [Local Development](#local-development)
 - [Verification](#verification)
 - [Release](#release)
 - [Design Rules](#design-rules)
+- [License](#license)
 
 ---
 
-## Roles at a glance
+## Features
 
-| Role | Default | Can edit? | Can run shell? | Purpose |
-|---|:---:|:---:|:---:|---|
-| `resolver` | Yes | Yes (auto) | Yes (auto) | Primary orchestrator. Plans, dispatches `coder` (one at a time), verifies, iterates. |
-| `coder` | Yes | Yes (auto) | Yes (auto) | Focused implementer. Makes the smallest correct change and verifies. |
-| `reviewer` | Yes | **Never** | **Never** | Read-only auditor. Inspects only — recommends fixes for `coder` or `resolver` to apply. |
+- **3 default roles** — `resolver` (orchestrator), `coder` (implementer), `reviewer` (read-only auditor)
+- **Auto-approved permissions** — coder and resolver work without per-action prompts; reviewer stays locked to deny
+- **Context7 MCP** — auto-registers [Context7](https://context7.com) documentation lookup when `context7: true`
+- **Model pinning** — pin different models per role (fast coding on one, deeper review on another)
+- **Soft parallel cap** — `maxParallelSubagents` controls how many coders/reviewers the resolver fans out
+- **Strict validation** — unknown keys, typos, invalid modes, and wrong types all fail fast at load time
+- **Additive migration** — upgrades never overwrite your existing config
+- **Zero dependencies beyond `@opencode-ai/plugin`** — nothing extra to install
 
-Hard rule: **the reviewer cannot modify the project by any means.** Both `edit` and `bash` are denied for the reviewer regardless of `autoApprove`. Any required fix is routed back through `coder` or `resolver`.
+---
+
+## AI-Powered Setup
+
+> **One line. Any AI coding assistant. Everything configured automatically.**
+
+Paste this into Claude Code, Cursor, Codex, OpenCode, Windsurf, VS Code Copilot, or Gemini CLI:
+
+```
+Install and configure opencode-resolve by following the instructions here:
+https://github.com/jshsakura/opencode-resolve#drop-in-setup-give-to-an-llm
+```
+
+Your AI will:
+
+1. Install the plugin via `opencode plugin opencode-resolve --global --force`
+2. Merge `opencode-resolve` into your `opencode.json` plugin array
+3. Create `resolve.json` with a working configuration
+4. Tell you to restart OpenCode
+
+No manual config editing required. Works on macOS, Linux, and Windows.
+
+> For manual setup, see [Prerequisites](#prerequisites) and [Quick Start](#quick-start) below.
+
+---
+
+## Prerequisites
+
+### 1. OpenCode
+
+opencode-resolve is an OpenCode plugin. You need [OpenCode](https://opencode.ai) installed and running.
+
+Verify:
+
+```sh
+opencode --version
+```
+
+### 2. Node.js ≥ 20
+
+The plugin and OpenCode itself require Node.js 20 or later.
+
+Verify:
+
+```sh
+node --version   # should be v20.x or later
+```
+
+### 3. A configured model provider
+
+OpenCode needs at least one model provider configured in `~/.config/opencode/opencode.json` with a valid API key. opencode-resolve agents inherit your default model unless you pin them.
+
+Example minimal provider setup:
+
+```json
+{
+  "model": "openai/gpt-4o",
+  "provider": {
+    "openai": {
+      "name": "OpenAI"
+    }
+  }
+}
+```
+
+> No additional API keys or MCP servers are required. Context7 is auto-registered by the plugin.
 
 ---
 
 ## Quick Start
 
-Install from npm:
+### Install from npm
 
 ```sh
 npm install -g opencode-resolve
 ```
 
-The package `postinstall` step:
+The `postinstall` script automatically:
 
-1. Adds `opencode-resolve` to `~/.config/opencode/opencode.json` `plugin` array.
-2. Creates `~/.config/opencode/resolve.json` from [`opencode-resolve.example.json`](./opencode-resolve.example.json) when missing.
-
-Restart OpenCode after installation.
+1. Adds `opencode-resolve` to `~/.config/opencode/opencode.json` `plugin` array (if not already present).
+2. Creates `~/.config/opencode/resolve.json` from the shipped [`opencode-resolve.example.json`](./opencode-resolve.example.json) when the file does not exist.
 
 To skip automatic registration:
 
@@ -63,7 +141,17 @@ To skip automatic registration:
 OPENCODE_RESOLVE_SKIP_POSTINSTALL=1 npm install -g opencode-resolve
 ```
 
-Manual fallback: add the plugin to `~/.config/opencode/opencode.json` yourself:
+### Refresh the plugin cache
+
+> **Important — OpenCode caches plugins itself.** OpenCode does NOT use globally-installed npm packages directly. It maintains its own cache at `~/.cache/opencode/packages/`. After the very first install (or any future upgrade), refresh the cache:
+
+```sh
+opencode plugin opencode-resolve --global --force
+```
+
+### Manual fallback
+
+If `postinstall` didn't register the plugin, add it to `~/.config/opencode/opencode.json` yourself:
 
 ```json
 {
@@ -71,21 +159,31 @@ Manual fallback: add the plugin to `~/.config/opencode/opencode.json` yourself:
 }
 ```
 
+### Restart OpenCode
+
+```sh
+opencode
+```
+
+You should now see `resolver`, `coder`, and `reviewer` agents available.
+
 ---
 
 ## Drop-in setup (give to an LLM)
 
 Hand the block below to any reasonably capable LLM along with the instruction _"set up opencode-resolve on this machine"_ and it can finish the install end-to-end. Everything below is the entire required configuration — no other MCP servers, environment variables, or files are needed.
 
-> **Important — OpenCode caches plugins itself.** OpenCode does NOT use globally-installed npm packages. It maintains its own cache at `~/.cache/opencode/packages/`. After the very first install (or any future upgrade), refresh the cache with `opencode plugin opencode-resolve --global --force` and restart OpenCode. `npm install -g` alone is not enough.
-
-**Step 1 — install via OpenCode (also primes the cache):**
+### Step 1 — Install and prime the cache
 
 ```sh
 opencode plugin opencode-resolve --global --force
 ```
 
-**Step 2 — `~/.config/opencode/opencode.json`** (merge into the existing file; do not replace it):
+This downloads the plugin, installs it into OpenCode's package cache (`~/.cache/opencode/packages/`), and makes it available.
+
+### Step 2 — Register the plugin in `~/.config/opencode/opencode.json`
+
+Merge into the existing file; **do not replace it**:
 
 ```json
 {
@@ -95,7 +193,11 @@ opencode plugin opencode-resolve --global --force
 }
 ```
 
-**Step 3 — `~/.config/opencode/resolve.json`** (auto-created by `postinstall`; the block below is the recommended canonical setup — copy it verbatim then swap the model IDs under `models` to match models your provider actually exposes):
+> If you already have other plugins, add `"opencode-resolve"` to the existing `plugin` array.
+
+### Step 3 — Create `~/.config/opencode/resolve.json`
+
+This file is auto-created by `postinstall`. If it wasn't created, or you want the canonical recommended setup, copy the block below. Then swap the model IDs under `models` to match providers you actually have.
 
 ```json
 {
@@ -127,28 +229,35 @@ opencode plugin opencode-resolve --global --force
 }
 ```
 
-**Step 4 — restart OpenCode.**
+> **Don't have GLM or GPT-5.5?** Replace the model IDs with whatever your provider exposes. See [Model Setup](#model-setup) for details. The simplest config uses your OpenCode default model for all roles — just remove the `models` block entirely.
+
+### Step 4 — Restart OpenCode
+
+Close and reopen OpenCode. The three default agents (`resolver`, `coder`, `reviewer`) should now be available.
 
 ### Why this template
 
-- **`enabled`** activates the three default roles: `coder` implements, `reviewer` audits read-only, `resolver` orchestrates.
-- **`autoApprove: true`** lets `coder` and `resolver` work without per-action approval prompts. `reviewer` stays locked to deny — it cannot modify by any means.
-- **`maxParallelSubagents: 2`** is a per-role cap: up to two coders and up to two reviewers may run concurrently when working on genuinely independent things. Drop to `1` for strict per-role serialization, raise above `2` for more aggressive fan-out.
-- **`agents.coder.mode = "all"` and `agents.reviewer.mode = "all"`** make both visible in the primary agent picker, not just as subagents the resolver dispatches. You can still call them directly when you don't need orchestration.
-- **`agents.resolver.enabled: true`** is explicit (default is also true); ships with `mode: "all"` so it appears as both a primary agent and a subagent.
-- **`models`** uses two aliases (`glm` for fast/cheap implementation, `gpt` for stronger orchestration) and pins reviewer to `gpt-4o-mini` for cheap reads. Replace these with model IDs your provider actually exposes.
-- **`context7`** is the only MCP this plugin auto-registers — no other MCP servers are required.
-- All other resolve agents (`architect`, `gpt-coder`, `debugger`, `researcher`) ship disabled. Flip `enabled: true` only if you want to use them.
+| Setting | Why |
+|---|---|
+| `enabled: ["coder", "reviewer", "resolver"]` | Activates the three default roles |
+| `autoApprove: true` | Coder and resolver work without per-action prompts; reviewer stays locked |
+| `maxParallelSubagents: 2` | Up to two coders and two reviewers may run concurrently per role |
+| `agents.coder.mode = "all"` | Coder appears in the agent picker, not just as a subagent |
+| `agents.reviewer.mode = "all"` | Reviewer appears in the agent picker too |
+| `context7: true` | Plugin auto-registers Context7 MCP — no manual MCP config needed |
+| `models` aliases | Fast/cheap model for coding (`glm`), stronger model for orchestration (`gpt`), cheapest for review (`gpt-4o-mini`) |
+| Other agents disabled | `architect`, `gpt-coder`, `debugger`, `researcher` ship off. Flip `enabled: true` when needed |
 
-### Resolver workflow (what happens when you call it)
+### What happens when you call the resolver
 
-1. Resolver reads the request, inspects relevant files.
-2. Plans the smallest correct change.
-3. Dispatches `coder` to implement (one at a time).
-4. Verifies (tests, type checks, targeted checks).
-5. If issues remain, dispatches `coder` again with a focused fix.
-6. For risky changes, optionally consults `reviewer` for a read-only audit; routes any required fixes back through `coder`.
-7. Repeats until the task is resolved or clearly blocked, then returns a concise summary.
+1. **Understand** — Resolver reads the request and inspects relevant files.
+2. **Plan** — Plans the smallest correct change.
+3. **Implement** — Dispatches `coder` to implement within the configured per-role concurrency limit.
+4. **Verify** — Runs tests, type checks, or targeted checks when practical.
+5. **Fix** — If issues remain, dispatches `coder` again with a focused fix.
+6. **Review** (optional) — For risky changes, consults `reviewer` for a read-only audit; routes fixes back through `coder`.
+7. **Iterate** — Repeats until the task is resolved or clearly blocked.
+8. **Report** — Returns a concise summary of changes, verification results, and remaining blockers.
 
 ---
 
@@ -160,7 +269,7 @@ opencode plugin opencode-resolve --global --force
 | Primary agent for new tasks | `resolver` (`mode: "all"`) |
 | Agent model | Inherits top-level OpenCode `model` |
 | Native `plan` / `build` | Preserved untouched |
-| Context7 MCP preset | Added if absent |
+| Context7 MCP preset | Added automatically when `context7: true` |
 | Optional commands | Disabled |
 | `autoApprove` | `true` (no per-action prompts on coder/resolver) |
 | Reviewer modification | Denied (cannot be auto-approved) |
@@ -183,7 +292,7 @@ Inline plugin options in `opencode.json` override file config.
 Config precedence:
 
 ```text
-built-in defaults -> first config file found -> inline plugin options
+built-in defaults → first config file found → inline plugin options
 ```
 
 Minimal config (matches defaults):
@@ -230,7 +339,7 @@ Every accepted top-level option:
 | `context7` | `boolean` | `true` | When true, registers the Context7 MCP server unless already configured. |
 | `commands` | `boolean` | `false` | When true, adds `resolve`, `resolve-code`, `resolve-review` commands. |
 | `autoApprove` | `boolean` | `true` | Flips default `"ask"` permissions to `"allow"` on enabled agents. Never touches `"deny"` or user-set keys. |
-| `maxParallelSubagents` | `positive integer` | `1` | Cap on simultaneous subagents the resolver dispatches across coder, reviewer, etc. |
+| `maxParallelSubagents` | `positive integer` | `2` | Cap on simultaneous subagents the resolver dispatches per role. |
 | `models` | `object` | `{}` | Alias map. Keys are agent names or `glm`/`gpt`. Values are model ids or other aliases. |
 | `agents` | `object` | `{}` | Per-agent overrides (see below). |
 | `config` | `string` | _none_ | Custom path to a config file (relative to the project or absolute). |
@@ -263,9 +372,7 @@ Permission keys (each takes `"ask"`, `"allow"`, or `"deny"`):
 }
 ```
 
-A fully-annotated reference config ships with the package as
-[`opencode-resolve.reference.jsonc`](./opencode-resolve.reference.jsonc) — copy
-the keys you need into your `resolve.json` (without the comments).
+A fully-annotated reference config ships with the package as [`opencode-resolve.reference.jsonc`](./opencode-resolve.reference.jsonc) — copy the keys you need into your `resolve.json` (without the comments).
 
 ---
 
@@ -291,7 +398,7 @@ Turn it off when you want the conservative ask-every-time behavior:
 }
 ```
 
-Trust note: `autoApprove: true` assumes you trust the workspace and the model you have configured. Use a sandbox or VM for untrusted code, and keep `autoApprove: false` if you want to inspect every action.
+> **Trust note:** `autoApprove: true` assumes you trust the workspace and the model you have configured. Use a sandbox or VM for untrusted code, and keep `autoApprove: false` if you want to inspect every action.
 
 ---
 
@@ -308,9 +415,9 @@ Trust note: `autoApprove: true` assumes you trust the workspace and the model yo
 Override per project or per user:
 
 ```json
-{ "maxParallelSubagents": 1 }   // strictest
-{ "maxParallelSubagents": 2 }   // default
-{ "maxParallelSubagents": 4 }   // aggressive parallelism
+{ "maxParallelSubagents": 1 }
+{ "maxParallelSubagents": 2 }
+{ "maxParallelSubagents": 4 }
 ```
 
 > **Important — soft limit, not a hard cap.** The limit is woven into the resolver's system prompt only. There is no runtime interceptor that blocks excess dispatches. Modern models (GPT-5.x, GLM-5, Claude 4.x) generally respect the directive, but if a model misbehaves, dispatches above the limit will go through. Pair this with `maxSteps` to bound total iterations if you want a stricter ceiling.
@@ -351,7 +458,16 @@ Use the default config when all resolve roles should follow your current OpenCod
 
 Pin models only when you intentionally want fixed role behavior, such as fast coding on one model and deeper review on another.
 
-Role-specific aliases:
+### Use default model for everything
+
+```json
+{
+  "enabled": ["coder", "reviewer", "resolver"],
+  "models": {}
+}
+```
+
+### Role-specific aliases
 
 ```json
 {
@@ -361,12 +477,12 @@ Role-specific aliases:
     "gpt": "openai/gpt-5.5",
     "coder": "glm",
     "resolver": "gpt",
-    "reviewer": "gpt"
+    "reviewer": "openai/gpt-4o-mini"
   }
 }
 ```
 
-Pin one role directly:
+### Pin one role directly
 
 ```json
 {
@@ -378,9 +494,9 @@ Pin one role directly:
 }
 ```
 
-Native OpenCode agents such as `plan` and `build` are configured through the top-level OpenCode `agent`, not through `opencode-resolve`.
+### Mixed setup (OpenCode config + resolve models)
 
-Mixed setup example:
+Native OpenCode agents such as `plan` and `build` are configured through the top-level OpenCode `agent`, not through `opencode-resolve`.
 
 ```json
 {
@@ -416,7 +532,7 @@ In this setup, `plan`, `resolver`, and `reviewer` use `openai/gpt-5.5`; native `
 
 | Agent | Default | Mode | Edit | Bash | WebFetch | Purpose |
 |---|:---:|---|---|---|---|---|
-| `resolver` | Yes | `all` | ask → allow | ask → allow | ask → allow | Primary orchestrator. Plans, dispatches `coder` (one at a time), verifies, iterates to completion. |
+| `resolver` | Yes | `all` | ask → allow | ask → allow | ask → allow | Primary orchestrator. Plans, dispatches coders/reviewers within the configured per-role limit, verifies, iterates to completion. |
 | `coder` | Yes | `subagent` | ask → allow | ask → allow | ask → allow | Focused implementer. Smallest correct change. |
 | `reviewer` | Yes | `subagent` | **deny** | **deny** | ask → allow | Read-only auditor. Cannot modify by any means. |
 | `architect` | No | `subagent` | deny | ask → allow | ask → allow | Design and task decomposition. |
@@ -445,7 +561,7 @@ Supported model alias keys: `glm`, `gpt`, and every supported agent name. Aliase
 The resolver's prompt enforces the following behavior:
 
 - Plan the smallest correct change before dispatching.
-- Dispatch **only one `coder` subagent at a time**. Never call coders in parallel.
+- Dispatch **only one `coder` subagent at a time** (when `maxParallelSubagents: 1`).
 - After each coder run, verify (tests, type checks, targeted checks) when practical.
 - Optionally consult `reviewer` for an independent read-only audit on risky changes; route any required fixes back through `coder`.
 - Iterate until the task is resolved or clearly blocked, then return a concise summary.
@@ -461,6 +577,56 @@ Set `commands: true` to add helper subtask commands:
 | `resolve` | Run the `resolver` agent end-to-end on the current task |
 | `resolve-code` | Run the `coder` agent for focused implementation |
 | `resolve-review` | Run the `reviewer` agent for a read-only audit |
+
+---
+
+## Context7 Integration
+
+When `context7: true` (the default), the plugin automatically registers the [Context7](https://context7.com) MCP server at startup:
+
+```json
+{
+  "type": "remote",
+  "url": "https://mcp.context7.com/mcp"
+}
+```
+
+This gives all resolve agents access to up-to-date library and framework documentation through the `resolve-library-id` and `query-docs` tools — no manual MCP configuration needed.
+
+To disable Context7 registration (e.g. you already have it configured, or you don't want it):
+
+```json
+{
+  "context7": false
+}
+```
+
+If `mcp.context7` is already present in your OpenCode config, the plugin does not overwrite it.
+
+---
+
+## Keeping Up to Date
+
+> **OpenCode caches the last version it downloaded.** To get a new release you must explicitly refresh.
+
+```sh
+# Upgrade via npm
+npm install -g opencode-resolve@latest
+
+# Refresh the OpenCode cache
+opencode plugin opencode-resolve --global --force
+
+# Restart OpenCode
+```
+
+After upgrading, `postinstall` runs additive migration on your `resolve.json` — new keys are added, existing keys are never modified.
+
+### Pinning a specific version
+
+```sh
+npm install -g opencode-resolve@0.1.3
+opencode plugin opencode-resolve --global --force
+```
 
 ---
 
@@ -541,5 +707,11 @@ The release workflow runs `npm ci`, `npm run typecheck`, `npm test`, and `npm pu
 - Do not overwrite native `plan` or `build` agents.
 - Keep the default agent set small and role-clear: `resolver` orchestrates, `coder` modifies, `reviewer` only reads.
 - The reviewer never modifies anything — fixes always go through `coder` or `resolver`.
-- The resolver dispatches at most one coder at a time.
+- The resolver honors `maxParallelSubagents` as a per-role concurrency limit for coder/reviewer dispatch.
 - Search and inspect before editing. Make the smallest correct change. Verify when practical.
+
+---
+
+## License
+
+[MIT](./LICENSE)
