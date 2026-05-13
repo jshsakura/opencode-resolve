@@ -13,7 +13,7 @@ const exampleConfigPath = join(root, "opencode-resolve.example.json")
 
 const ADDITIVE_DEFAULTS = {
   autoApprove: true,
-  maxParallelSubagents: 1,
+  maxParallelSubagents: 2,
 }
 
 if (process.env.OPENCODE_RESOLVE_SKIP_POSTINSTALL === "1") {

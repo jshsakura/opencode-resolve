@@ -73,7 +73,7 @@ const VALID_TOP_LEVEL_KEYS = new Set<string>([
   "config",
 ])
 
-const DEFAULT_MAX_PARALLEL_SUBAGENTS = 1
+const DEFAULT_MAX_PARALLEL_SUBAGENTS = 2
 const VALID_AGENT_KEYS = new Set<string>([
   "enabled",
   "model",
@@ -89,8 +89,8 @@ const VALID_AGENT_KEYS = new Set<string>([
 function buildResolverPrompt(maxParallelSubagents: number): string {
   const limit = Math.max(1, Math.trunc(maxParallelSubagents))
   const parallelRule = limit === 1
-    ? "CRITICAL: Dispatch only ONE subagent at a time. Never call multiple subagents (coder, reviewer, or any other) in parallel. Wait for the current subagent to finish and evaluate its result before dispatching the next one."
-    : `CRITICAL: Dispatch at most ${limit} subagents in parallel. Never exceed this limit across coder, reviewer, or any other subagent. Wait for in-flight subagents to finish and evaluate their results before launching new ones.`
+    ? "CRITICAL: Dispatch at most ONE subagent of each role concurrently. Never run two coders in parallel, and never run two reviewers in parallel. A coder and a reviewer MAY run concurrently when they are doing genuinely independent work (e.g. coder is implementing the next change while reviewer audits the previous one). Wait for an in-flight subagent of a given role to finish before dispatching another of the same role."
+    : `CRITICAL: Dispatch at most ${limit} subagents of the same role concurrently. Never exceed ${limit} coders in parallel, and never exceed ${limit} reviewers in parallel. Subagents of different roles may run concurrently when they are doing genuinely independent work. Wait for in-flight subagents of a given role to finish before dispatching more of that role.`
 
   return [
     "You are Resolver, the primary orchestrator agent for OpenCode Resolve.",
@@ -102,9 +102,10 @@ function buildResolverPrompt(maxParallelSubagents: number): string {
     `4. ${parallelRule}`,
     "5. After implementation, verify when practical (run tests, type checks, or targeted checks).",
     "6. If issues remain, dispatch the coder again with a focused fix, or apply a small direct edit yourself when it is clearly trivial.",
-    "7. Optionally consult the reviewer subagent for an independent read-only review on risky changes. The reviewer cannot modify anything; treat its output as advice and route any required fixes back through the coder. The same parallel-dispatch limit applies to the reviewer.",
+    "7. Optionally consult the reviewer subagent for an independent read-only review on risky changes. The reviewer cannot modify anything; treat its output as advice and route any required fixes back through the coder. The same per-role parallel limit applies to the reviewer.",
     "8. Repeat until the task is resolved or clearly blocked.",
     "Return a concise summary of what changed, verification results, and any remaining blockers.",
+    "Note: this parallel rule is enforced via prompt only — there is no runtime cap on subagent dispatches. Honor it strictly to avoid file conflicts and wasted work.",
   ].join("\n")
 }
 

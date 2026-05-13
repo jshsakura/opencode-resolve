@@ -58,11 +58,16 @@
 
   // -----------------------------------------------------------------------
   // maxParallelSubagents (positive integer)
-  // Maximum number of subagents the resolver may dispatch in parallel
-  // (across coder, reviewer, etc.). Default: 1 — strictly serial.
-  // Increase if you want resolver to fan out independent subtasks.
+  // Maximum number of subagents of the SAME ROLE the resolver may dispatch
+  // concurrently. Default: 2 — at most two coders in parallel and at most
+  // two reviewers in parallel. Subagents of different roles may always run
+  // concurrently. This is a soft prompt-level limit, not a runtime cap —
+  // pair with `maxSteps` if you need a stricter ceiling.
+  //   1 = strict per-role serial (one of each role at a time)
+  //   2 = default
+  //   N = up to N of each role
   // -----------------------------------------------------------------------
-  "maxParallelSubagents": 1,
+  "maxParallelSubagents": 2,
 
   // -----------------------------------------------------------------------
   // models (object)

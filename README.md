@@ -77,13 +77,15 @@ Manual fallback: add the plugin to `~/.config/opencode/opencode.json` yourself:
 
 Hand the block below to any reasonably capable LLM along with the instruction _"set up opencode-resolve on this machine"_ and it can finish the install end-to-end. Everything below is the entire required configuration — no other MCP servers, environment variables, or files are needed.
 
-**Step 1 — install the plugin:**
+> **Important — OpenCode caches plugins itself.** OpenCode does NOT use globally-installed npm packages. It maintains its own cache at `~/.cache/opencode/packages/`. After the very first install (or any future upgrade), refresh the cache with `opencode plugin opencode-resolve --global --force` and restart OpenCode. `npm install -g` alone is not enough.
+
+**Step 1 — install via OpenCode (also primes the cache):**
 
 ```sh
-npm install -g opencode-resolve
+opencode plugin opencode-resolve --global --force
 ```
 
-**Step 2 — `~/.config/opencode/opencode.json`** (the only required keys; merge into an existing file rather than replacing if one exists):
+**Step 2 — `~/.config/opencode/opencode.json`** (merge into the existing file; do not replace it):
 
 ```json
 {
@@ -93,7 +95,7 @@ npm install -g opencode-resolve
 }
 ```
 
-**Step 3 — `~/.config/opencode/resolve.json`** (created automatically by `postinstall`; the file below is the canonical default):
+**Step 3 — `~/.config/opencode/resolve.json`** (auto-created by `postinstall`; the block below is the recommended canonical setup — copy it verbatim then edit `models` to match your provider):
 
 ```json
 {
@@ -102,15 +104,48 @@ npm install -g opencode-resolve
   "context7": true,
   "commands": false,
   "autoApprove": true,
-  "maxParallelSubagents": 1
+  "maxParallelSubagents": 2,
+  "models": {
+    "glm": "zai-coding-plan/glm-5",
+    "gpt": "openai/gpt-5.5",
+    "coder": "glm",
+    "reviewer": "openai/gpt-4o-mini",
+    "resolver": "gpt"
+  },
+  "agents": {
+    "coder":    { "mode": "all" },
+    "reviewer": { "mode": "all" },
+    "resolver": { "enabled": true },
+    "architect":  { "enabled": false },
+    "gpt-coder":  { "enabled": false },
+    "debugger":   { "enabled": false },
+    "researcher": { "enabled": false }
+  }
 }
 ```
 
 **Step 4 — restart OpenCode.**
 
-That is the entire setup. `context7` is the only MCP server the plugin needs (auto-registered when the key above is `true`) — no other MCP entries are required for `opencode-resolve` itself. Models are inherited from your top-level OpenCode `model` unless you pin per-role models under `models` (see [Model Setup](#model-setup)).
+### Why this template
 
-If you want stricter behavior, flip `autoApprove` to `false` (every action prompts for approval) and/or raise `maxParallelSubagents` to let the resolver fan out independent subtasks.
+- **`enabled`** activates the three default roles: `coder` implements, `reviewer` audits read-only, `resolver` orchestrates.
+- **`autoApprove: true`** lets `coder` and `resolver` work without per-action approval prompts. `reviewer` stays locked to deny — it cannot modify by any means.
+- **`maxParallelSubagents: 2`** is a per-role cap: up to two coders and up to two reviewers may run concurrently when working on genuinely independent things. Drop to `1` for strict per-role serialization, raise above `2` for more aggressive fan-out.
+- **`agents.coder.mode = "all"` and `agents.reviewer.mode = "all"`** make both visible in the primary agent picker, not just as subagents the resolver dispatches. You can still call them directly when you don't need orchestration.
+- **`agents.resolver.enabled: true`** is explicit (default is also true); ships with `mode: "all"` so it appears as both a primary agent and a subagent.
+- **`models`** uses two aliases (`glm` for fast/cheap implementation, `gpt` for stronger orchestration) and pins reviewer to `gpt-4o-mini` for cheap reads. Replace these with model IDs your provider actually exposes.
+- **`context7`** is the only MCP this plugin auto-registers — no other MCP servers are required.
+- All other resolve agents (`architect`, `gpt-coder`, `debugger`, `researcher`) ship disabled. Flip `enabled: true` only if you want to use them.
+
+### Resolver workflow (what happens when you call it)
+
+1. Resolver reads the request, inspects relevant files.
+2. Plans the smallest correct change.
+3. Dispatches `coder` to implement (one at a time).
+4. Verifies (tests, type checks, targeted checks).
+5. If issues remain, dispatches `coder` again with a focused fix.
+6. For risky changes, optionally consults `reviewer` for a read-only audit; routes any required fixes back through `coder`.
+7. Repeats until the task is resolved or clearly blocked, then returns a concise summary.
 
 ---
 
@@ -259,17 +294,25 @@ Trust note: `autoApprove: true` assumes you trust the workspace and the model yo
 
 ## Parallel Subagent Limit
 
-`maxParallelSubagents` (default `1`) caps how many subagents the **resolver** may dispatch in parallel — across `coder`, `reviewer`, or any other subagent. The default of `1` enforces strictly serial dispatch: resolver waits for each subagent to finish before launching the next.
+`maxParallelSubagents` (default `2`) caps how many subagents the **resolver** may dispatch concurrently **per role**. The default of `2` lets up to two coders run in parallel AND up to two reviewers run in parallel — total up to four subagents in flight when both roles are active. Subagents of different roles may always run concurrently (e.g. coder implementing while reviewer audits the previous step).
 
-Raise it when you want resolver to fan out independent subtasks:
+| Value | Behavior |
+|---|---|
+| `1` | Strictly one of each role at a time. Coder may run while reviewer runs, but never two coders or two reviewers in parallel. |
+| `2` (default) | Up to two of each role concurrently. Total in flight up to (per-role limit × number of active roles). |
+| `N > 2` | Up to N of each role concurrently. Useful when fanning out genuinely independent work. |
+
+Override per project or per user:
 
 ```json
-{
-  "maxParallelSubagents": 3
-}
+{ "maxParallelSubagents": 1 }   // strictest
+{ "maxParallelSubagents": 2 }   // default
+{ "maxParallelSubagents": 4 }   // aggressive parallelism
 ```
 
-The limit is woven into the resolver's prompt at config-load time, so changing it does not require any code changes — restart OpenCode to pick up the new limit. If you provide a custom `agents.resolver.prompt`, the templated rule is skipped and your prompt wins.
+> **Important — soft limit, not a hard cap.** The limit is woven into the resolver's system prompt only. There is no runtime interceptor that blocks excess dispatches. Modern models (GPT-5.x, GLM-5, Claude 4.x) generally respect the directive, but if a model misbehaves, dispatches above the limit will go through. Pair this with `maxSteps` to bound total iterations if you want a stricter ceiling.
+
+The limit is templated into the prompt at config-load time, so restart OpenCode to pick up the new value. If you provide a custom `agents.resolver.prompt`, the templated rule is skipped and your prompt wins entirely.
 
 ---
 

@@ -58,20 +58,28 @@ test("autoApprove: false preserves the conservative ask defaults", async () => {
   assert.equal(config.agent.resolver.permission.edit, "ask")
 })
 
-test("resolver prompt enforces single-subagent dispatch by default", async () => {
+test("resolver prompt enforces per-role dispatch limit by default (2)", async () => {
   const { config } = await runPlugin({})
 
-  assert.match(config.agent.resolver.prompt, /Dispatch only ONE subagent at a time/)
-  assert.match(config.agent.resolver.prompt, /coder, reviewer, or any other/)
+  assert.match(config.agent.resolver.prompt, /at most 2 subagents of the same role/)
+  assert.match(config.agent.resolver.prompt, /Never exceed 2 coders in parallel, and never exceed 2 reviewers/)
 })
 
-test("maxParallelSubagents > 1 relaxes the resolver dispatch rule", async () => {
+test("maxParallelSubagents = 1 produces the strict serial-per-role wording", async () => {
+  const { config } = await runPlugin({
+    plugin: [["opencode-resolve", { maxParallelSubagents: 1 }]],
+  })
+
+  assert.match(config.agent.resolver.prompt, /at most ONE subagent of each role concurrently/)
+  assert.match(config.agent.resolver.prompt, /Never run two coders in parallel/)
+})
+
+test("maxParallelSubagents > 2 relaxes the resolver per-role rule", async () => {
   const { config } = await runPlugin({
     plugin: [["opencode-resolve", { maxParallelSubagents: 3 }]],
   })
 
-  assert.match(config.agent.resolver.prompt, /at most 3 subagents in parallel/)
-  assert.doesNotMatch(config.agent.resolver.prompt, /Dispatch only ONE subagent at a time/)
+  assert.match(config.agent.resolver.prompt, /at most 3 subagents of the same role/)
 })
 
 test("user-supplied resolver prompt is preserved over the templated default", async () => {
