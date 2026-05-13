@@ -1,9 +1,21 @@
 {
-  "enabled": ["coder", "reviewer"],
+  "enabled": ["coder", "reviewer", "resolver"],
   "preserveNative": true,
   "context7": true,
   "commands": false,
+  "autoApprove": true,
+  "maxParallelSubagents": 1,
+  "models": {},
   "agents": {
+    "coder": {
+      "enabled": true
+    },
+    "reviewer": {
+      "enabled": true
+    },
+    "resolver": {
+      "enabled": true
+    },
     "architect": {
       "enabled": false
     },

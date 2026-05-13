@@ -11,6 +11,11 @@ const opencodeConfigPath = join(configDir, "opencode.json")
 const resolveConfigPath = join(configDir, "resolve.json")
 const exampleConfigPath = join(root, "opencode-resolve.example.json")
 
+const ADDITIVE_DEFAULTS = {
+  autoApprove: true,
+  maxParallelSubagents: 1,
+}
+
 if (process.env.OPENCODE_RESOLVE_SKIP_POSTINSTALL === "1") {
   process.exit(0)
 }
@@ -39,6 +44,54 @@ async function registerPlugin() {
     await assertReadable(exampleConfigPath)
     await copyFile(exampleConfigPath, resolveConfigPath)
     console.log(`[${packageName}] created ${resolveConfigPath}`)
+    return
+  }
+
+  await migrateResolveConfig()
+}
+
+async function migrateResolveConfig() {
+  let raw
+  try {
+    raw = await readFile(resolveConfigPath, "utf8")
+  } catch (error) {
+    console.warn(`[${packageName}] could not read ${resolveConfigPath} for migration: ${formatError(error)}`)
+    return
+  }
+
+  let parsed
+  try {
+    parsed = JSON.parse(raw)
+  } catch (error) {
+    console.warn(`[${packageName}] ${resolveConfigPath} is not valid JSON; skipping migration: ${formatError(error)}`)
+    return
+  }
+
+  if (!isObject(parsed)) {
+    console.warn(`[${packageName}] ${resolveConfigPath} must contain a JSON object; skipping migration`)
+    return
+  }
+
+  const updated = { ...parsed }
+  const added = []
+  for (const [key, value] of Object.entries(ADDITIVE_DEFAULTS)) {
+    if (updated[key] === undefined) {
+      updated[key] = value
+      added.push(`${key}=${JSON.stringify(value)}`)
+    }
+  }
+
+  if (added.length > 0) {
+    await writeFile(resolveConfigPath, `${JSON.stringify(updated, null, 2)}\n`)
+    console.log(`[${packageName}] migrated ${resolveConfigPath}: added ${added.join(", ")}`)
+  } else {
+    console.log(`[${packageName}] ${resolveConfigPath} already up to date`)
+  }
+
+  if (Array.isArray(updated.enabled) && !updated.enabled.includes("resolver")) {
+    console.log(
+      `[${packageName}] tip: add "resolver" to "enabled" in ${resolveConfigPath} to use the new orchestrator agent.`,
+    )
   }
 }
 

@@ -10,7 +10,7 @@ test("exports plugin functions", () => {
   assert.equal(typeof OpencodeResolve, "function")
 })
 
-test("injects only default coder and reviewer agents using the OpenCode default model", async () => {
+test("injects default coder, reviewer, and resolver agents using the OpenCode default model", async () => {
   const { config } = await runPlugin({
     model: "provider/default-model",
     agent: {
@@ -23,11 +23,110 @@ test("injects only default coder and reviewer agents using the OpenCode default 
   assert.equal(config.agent.build.model, "existing/build")
   assert.equal(config.agent.coder.model, "provider/default-model")
   assert.equal(config.agent.reviewer.model, "provider/default-model")
+  assert.equal(config.agent.resolver.model, "provider/default-model")
   assert.equal(config.agent.coder.mode, "subagent")
   assert.equal(config.agent.reviewer.mode, "subagent")
+  assert.equal(config.agent.resolver.mode, "all")
   assert.equal(config.agent.reviewer.permission.edit, "deny")
+  assert.equal(config.agent.reviewer.permission.bash, "deny")
   assert.equal(config.agent.architect, undefined)
   assert.equal(config.agent["gpt-coder"], undefined)
+})
+
+test("autoApprove defaults to true and flips ask permissions to allow without touching deny", async () => {
+  const { config } = await runPlugin({})
+
+  assert.equal(config.agent.coder.permission.edit, "allow")
+  assert.equal(config.agent.coder.permission.bash, "allow")
+  assert.equal(config.agent.coder.permission.webfetch, "allow")
+  assert.equal(config.agent.resolver.permission.edit, "allow")
+  assert.equal(config.agent.resolver.permission.bash, "allow")
+  assert.equal(config.agent.resolver.permission.webfetch, "allow")
+  assert.equal(config.agent.reviewer.permission.edit, "deny")
+  assert.equal(config.agent.reviewer.permission.bash, "deny")
+  assert.equal(config.agent.reviewer.permission.webfetch, "allow")
+})
+
+test("autoApprove: false preserves the conservative ask defaults", async () => {
+  const { config } = await runPlugin({
+    plugin: [["opencode-resolve", { autoApprove: false }]],
+  })
+
+  assert.equal(config.agent.coder.permission.edit, "ask")
+  assert.equal(config.agent.coder.permission.bash, "ask")
+  assert.equal(config.agent.coder.permission.webfetch, "ask")
+  assert.equal(config.agent.resolver.permission.edit, "ask")
+})
+
+test("resolver prompt enforces single-subagent dispatch by default", async () => {
+  const { config } = await runPlugin({})
+
+  assert.match(config.agent.resolver.prompt, /Dispatch only ONE subagent at a time/)
+  assert.match(config.agent.resolver.prompt, /coder, reviewer, or any other/)
+})
+
+test("maxParallelSubagents > 1 relaxes the resolver dispatch rule", async () => {
+  const { config } = await runPlugin({
+    plugin: [["opencode-resolve", { maxParallelSubagents: 3 }]],
+  })
+
+  assert.match(config.agent.resolver.prompt, /at most 3 subagents in parallel/)
+  assert.doesNotMatch(config.agent.resolver.prompt, /Dispatch only ONE subagent at a time/)
+})
+
+test("user-supplied resolver prompt is preserved over the templated default", async () => {
+  const project = await createProject({
+    "opencode-resolve.json": {
+      maxParallelSubagents: 5,
+      agents: {
+        resolver: {
+          prompt: "Custom orchestration prompt.",
+        },
+      },
+    },
+  })
+
+  try {
+    const { config } = await runPlugin({}, project)
+    assert.equal(config.agent.resolver.prompt, "Custom orchestration prompt.")
+  } finally {
+    await project.cleanup()
+  }
+})
+
+test("rejects non-positive maxParallelSubagents", async () => {
+  const project = await createProject({
+    "opencode-resolve.json": {
+      maxParallelSubagents: 0,
+    },
+  })
+
+  try {
+    await assert.rejects(() => runPlugin({}, project), /maxParallelSubagents must be a positive integer/)
+  } finally {
+    await project.cleanup()
+  }
+})
+
+test("user-set permission keys win over autoApprove", async () => {
+  const project = await createProject({
+    "opencode-resolve.json": {
+      agents: {
+        coder: {
+          permission: {
+            edit: "ask",
+          },
+        },
+      },
+    },
+  })
+
+  try {
+    const { config } = await runPlugin({}, project)
+    assert.equal(config.agent.coder.permission.edit, "ask")
+  } finally {
+    await project.cleanup()
+  }
 })
 
 test("omits agent models when no explicit or OpenCode default model exists", async () => {
@@ -182,6 +281,8 @@ test("can inject optional resolve commands", async () => {
   })
 
   assert.equal(config.command.existing.template, "keep me")
+  assert.equal(config.command["resolve"].agent, "resolver")
+  assert.equal(config.command["resolve"].subtask, true)
   assert.equal(config.command["resolve-code"].agent, "coder")
   assert.equal(config.command["resolve-code"].subtask, true)
   assert.equal(config.command["resolve-review"].agent, "reviewer")
@@ -282,12 +383,20 @@ async function runPlugin(initialConfig, project, options) {
 
 async function runPluginWithOptions(initialConfig, project, options) {
   const ownedProject = project ?? (await createProject({}))
+  const previousHome = process.env.HOME
+  const previousUserprofile = process.env.USERPROFILE
+  process.env.HOME = ownedProject.path
+  process.env.USERPROFILE = ownedProject.path
   try {
     const config = structuredClone(initialConfig)
     const hooks = await plugin({ directory: ownedProject.path }, options)
     await hooks.config(config)
     return { config, project: ownedProject }
   } finally {
+    if (previousHome === undefined) delete process.env.HOME
+    else process.env.HOME = previousHome
+    if (previousUserprofile === undefined) delete process.env.USERPROFILE
+    else process.env.USERPROFILE = previousUserprofile
     if (!project) await ownedProject.cleanup()
   }
 }

@@ -2,8 +2,8 @@ import { access, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, isAbsolute, join, resolve } from "node:path";
 const DEFAULT_MODELS = {};
-const DEFAULT_ENABLED = ["coder", "reviewer"];
-const VALID_AGENT_NAMES = ["coder", "reviewer", "architect", "gpt-coder", "debugger", "researcher"];
+const DEFAULT_ENABLED = ["coder", "reviewer", "resolver"];
+const VALID_AGENT_NAMES = ["coder", "reviewer", "resolver", "architect", "gpt-coder", "debugger", "researcher"];
 const VALID_AGENT_NAME_SET = new Set(VALID_AGENT_NAMES);
 const VALID_MODEL_ALIASES = [...VALID_AGENT_NAMES, "glm", "gpt"];
 const VALID_MODEL_ALIAS_SET = new Set(VALID_MODEL_ALIASES);
@@ -16,8 +16,11 @@ const VALID_TOP_LEVEL_KEYS = new Set([
     "preserveNative",
     "context7",
     "commands",
+    "autoApprove",
+    "maxParallelSubagents",
     "config",
 ]);
+const DEFAULT_MAX_PARALLEL_SUBAGENTS = 1;
 const VALID_AGENT_KEYS = new Set([
     "enabled",
     "model",
@@ -29,6 +32,26 @@ const VALID_AGENT_KEYS = new Set([
     "tools",
     "permission",
 ]);
+function buildResolverPrompt(maxParallelSubagents) {
+    const limit = Math.max(1, Math.trunc(maxParallelSubagents));
+    const parallelRule = limit === 1
+        ? "CRITICAL: Dispatch only ONE subagent at a time. Never call multiple subagents (coder, reviewer, or any other) in parallel. Wait for the current subagent to finish and evaluate its result before dispatching the next one."
+        : `CRITICAL: Dispatch at most ${limit} subagents in parallel. Never exceed this limit across coder, reviewer, or any other subagent. Wait for in-flight subagents to finish and evaluate their results before launching new ones.`;
+    return [
+        "You are Resolver, the primary orchestrator agent for OpenCode Resolve.",
+        "Your job is to drive the user's task to a verified resolution end-to-end without unnecessary stops.",
+        "Workflow:",
+        "1. Understand the requirement. Inspect the relevant files briefly before planning.",
+        "2. Plan the smallest correct change.",
+        "3. Dispatch the coder subagent to implement the change. Pass a focused instruction with the exact files and behavior.",
+        `4. ${parallelRule}`,
+        "5. After implementation, verify when practical (run tests, type checks, or targeted checks).",
+        "6. If issues remain, dispatch the coder again with a focused fix, or apply a small direct edit yourself when it is clearly trivial.",
+        "7. Optionally consult the reviewer subagent for an independent read-only review on risky changes. The reviewer cannot modify anything; treat its output as advice and route any required fixes back through the coder. The same parallel-dispatch limit applies to the reviewer.",
+        "8. Repeat until the task is resolved or clearly blocked.",
+        "Return a concise summary of what changed, verification results, and any remaining blockers.",
+    ].join("\n");
+}
 const DEFAULT_AGENT_CONFIG = {
     coder: {
         mode: "subagent",
@@ -52,16 +75,29 @@ const DEFAULT_AGENT_CONFIG = {
         mode: "subagent",
         color: "#8A7CFF",
         maxSteps: 8,
-        description: "Use for Oracle-style review of requirements fit, correctness, security, tests, and maintainability risks.",
+        description: "Read-only Oracle-style reviewer. Inspects code for requirements fit, correctness, security, tests, and maintainability risks. Never modifies anything.",
         prompt: [
-            "You are Reviewer, an Oracle-style review subagent for OpenCode Resolve.",
-            "Review the work against the user's actual requirements and the repository's existing patterns.",
+            "You are Reviewer, a strictly read-only review subagent for OpenCode Resolve.",
+            "You MUST NOT modify the project by any means: no file edits, no writes, no shell commands that change state, no git commits, no package installs.",
+            "Use read-only tools (read, grep, glob, list, web fetch for documentation) to inspect the work against the user's requirements and the repository's existing patterns.",
             "Prioritize concrete bugs, behavioral regressions, security risks, missing tests, and maintainability issues.",
-            "Do not rewrite code unless explicitly asked; return findings ordered by severity with file and line references when available.",
-            "If there are no findings, say so and mention residual risks or verification gaps.",
+            "Return findings ordered by severity with file and line references when available. If there are no findings, say so and mention residual risks or verification gaps.",
+            "If a fix is needed, describe it precisely and recommend dispatching the coder or resolver agent. Never apply fixes yourself.",
         ].join("\n"),
         permission: {
             edit: "deny",
+            bash: "deny",
+            webfetch: "ask",
+        },
+    },
+    resolver: {
+        mode: "all",
+        color: "#FF7AC6",
+        maxSteps: 30,
+        description: "Primary orchestrator. Drives a task to completion by planning, dispatching subagents (one at a time by default), and verifying results. Iterates until the task is resolved or clearly blocked.",
+        prompt: buildResolverPrompt(DEFAULT_MAX_PARALLEL_SUBAGENTS),
+        permission: {
+            edit: "ask",
             bash: "ask",
             webfetch: "ask",
         },
@@ -158,6 +194,8 @@ function applyResolveConfig(config, resolveConfig) {
     const enabled = new Set(resolveConfig.enabled ?? DEFAULT_ENABLED);
     const models = { ...DEFAULT_MODELS, ...resolveConfig.models };
     const defaultModel = typeof config.model === "string" ? config.model : undefined;
+    const autoApprove = resolveConfig.autoApprove !== false;
+    const maxParallelSubagents = resolveConfig.maxParallelSubagents ?? DEFAULT_MAX_PARALLEL_SUBAGENTS;
     config.agent ??= {};
     for (const name of Object.keys(DEFAULT_AGENT_CONFIG)) {
         const override = resolveConfig.agents?.[name];
@@ -165,12 +203,18 @@ function applyResolveConfig(config, resolveConfig) {
         if (!isEnabled)
             continue;
         const base = DEFAULT_AGENT_CONFIG[name];
-        const { enabled: _enabled, model: requestedModel, ...agentOverride } = override ?? {};
+        const { enabled: _enabled, model: requestedModel, permission: userPermission, ...agentOverride } = override ?? {};
         const model = resolveModel(requestedModel ?? models[name] ?? defaultModel, models);
+        const permission = buildPermission(base.permission, userPermission, autoApprove);
         const agentConfig = {
             ...base,
             ...agentOverride,
         };
+        if (name === "resolver" && agentOverride.prompt === undefined) {
+            agentConfig.prompt = buildResolverPrompt(maxParallelSubagents);
+        }
+        if (permission)
+            agentConfig.permission = permission;
         if (model)
             agentConfig.model = model;
         config.agent[name] = agentConfig;
@@ -184,9 +228,15 @@ function applyResolveConfig(config, resolveConfig) {
     }
     if (resolveConfig.commands) {
         config.command ??= {};
+        config.command["resolve"] ??= {
+            template: "Drive this task to a verified resolution end-to-end. Plan, dispatch one coder at a time, verify, and iterate. $ARGUMENTS",
+            description: "Run the OpenCode Resolve resolver agent end-to-end",
+            agent: "resolver",
+            subtask: true,
+        };
         config.command["resolve-review"] ??= {
-            template: "Review the current implementation against the user's requirements. Focus on correctness, tests, security, and maintainability.",
-            description: "Run the OpenCode Resolve reviewer agent",
+            template: "Review the current implementation against the user's requirements. Focus on correctness, tests, security, and maintainability. Do not modify anything.",
+            description: "Run the OpenCode Resolve reviewer agent (read-only)",
             agent: "reviewer",
             subtask: true,
         };
@@ -206,6 +256,8 @@ function defaultResolveConfig() {
         preserveNative: true,
         context7: true,
         commands: false,
+        autoApprove: true,
+        maxParallelSubagents: DEFAULT_MAX_PARALLEL_SUBAGENTS,
     };
 }
 function mergeResolveConfig(...configs) {
@@ -217,6 +269,8 @@ function mergeResolveConfig(...configs) {
         result.preserveNative = config.preserveNative ?? result.preserveNative;
         result.context7 = config.context7 ?? result.context7;
         result.commands = config.commands ?? result.commands;
+        result.autoApprove = config.autoApprove ?? result.autoApprove;
+        result.maxParallelSubagents = config.maxParallelSubagents ?? result.maxParallelSubagents;
         result.models = { ...result.models, ...config.models };
         result.agents = mergeAgents(result.agents, config.agents);
     }
@@ -233,6 +287,27 @@ function resolveModel(model, models) {
     if (!model)
         return undefined;
     return models[model] ?? model;
+}
+function buildPermission(basePermission, userPermission, autoApprove) {
+    const merged = {
+        ...(basePermission ?? {}),
+        ...(userPermission ?? {}),
+    };
+    if (Object.keys(merged).length === 0)
+        return undefined;
+    if (!autoApprove)
+        return merged;
+    const userKeys = new Set(Object.keys(userPermission ?? {}));
+    const result = { ...merged };
+    for (const key of Object.keys(result)) {
+        if (userKeys.has(key))
+            continue;
+        const value = result[key];
+        if (value === "ask") {
+            result[key] = "allow";
+        }
+    }
+    return result;
 }
 function getPluginOptions(config) {
     for (const entry of config.plugin ?? []) {
@@ -304,6 +379,15 @@ function normalizeResolveConfig(value, source) {
         result.context7 = expectBoolean(config.context7, `${source}.context7`);
     if (config.commands !== undefined)
         result.commands = expectBoolean(config.commands, `${source}.commands`);
+    if (config.autoApprove !== undefined)
+        result.autoApprove = expectBoolean(config.autoApprove, `${source}.autoApprove`);
+    if (config.maxParallelSubagents !== undefined) {
+        const limit = expectNumber(config.maxParallelSubagents, `${source}.maxParallelSubagents`);
+        if (!Number.isInteger(limit) || limit < 1) {
+            throw new Error(`${source}.maxParallelSubagents must be a positive integer`);
+        }
+        result.maxParallelSubagents = limit;
+    }
     if (config.config !== undefined)
         result.config = expectString(config.config, `${source}.config`);
     return result;

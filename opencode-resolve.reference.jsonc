@@ -1,0 +1,164 @@
+// opencode-resolve.reference.jsonc
+//
+// This file documents EVERY option opencode-resolve accepts. It is NOT loaded
+// by the plugin (the plugin only reads .json). Copy what you need into
+// `~/.config/opencode/resolve.json`, `.opencode/resolve.json`, or
+// `opencode-resolve.json` (without the comments).
+//
+// Config file lookup order (first one found wins):
+//   1. <project>/.opencode/resolve.json
+//   2. <project>/opencode-resolve.json
+//   3. ~/.config/opencode/resolve.json
+//   4. ~/.config/opencode/opencode-resolve.json
+//
+// Inline plugin options inside opencode.json override the file config.
+//
+// Validation is strict: unknown keys, misspellings, invalid modes, invalid
+// permission values, and wrong types throw an error at load time.
+
+{
+  // -----------------------------------------------------------------------
+  // enabled (string[])
+  // Which resolve agents to inject. Default: ["coder", "reviewer", "resolver"].
+  // Native OpenCode agents (plan, build) are always preserved and never
+  // touched by this list. Per-agent `agents.<name>.enabled` overrides this.
+  // -----------------------------------------------------------------------
+  "enabled": ["coder", "reviewer", "resolver"],
+
+  // -----------------------------------------------------------------------
+  // preserveNative (boolean)
+  // Always true in practice — plan/build are never rewritten. Accepted for
+  // readability. Default: true.
+  // -----------------------------------------------------------------------
+  "preserveNative": true,
+
+  // -----------------------------------------------------------------------
+  // context7 (boolean)
+  // When true, registers the Context7 MCP server unless `mcp.context7` is
+  // already configured. Default: true.
+  // -----------------------------------------------------------------------
+  "context7": true,
+
+  // -----------------------------------------------------------------------
+  // commands (boolean)
+  // When true, adds three optional commands: `resolve`, `resolve-code`,
+  // `resolve-review`. Default: false.
+  // -----------------------------------------------------------------------
+  "commands": false,
+
+  // -----------------------------------------------------------------------
+  // autoApprove (boolean)
+  // When true, every default `"ask"` permission on enabled agents is flipped
+  // to `"allow"`. Never touches `"deny"`. Never overrides a permission key
+  // you set explicitly under `agents.<name>.permission`. Default: true.
+  //
+  // Set to false for the conservative ask-every-time behavior.
+  // -----------------------------------------------------------------------
+  "autoApprove": true,
+
+  // -----------------------------------------------------------------------
+  // maxParallelSubagents (positive integer)
+  // Maximum number of subagents the resolver may dispatch in parallel
+  // (across coder, reviewer, etc.). Default: 1 — strictly serial.
+  // Increase if you want resolver to fan out independent subtasks.
+  // -----------------------------------------------------------------------
+  "maxParallelSubagents": 1,
+
+  // -----------------------------------------------------------------------
+  // models (object)
+  // Alias map. Keys are either an agent name (coder, reviewer, resolver,
+  // architect, gpt-coder, debugger, researcher) OR one of the well-known
+  // aliases (`glm`, `gpt`). Values are model identifiers OR another alias.
+  //
+  // Resolution order for a given agent:
+  //   1. agents.<name>.model
+  //   2. models.<name> (resolved through the alias map)
+  //   3. top-level OpenCode `model`
+  //   4. OpenCode's own fallback
+  // -----------------------------------------------------------------------
+  "models": {
+    "glm": "zai-coding-plan/glm-5.1",
+    "gpt": "openai/gpt-5.5",
+    "coder": "glm",
+    "resolver": "gpt",
+    "reviewer": "gpt"
+  },
+
+  // -----------------------------------------------------------------------
+  // agents (object)
+  // Per-agent overrides. Each key MUST be a valid agent name. Each entry
+  // accepts: enabled, model, mode, description, prompt, color, maxSteps,
+  // tools, permission. Unknown keys throw.
+  //
+  //   mode: "subagent" | "primary" | "all"
+  //   permission.edit | bash | webfetch | doom_loop | external_directory:
+  //     "ask" | "allow" | "deny"
+  //   permission.bash may also be a per-command map:
+  //     { "npm test": "allow", "rm -rf": "deny" }
+  // -----------------------------------------------------------------------
+  "agents": {
+    "coder": {
+      "enabled": true,
+      "model": "glm",
+      "mode": "subagent",
+      "maxSteps": 20,
+      "permission": {
+        "edit": "allow",
+        "bash": "allow",
+        "webfetch": "allow"
+      }
+    },
+
+    "reviewer": {
+      "enabled": true,
+      "model": "gpt",
+      "mode": "subagent",
+      "maxSteps": 8,
+      // Reviewer is read-only by design. edit and bash are denied even when
+      // autoApprove is true.
+      "permission": {
+        "edit": "deny",
+        "bash": "deny",
+        "webfetch": "allow"
+      }
+    },
+
+    "resolver": {
+      "enabled": true,
+      "model": "gpt",
+      "mode": "all",
+      "maxSteps": 30,
+      "permission": {
+        "edit": "allow",
+        "bash": "allow",
+        "webfetch": "allow"
+      }
+    },
+
+    // Optional agents — disabled by default. Flip enabled:true to use them.
+    "architect": {
+      "enabled": false,
+      "model": "gpt",
+      "mode": "subagent",
+      "maxSteps": 10
+    },
+    "gpt-coder": {
+      "enabled": false,
+      "model": "gpt",
+      "mode": "subagent",
+      "maxSteps": 20
+    },
+    "debugger": {
+      "enabled": false,
+      "model": "glm",
+      "mode": "subagent",
+      "maxSteps": 14
+    },
+    "researcher": {
+      "enabled": false,
+      "model": "glm",
+      "mode": "subagent",
+      "maxSteps": 8
+    }
+  }
+}

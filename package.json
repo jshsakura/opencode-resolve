@@ -23,6 +23,7 @@
     "dist",
     "scripts",
     "opencode-resolve.example.json",
+    "opencode-resolve.reference.jsonc",
     "README.md",
     "LICENSE"
   ],
