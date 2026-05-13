@@ -95,32 +95,35 @@ opencode plugin opencode-resolve --global --force
 }
 ```
 
-**Step 3 — `~/.config/opencode/resolve.json`** (auto-created by `postinstall`; the block below is the recommended canonical setup — copy it verbatim then edit `models` to match your provider):
+**Step 3 — `~/.config/opencode/resolve.json`** (auto-created by `postinstall`; the block below is the recommended canonical setup — copy it verbatim then swap the model IDs under `models` to match models your provider actually exposes):
 
 ```json
 {
   "enabled": ["coder", "reviewer", "resolver"],
-  "preserveNative": true,
-  "context7": true,
-  "commands": false,
-  "autoApprove": true,
-  "maxParallelSubagents": 2,
   "models": {
-    "glm": "zai-coding-plan/glm-5",
+    "glm": "zai-coding-plan/glm-5.1",
     "gpt": "openai/gpt-5.5",
     "coder": "glm",
     "reviewer": "openai/gpt-4o-mini",
-    "resolver": "gpt"
+    "resolver": "gpt",
+    "architect": "gpt",
+    "gpt-coder": "gpt",
+    "debugger": "glm",
+    "researcher": "glm"
   },
+  "preserveNative": true,
+  "context7": true,
+  "commands": false,
   "agents": {
     "coder":    { "mode": "all" },
     "reviewer": { "mode": "all" },
-    "resolver": { "enabled": true },
     "architect":  { "enabled": false },
     "gpt-coder":  { "enabled": false },
     "debugger":   { "enabled": false },
     "researcher": { "enabled": false }
-  }
+  },
+  "autoApprove": true,
+  "maxParallelSubagents": 2
 }
 ```
 
