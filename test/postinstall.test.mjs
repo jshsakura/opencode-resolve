@@ -236,6 +236,51 @@ test("postinstall detects model from agent config when top-level model absent", 
   }
 })
 
+test("non-interactive postinstall prints companion-plugin suggestions when companions are missing", async () => {
+  const configHome = await mkdtemp(join(tmpdir(), "opencode-resolve-postinstall-"))
+
+  try {
+    const { stdout } = runPostinstall(configHome)
+    assert.match(stdout, /recommended companion plugins not detected/)
+    assert.match(stdout, /@tarquinen\/opencode-dcp/)
+    assert.match(stdout, /@slkiser\/opencode-quota/)
+    assert.match(stdout, /opencode plugin @tarquinen\/opencode-dcp@latest --global --force/)
+  } finally {
+    await rm(configHome, { recursive: true, force: true })
+  }
+})
+
+test("non-interactive postinstall stays silent about companions already present", async () => {
+  const configHome = await mkdtemp(join(tmpdir(), "opencode-resolve-postinstall-"))
+
+  try {
+    await writeJson(join(configHome, "opencode.json"), {
+      plugin: [
+        "opencode-resolve",
+        "@tarquinen/opencode-dcp@latest",
+        "@slkiser/opencode-quota@latest",
+      ],
+    })
+
+    const { stdout } = runPostinstall(configHome)
+    assert.match(stdout, /recommended companion plugins already present/)
+    assert.doesNotMatch(stdout, /recommended companion plugins not detected/)
+  } finally {
+    await rm(configHome, { recursive: true, force: true })
+  }
+})
+
+test("OPENCODE_RESOLVE_SKIP_COMPANIONS=1 silences the companion suggestion", async () => {
+  const configHome = await mkdtemp(join(tmpdir(), "opencode-resolve-postinstall-"))
+
+  try {
+    const { stdout } = runPostinstall(configHome, { OPENCODE_RESOLVE_SKIP_COMPANIONS: "1" })
+    assert.doesNotMatch(stdout, /recommended companion plugins/)
+  } finally {
+    await rm(configHome, { recursive: true, force: true })
+  }
+})
+
 function runPostinstall(configHome, env = {}) {
   const result = spawnSync(process.execPath, [script.pathname], {
     encoding: "utf8",
@@ -247,6 +292,7 @@ function runPostinstall(configHome, env = {}) {
   })
 
   assert.equal(result.status, 0, result.stderr || result.stdout)
+  return result
 }
 
 async function readJson(path) {

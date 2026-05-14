@@ -1,7 +1,9 @@
+import { spawn } from "node:child_process"
 import { constants } from "node:fs"
 import { access, mkdir, readFile, writeFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import { dirname, join, resolve } from "node:path"
+import { createInterface } from "node:readline/promises"
 import { fileURLToPath } from "node:url"
 
 const packageName = "opencode-resolve"
@@ -15,6 +17,17 @@ const ADDITIVE_DEFAULTS = {
   autoApprove: true,
 }
 
+const COMPANION_PLUGINS = [
+  {
+    pkg: "@tarquinen/opencode-dcp",
+    desc: "Dynamic Context Pruning — strips obsolete tool outputs so long resolver loops cost fewer tokens",
+  },
+  {
+    pkg: "@slkiser/opencode-quota",
+    desc: "Live token/quota usage indicator — supports GLM coding-plan, OpenAI Plus/Pro, Qwen, and more",
+  },
+]
+
 if (process.env.OPENCODE_RESOLVE_SKIP_POSTINSTALL === "1") {
   process.exit(0)
 }
@@ -24,6 +37,7 @@ console.log(`[${packageName}] installing v${pluginVersion}`)
 
 try {
   await registerPlugin()
+  await offerCompanionPlugins()
   console.log(`[${packageName}] v${pluginVersion} install complete — restart OpenCode to load the plugin`)
 } catch (error) {
   console.warn(`[${packageName}] automatic OpenCode registration skipped: ${formatError(error)}`)
@@ -260,4 +274,108 @@ function isObject(value) {
 
 function formatError(error) {
   return error instanceof Error ? error.message : String(error)
+}
+
+async function offerCompanionPlugins() {
+  if (process.env.OPENCODE_RESOLVE_SKIP_COMPANIONS === "1") return
+
+  const config = await readOpenCodeConfig()
+  const existing = collectPluginBaseNames(config.plugin ?? [])
+  const missing = COMPANION_PLUGINS.filter((c) => !existing.has(c.pkg))
+
+  if (missing.length === 0) {
+    console.log(`[${packageName}] recommended companion plugins already present — skipping`)
+    return
+  }
+
+  const isInteractive = Boolean(process.stdin.isTTY && process.stdout.isTTY)
+
+  if (!isInteractive) {
+    console.log(`[${packageName}] recommended companion plugins not detected:`)
+    for (const c of missing) {
+      console.log(`  - ${c.pkg} — ${c.desc}`)
+      console.log(`    install: opencode plugin ${c.pkg}@latest --global --force`)
+    }
+    return
+  }
+
+  const rl = createInterface({ input: process.stdin, output: process.stdout })
+  try {
+    for (const c of missing) {
+      console.log("")
+      console.log(`[${packageName}] recommended companion: ${c.pkg}`)
+      console.log(`             ${c.desc}`)
+      const raw = await rl.question("             install now? [Y/n] ")
+      const answer = raw.trim().toLowerCase()
+      const accepted = answer === "" || answer === "y" || answer === "yes"
+      if (!accepted) {
+        console.log(`             skipped — install later via:  opencode plugin ${c.pkg}@latest --global --force`)
+        continue
+      }
+      const installed = await installCompanion(c.pkg)
+      if (!installed) {
+        console.warn(`             ${c.pkg} install command failed — leave plugin list untouched, retry manually`)
+        continue
+      }
+      await addCompanionToOpenCodeConfig(`${c.pkg}@latest`)
+      console.log(`             ${c.pkg} cached and registered — restart OpenCode to activate`)
+    }
+  } finally {
+    rl.close()
+  }
+}
+
+function collectPluginBaseNames(plugins) {
+  const names = new Set()
+  for (const entry of plugins) {
+    const raw = typeof entry === "string"
+      ? entry
+      : Array.isArray(entry) && typeof entry[0] === "string"
+        ? entry[0]
+        : null
+    if (!raw) continue
+    names.add(stripVersionSuffix(raw))
+  }
+  return names
+}
+
+function stripVersionSuffix(name) {
+  if (name.startsWith("@")) {
+    const slashIndex = name.indexOf("/")
+    if (slashIndex === -1) return name
+    const scope = name.slice(0, slashIndex)
+    const rest = name.slice(slashIndex + 1)
+    return `${scope}/${rest.split("@")[0]}`
+  }
+  return name.split("@")[0]
+}
+
+async function installCompanion(pkg) {
+  return new Promise((resolveSpawn) => {
+    const child = spawn("opencode", ["plugin", `${pkg}@latest`, "--global", "--force"], {
+      stdio: "inherit",
+    })
+    child.on("exit", (code) => resolveSpawn(code === 0))
+    child.on("error", () => resolveSpawn(false))
+  })
+}
+
+async function addCompanionToOpenCodeConfig(pluginEntry) {
+  const config = await readOpenCodeConfig()
+  config.plugin ??= []
+  if (!Array.isArray(config.plugin)) {
+    throw new Error(`${opencodeConfigPath}.plugin must be an array`)
+  }
+  const baseName = stripVersionSuffix(pluginEntry)
+  const alreadyPresent = config.plugin.some((entry) => {
+    const raw = typeof entry === "string"
+      ? entry
+      : Array.isArray(entry) && typeof entry[0] === "string"
+        ? entry[0]
+        : null
+    return raw !== null && stripVersionSuffix(raw) === baseName
+  })
+  if (alreadyPresent) return
+  config.plugin.push(pluginEntry)
+  await writeFile(opencodeConfigPath, `${JSON.stringify(config, null, 2)}\n`)
 }
