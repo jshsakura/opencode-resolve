@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { access, readFile } from "node:fs/promises";
+import { access, readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -25,6 +25,7 @@ const VALID_AGENT_NAMES = [
     "coder",
     "reviewer",
     "resolver",
+    "glm",
     "architect",
     "gpt-coder",
     "debugger",
@@ -52,6 +53,8 @@ const VALID_MODEL_ALIAS_SET = new Set(VALID_MODEL_ALIASES);
 const VALID_MODES = new Set(["subagent", "primary", "all"]);
 const VALID_PERMISSION_VALUES = new Set(["ask", "allow", "deny"]);
 const VALID_TOP_LEVEL_KEYS = new Set([
+    "profile",
+    "tier",
     "enabled",
     "models",
     "agents",
@@ -63,7 +66,24 @@ const VALID_TOP_LEVEL_KEYS = new Set([
     "autoUpdate",
     "config",
 ]);
+const VALID_PROFILES = new Set(["glm", "gpt"]);
+const VALID_TIERS = new Set(["bronze", "silver", "gold"]);
+const TIER_ENABLED = {
+    bronze: ["coder", "resolver"],
+    silver: ["coder", "resolver", "explorer", "reviewer", "planner"],
+    gold: ["coder", "resolver", "explorer", "reviewer", "deep-reviewer", "planner", "debugger", "researcher"],
+};
 const DEFAULT_MAX_PARALLEL_SUBAGENTS = 2;
+const GLM_MAX_PARALLEL_SUBAGENTS = 1;
+const GPT_ENABLED = ["coder", "resolver", "explorer", "reviewer", "deep-reviewer", "planner"];
+const GPT_AGENT_OVERRIDES = {
+    coder: { maxSteps: 25 },
+    resolver: { maxSteps: 40 },
+    explorer: { maxSteps: 8 },
+    reviewer: { maxSteps: 10 },
+    "deep-reviewer": { maxSteps: 15 },
+    planner: { maxSteps: 12 },
+};
 const VALID_AGENT_KEYS = new Set([
     "enabled",
     "model",
@@ -75,42 +95,113 @@ const VALID_AGENT_KEYS = new Set([
     "tools",
     "permission",
 ]);
+// ---------------------------------------------------------------------------
+// GLM profile — coding-plan token/rate optimized
+// ---------------------------------------------------------------------------
+const GLM_ENABLED = ["coder", "resolver", "explorer", "reviewer", "planner"];
+const GLM_AGENT_OVERRIDES = {
+    coder: { maxSteps: 15 },
+    resolver: { maxSteps: 25 },
+    explorer: { maxSteps: 5 },
+    reviewer: { maxSteps: 6 },
+    planner: { maxSteps: 8 },
+};
+// ── Resolver prompts ──────────────────────────────────────────────────────
+function buildGLMResolverPrompt(maxParallelSubagents) {
+    const limit = typeof maxParallelSubagents === "number" && Number.isFinite(maxParallelSubagents)
+        ? Math.max(1, Math.trunc(maxParallelSubagents))
+        : 2;
+    return [
+        "You are Resolver (GLM profile), the token-efficient orchestrator for OpenCode Resolve.",
+        "ZAI Coding Plan — quota is finite. Minimize unnecessary reads and dispatches.",
+        "",
+        `Dispatch up to ${limit} coder(s) concurrently. Wait for in-flight coders before dispatching more.`,
+        "Dispatch coder with: TASK (atomic goal), OUTCOME (success criteria), MUST DO, MUST NOT DO, CONTEXT (files/patterns).",
+        "After EVERY coder return: verify it works + follows codebase patterns. If not → re-dispatch with fix.",
+        "Trivial fixes → apply yourself. No subagent needed.",
+        "3 consecutive failures → STOP, REVERT, REPORT, ASK user.",
+        "",
+        "If piloci MCP available: piloci_recall before inspecting code, piloci_memory after learning something non-obvious.",
+        "",
+        "Verify: type check or lint MUST pass on changed files. NO EVIDENCE = NOT COMPLETE.",
+        "After non-trivial work: ask user to capture lesson → HARNESS.md (infra) or AGENTS.md (agent behavior).",
+        "",
+        "NEVER: as any / @ts-ignore / leave code broken / delete failing tests / commit without request.",
+        "",
+        "Specialists: explorer (scope unknown), reviewer (verification gap), planner (user asks for plan). No deep-reviewer.",
+    ].join("\n");
+}
+const GLM_CODER_PROMPT = [
+    "You are Coder (GLM profile), a concise implementation subagent for OpenCode Resolve.",
+    "",
+    "Read ONLY files you will edit. Make the SMALLEST correct change.",
+    "Verify immediately: type check or lint on changed files. Report exit code + errors.",
+    "Return: changed files + verification result. No prose.",
+    "",
+    "NO EVIDENCE = INCOMPLETE WORK.",
+    "",
+    "NEVER: as any / @ts-ignore / empty catch / delete failing tests / leave code broken.",
+].join("\n");
+function buildGPTResolverPrompt() {
+    return [
+        "You are Resolver (GPT profile), the orchestrator for OpenCode Resolve.",
+        "Leverage GPT's reasoning — parallel dispatch, detailed checkpoint plans for deep tasks.",
+        "",
+        "Parallel coder dispatch for independent work. Deep-reviewer available for risky changes.",
+        "Dispatch coder with: TASK (atomic goal), OUTCOME (success criteria), MUST DO, MUST NOT DO, CONTEXT (files/patterns).",
+        "After EVERY coder return: verify it works + follows codebase patterns. If not → re-dispatch with fix.",
+        "Trivial fixes → apply yourself. No subagent needed.",
+        "3 consecutive failures → STOP, REVERT, REPORT, ASK user.",
+        "",
+        "If piloci MCP available: piloci_recall before inspecting code, piloci_memory after learning something non-obvious.",
+        "",
+        "Verify: type check or lint MUST pass on changed files. NO EVIDENCE = NOT COMPLETE.",
+        "After non-trivial work: ask user to capture lesson → HARNESS.md (infra) or AGENTS.md (agent behavior).",
+        "",
+        "NEVER: as any / @ts-ignore / leave code broken / delete failing tests / commit without request.",
+        "",
+        "Specialists: explorer (scope unknown), reviewer (verification gap), deep-reviewer (risky/security/architectural), planner (user asks for plan).",
+    ].join("\n");
+}
+const GPT_CODER_PROMPT = [
+    "You are Coder (GPT profile), an implementation subagent for OpenCode Resolve.",
+    "",
+    "Read ONLY files you need. Make the SMALLEST correct change.",
+    "Verify: type check or lint on changed files. Report exit code + errors.",
+    "Return: changed files + verification result. Keep it concise.",
+    "",
+    "NO EVIDENCE = INCOMPLETE WORK.",
+    "",
+    "NEVER: as any / @ts-ignore / empty catch / delete failing tests / leave code broken.",
+].join("\n");
 function buildResolverPrompt(maxParallelSubagents) {
     const explicitLimit = typeof maxParallelSubagents === "number" && Number.isFinite(maxParallelSubagents)
         ? Math.max(1, Math.trunc(maxParallelSubagents))
         : undefined;
     const parallelRule = explicitLimit === undefined
-        ? "Parallel dispatch policy: fan out coder dispatches when the work is genuinely independent (different files, no shared state). Rate limits are per-model — coder/silver-tier models (e.g. GLM coding-plan) can throttle under heavy burst, so back off if you see rate-limit errors. Explorer runs on a lighter model and fans out freely when scope discovery genuinely needs it. Reviewer, deep-reviewer, and planner are dispatched as singletons by their nature."
+        ? "Fan out for independent work. Back off on rate-limit errors."
         : explicitLimit === 1
-            ? "CRITICAL: User has pinned the coder concurrency cap to 1. Dispatch at most ONE coder concurrently. Wait for an in-flight coder to finish before dispatching another. Explorer is unrestricted (read-only, light model). Reviewer, deep-reviewer, and planner are singletons by nature."
-            : `CRITICAL: User has pinned the coder concurrency cap to ${explicitLimit}. Dispatch at most ${explicitLimit} coders concurrently. Wait for in-flight coders to finish before dispatching more. Explorer is unrestricted (read-only, light model). Reviewer, deep-reviewer, and planner are singletons by nature.`;
+            ? "Dispatch ONE coder at a time. Wait for it to finish."
+            : `Dispatch up to ${explicitLimit} coders concurrently.`;
     return [
-        "You are Resolver, the context-efficient orchestrator agent for OpenCode Resolve.",
-        "Your job is to drive the user's task to a verified resolution using minimal context and the fewest LLM calls possible.",
+        "You are Resolver, the context-efficient orchestrator for OpenCode Resolve.",
+        "Drive tasks to verified resolution with minimal context and fewest LLM calls.",
+        "You and Coder form the verified resolve loop.",
         "",
-        "Core path: You and Coder form the fixed-role verified resolve loop — this is the default path.",
-        "Internal specialist subagents (explorer, reviewer, deep-reviewer, planner) are available by default as subagents, but they are NOT the default path.",
-        "Dispatch them only when justified — avoid context waste.",
+        `Parallel: ${parallelRule}`,
+        "Dispatch coder with: TASK (atomic goal), OUTCOME (success criteria), MUST DO, MUST NOT DO, CONTEXT (files/patterns).",
+        "After EVERY coder return: verify it works + follows codebase patterns. If not → re-dispatch with fix.",
+        "Trivial fixes → apply yourself. No subagent needed.",
+        "3 consecutive failures → STOP, REVERT, REPORT, ASK user.",
         "",
-        "Checkpointed execution: for large tasks, decompose work into small verified checkpoints. For each checkpoint, iterate up to 3 attempts on the same failing checkpoint. When a checkpoint passes verification, carry forward only: decisions, changed files, verification results, and blockers — then proceed to the next checkpoint. If blocked after max 3 attempts on one checkpoint, report the exact blocker with evidence. This preserves context and handles arbitrarily long tasks.",
+        "If piloci MCP available: piloci_recall before inspecting code, piloci_memory after learning something non-obvious.",
         "",
-        "Workflow (default fixed-role path):",
-        "1. CLASSIFY the work as quick (trivial fix), normal (standard feature), deep (complex refactor), or risky (security/architecture/high-impact).",
-        "2. INSPECT only relevant files — avoid broad exploration. Use local tools (read, grep, glob) to gather facts, not subagents.",
-        "3. For trivial/quick work: inspect relevant files directly and apply a small edit yourself. No subagent needed.",
-        "4. PLAN the smallest correct patch. Dispatch coder with exact file paths and focused behavior instructions.",
-        `5. ${parallelRule}`,
-        "6. VERIFY with the cheapest meaningful check first (targeted test, type check, or lint). Do not run full suites unless the change is wide.",
-        "7. If issues remain, RETRY from verification logs: dispatch coder again with a focused fix. Max 3 attempts for the same failing checkpoint; then move forward or report the blocker.",
-        "8. REPORT a concise evidence summary: what changed, verification results, and any remaining blockers.",
+        "Verify: type check or lint MUST pass on changed files. NO EVIDENCE = NOT COMPLETE.",
+        "After non-trivial work: ask user to capture lesson → HARNESS.md (infra) or AGENTS.md (agent behavior).",
         "",
-        "Internal specialist subagents (available by default, but NOT the default path — use only when justified):",
-        "- explorer: fast read-only codebase scout. Prefer local read/grep/glob for narrow scope; dispatch explorer only when scope is genuinely unknown and local tools are insufficient.",
-        "- reviewer: lightweight read-only audit. Dispatch only for post-change verification gaps on non-trivial changes.",
-        "- deep-reviewer: thorough read-only review. Dispatch ONLY for risky, security-sensitive, architectural, or high-impact changes.",
-        "- planner: advanced read-only planner. Dispatch ONLY when the user explicitly asks for a plan, decomposition, or implementation strategy. Do NOT call planner for routine sub-task planning you can absorb inline.",
+        "NEVER: as any / @ts-ignore / leave code broken / delete failing tests / commit without request.",
         "",
-        "Note: this parallel rule is enforced via prompt only — there is no runtime cap on subagent dispatches. Honor it strictly to avoid file conflicts and wasted context.",
+        "Specialists: explorer (scope unknown), reviewer (verification gap), deep-reviewer (risky/security/architectural), planner (user asks for plan).",
     ].join("\n");
 }
 const DEFAULT_AGENT_CONFIG = {
@@ -121,21 +212,21 @@ const DEFAULT_AGENT_CONFIG = {
         description: "Use for focused implementation, file edits, test runs, and fixing issues until the task is resolved.",
         prompt: [
             "You are Coder, a focused implementation subagent for OpenCode Resolve.",
-            "You are one of two default agents. Together with Resolver you form a verified resolve loop.",
+            "Together with Resolver you form a verified resolve loop.",
             "",
-            "Context budget: read ONLY the files you need. Avoid broad exploration or discovering the entire codebase.",
-            "Preserve native OpenCode behavior and make the smallest correct change.",
-            "Before editing, inspect only the relevant files and existing patterns in those files.",
-            "Implement the smallest patch that satisfies the requirement.",
-            "Run targeted verification when practical (single test file, type check, or lint — not full suites).",
-            "Return a concise summary: changed files list + command results. No unnecessary prose.",
+            "Read ONLY files you need. Make the SMALLEST correct change.",
+            "Verify: type check or lint on changed files. Report exit code + errors.",
+            "Return: changed files + verification result. No unnecessary prose.",
+            "Dispatch explorer ONLY to locate 3+ unknown files. Otherwise use local read/grep/glob.",
             "",
-            "Scope-discovery gate: dispatch the `explorer` subagent ONLY when the scope is genuinely unclear — i.e. you need to locate 3+ unknown files, OR a named pattern's location is genuinely unknown. For known files, single-file uncertainty, or routine doubt, read directly with the local read/grep/glob tools. Never dispatch explorer for casual exploration — token efficiency is the discipline.",
+            "NO EVIDENCE = INCOMPLETE WORK.",
+            "",
+            "NEVER: as any / @ts-ignore / empty catch / delete failing tests / leave code broken / commit without request.",
         ].join("\n"),
         permission: {
-            edit: "ask",
+            edit: "allow",
             bash: "ask",
-            webfetch: "ask",
+            webfetch: "allow",
         },
     },
     reviewer: {
@@ -155,7 +246,7 @@ const DEFAULT_AGENT_CONFIG = {
         permission: {
             edit: "deny",
             bash: "deny",
-            webfetch: "ask",
+            webfetch: "allow",
         },
     },
     resolver: {
@@ -165,9 +256,9 @@ const DEFAULT_AGENT_CONFIG = {
         description: "Primary orchestrator in the fixed-role verified loop (resolver→coder). Decomposes work into verified checkpoints, dispatches coder, verifies each, and carries forward progress. Internal subagents (explorer, reviewer, deep-reviewer) are available by default but dispatched only when justified.",
         prompt: buildResolverPrompt(undefined),
         permission: {
-            edit: "ask",
+            edit: "allow",
             bash: "ask",
-            webfetch: "ask",
+            webfetch: "allow",
         },
     },
     architect: {
@@ -182,8 +273,8 @@ const DEFAULT_AGENT_CONFIG = {
         ].join("\n"),
         permission: {
             edit: "deny",
-            bash: "ask",
-            webfetch: "ask",
+            bash: "deny",
+            webfetch: "allow",
         },
     },
     "gpt-coder": {
@@ -197,9 +288,9 @@ const DEFAULT_AGENT_CONFIG = {
             "Inspect before editing, implement directly, verify when practical, and report exactly what changed.",
         ].join("\n"),
         permission: {
-            edit: "ask",
+            edit: "allow",
             bash: "ask",
-            webfetch: "ask",
+            webfetch: "allow",
         },
     },
     debugger: {
@@ -213,9 +304,9 @@ const DEFAULT_AGENT_CONFIG = {
             "Separate confirmed facts from hypotheses.",
         ].join("\n"),
         permission: {
-            edit: "ask",
+            edit: "allow",
             bash: "ask",
-            webfetch: "ask",
+            webfetch: "allow",
         },
     },
     researcher: {
@@ -230,8 +321,8 @@ const DEFAULT_AGENT_CONFIG = {
         ].join("\n"),
         permission: {
             edit: "deny",
-            bash: "ask",
-            webfetch: "ask",
+            bash: "deny",
+            webfetch: "allow",
         },
     },
     explorer: {
@@ -249,8 +340,8 @@ const DEFAULT_AGENT_CONFIG = {
         ].join("\n"),
         permission: {
             edit: "deny",
-            bash: "ask",
-            webfetch: "ask",
+            bash: "deny",
+            webfetch: "allow",
         },
     },
     "deep-reviewer": {
@@ -269,7 +360,7 @@ const DEFAULT_AGENT_CONFIG = {
         permission: {
             edit: "deny",
             bash: "deny",
-            webfetch: "ask",
+            webfetch: "allow",
         },
     },
     planner: {
@@ -288,17 +379,252 @@ const DEFAULT_AGENT_CONFIG = {
         permission: {
             edit: "deny",
             bash: "deny",
-            webfetch: "ask",
+            webfetch: "allow",
+        },
+    },
+    glm: {
+        mode: "all",
+        color: "#00FF9F",
+        maxSteps: 30,
+        description: "GLM-optimized orchestrator for ZAI coding-plan. Select this agent when running GLM-only to get maximum performance within session and rate limits. Serial coder dispatch, token-efficient prompts, coding-plan constraints handled automatically.",
+        prompt: buildGLMResolverPrompt(undefined),
+        permission: {
+            edit: "allow",
+            bash: "ask",
+            webfetch: "allow",
         },
     },
 };
+async function detectProjectContext(directory) {
+    const ctx = {
+        knowledgeFiles: [],
+        packageManager: undefined,
+        verifyCommands: [],
+        hasTypeScript: false,
+        hasHarness: false,
+        hasAgents: false,
+    };
+    // Detect knowledge files
+    const knowledgeCandidates = [
+        "HARNESS.md",
+        "AGENTS.md",
+        "CLAUDE.md",
+        "CONVENTIONS.md",
+    ];
+    for (const candidate of knowledgeCandidates) {
+        const fullPath = join(directory, candidate);
+        if (await existsFile(fullPath)) {
+            ctx.knowledgeFiles.push(candidate);
+            if (candidate === "HARNESS.md")
+                ctx.hasHarness = true;
+            if (candidate === "AGENTS.md")
+                ctx.hasAgents = true;
+        }
+    }
+    // Detect package manager
+    if (await existsFile(join(directory, "pnpm-lock.yaml")))
+        ctx.packageManager = "pnpm";
+    else if (await existsFile(join(directory, "bun.lockb")) || await existsFile(join(directory, "bun.lock")))
+        ctx.packageManager = "bun";
+    else if (await existsFile(join(directory, "yarn.lock")))
+        ctx.packageManager = "yarn";
+    else if (await existsFile(join(directory, "package-lock.json")))
+        ctx.packageManager = "npm";
+    // Detect TypeScript
+    ctx.hasTypeScript = await existsFile(join(directory, "tsconfig.json"));
+    // Detect verification commands from package.json scripts
+    try {
+        const pkgRaw = await readFile(join(directory, "package.json"), "utf8");
+        const pkg = JSON.parse(pkgRaw);
+        const scripts = typeof pkg?.scripts === "object" && pkg.scripts !== null ? pkg.scripts : {};
+        if (typeof scripts["typecheck"] === "string" || typeof scripts["type-check"] === "string") {
+            const cmd = scripts["typecheck"] ?? scripts["type-check"];
+            ctx.verifyCommands.push(`npm run ${scripts["typecheck"] ? "typecheck" : "type-check"}`);
+        }
+        else if (ctx.hasTypeScript) {
+            ctx.verifyCommands.push("npx tsc --noEmit");
+        }
+        if (typeof scripts["lint"] === "string") {
+            ctx.verifyCommands.push("npm run lint");
+        }
+        if (typeof scripts["test"] === "string") {
+            ctx.verifyCommands.push("npm test");
+        }
+    }
+    catch {
+        // no package.json or unreadable — skip
+    }
+    return ctx;
+}
+async function existsFile(path) {
+    try {
+        const s = await stat(path);
+        return s.isFile();
+    }
+    catch {
+        return false;
+    }
+}
 export const OpencodeResolve = async ({ directory }, options) => {
+    // Store resolve config for use across hooks
+    let storedConfig;
+    let storedProjectContext;
     return {
         config: async (config) => {
             const resolveConfig = await loadResolveConfig(directory, config, options);
-            applyResolveConfig(config, resolveConfig);
+            const projectContext = await detectProjectContext(directory);
+            storedConfig = resolveConfig;
+            storedProjectContext = projectContext;
+            applyResolveConfig(config, resolveConfig, projectContext);
             if (resolveConfig.autoUpdate !== false && process.env.OPENCODE_RESOLVE_NO_AUTO_UPDATE !== "1") {
                 maybeAutoUpdate().catch(() => { });
+            }
+        },
+        // ── Shell environment: force non-interactive mode ─────────────────────
+        "shell.env": async (_input, output) => {
+            output.env = {
+                ...output.env,
+                CI: "true",
+                DEBIAN_FRONTEND: "noninteractive",
+                GIT_TERMINAL_PROMPT: "0",
+                GIT_EDITOR: "true",
+                GIT_PAGER: "cat",
+                PAGER: "cat",
+                GCM_INTERACTIVE: "never",
+                npm_config_yes: "true",
+                PIP_NO_INPUT: "1",
+            };
+        },
+        // ── Permission: classify bash commands + block banned interactive tools ─
+        "permission.ask": async (input, output) => {
+            if (input.type === "bash") {
+                const cmd = typeof input.pattern === "string"
+                    ? input.pattern
+                    : Array.isArray(input.pattern)
+                        ? input.pattern.join(" ")
+                        : "";
+                const action = classifyBashCommand(cmd);
+                if (action !== "ask")
+                    output.status = action;
+            }
+        },
+        // ── Chat params: per-profile temperature and token limits ─────────────
+        "chat.params": async (input, output) => {
+            const profile = storedConfig?.profile;
+            if (profile === "glm") {
+                // GLM: lower temperature for deterministic code, tighter token budget
+                output.temperature = Math.min(output.temperature, 0.4);
+                if (output.maxOutputTokens === undefined || output.maxOutputTokens > 16384) {
+                    output.maxOutputTokens = 16384;
+                }
+            }
+            else if (profile === "gpt") {
+                // GPT: allow higher temperature for creative reasoning
+                output.temperature = Math.min(output.temperature, 0.7);
+                if (output.maxOutputTokens === undefined) {
+                    output.maxOutputTokens = 32768;
+                }
+            }
+            // Read-only agents: lower temperature always
+            const readOnlyAgents = new Set(["reviewer", "deep-reviewer", "explorer", "planner", "researcher", "architect"]);
+            if (readOnlyAgents.has(input.agent)) {
+                output.temperature = Math.min(output.temperature, 0.3);
+            }
+        },
+        // ── Tool definition: enrich tool descriptions with discipline hints ──
+        "tool.definition": async (input, output) => {
+            // tool.definition runs once per tool per session, not per agent.
+            // We add usage discipline hints that guide the LLM toward correct behavior.
+            const hints = {
+                edit: "\n[opencode-resolve] Read the file first. Make the smallest correct change. Verify after editing.",
+                write: "\n[opencode-resolve] Only write new files when explicitly needed. Prefer editing existing files.",
+                bash: "\n[opencode-resolve] Commands run in non-interactive mode. No interactive editors, pagers, or REPLs. Use -c flags for scripting.",
+                task: "\n[opencode-resolve] Dispatch subagents with: TASK (atomic goal), OUTCOME (success criteria), MUST DO, MUST NOT DO, CONTEXT.",
+            };
+            if (hints[input.toolID]) {
+                output.description = output.description + hints[input.toolID];
+            }
+        },
+        // ── Command execute before: inject discipline reminder ────────────────
+        "command.execute.before": async (_input, output) => {
+            // Prepend a discipline reminder to all command executions.
+            // The parts array is typed as Part[] — TextPart requires id/sessionID/messageID.
+            // We provide placeholder values; OpenCode replaces them if needed.
+            output.parts.push({
+                id: "",
+                sessionID: "",
+                messageID: "",
+                type: "text",
+                text: "[opencode-resolve] Drive to verified resolution. Classify intent, dispatch focused subagents, verify after each, iterate on failure. Report completion only when verified.",
+            });
+        },
+        // ── Tool execute after: inject verification hints after edits ─────────
+        "tool.execute.after": async (input, output) => {
+            if (input.tool === "edit" || input.tool === "write") {
+                const verifyCommands = storedProjectContext?.verifyCommands;
+                if (verifyCommands && verifyCommands.length > 0) {
+                    output.metadata = {
+                        ...(output.metadata ?? {}),
+                        _resolve_verify_hint: verifyCommands[0],
+                    };
+                }
+            }
+        },
+        // ── Session compacting: preserve critical context during compaction ───
+        "experimental.session.compacting": async (_input, output) => {
+            const ctx = storedProjectContext;
+            if (!ctx)
+                return;
+            const contextLines = [];
+            if (ctx.knowledgeFiles.length > 0) {
+                contextLines.push(`Project knowledge files: ${ctx.knowledgeFiles.join(", ")}.`);
+            }
+            if (ctx.verifyCommands.length > 0) {
+                contextLines.push(`Verify commands: ${ctx.verifyCommands.join("; ")}.`);
+            }
+            if (ctx.hasTypeScript) {
+                contextLines.push("TypeScript project — type safety is mandatory.");
+            }
+            if (ctx.packageManager) {
+                contextLines.push(`Package manager: ${ctx.packageManager}.`);
+            }
+            if (contextLines.length > 0) {
+                output.context.push("[" + "opencode-resolve" + "] Project context (preserve): " + contextLines.join(" "));
+            }
+        },
+        // ── Chat messages transform: replace generic summarize prompt ──────────
+        "experimental.chat.messages.transform": async (_input, output) => {
+            const GENERIC_SUMMARIZE = "Summarize the task tool output above and continue with your task.";
+            for (const msg of output.messages) {
+                for (const part of msg.parts) {
+                    if (part.type === "text" && part.text === GENERIC_SUMMARIZE) {
+                        part.text = "Analyze the subtask result above. If it succeeded, continue. If it failed, diagnose and retry. Report completion only when verified.";
+                    }
+                }
+            }
+        },
+        // ── Auto-continue after compaction ────────────────────────────────────
+        "experimental.compaction.autocontinue": async (_input, output) => {
+            // Always enable auto-continue — the resolver should keep driving
+            output.enabled = true;
+        },
+        // ── System prompt transform: inject project context ──────────────────
+        "experimental.chat.system.transform": async (_input, output) => {
+            const ctx = storedProjectContext;
+            if (!ctx)
+                return;
+            const lines = [];
+            if (ctx.knowledgeFiles.length > 0) {
+                lines.push(`[opencode-resolve] Project knowledge: ${ctx.knowledgeFiles.join(", ")}. Read before modifying code.`);
+            }
+            if (ctx.verifyCommands.length > 0) {
+                lines.push(`[opencode-resolve] Verify commands: ${ctx.verifyCommands.join("; ")}. Run after changes.`);
+            }
+            if (ctx.hasTypeScript) {
+                lines.push("[opencode-resolve] TypeScript project — type safety is mandatory. No `as any` or `@ts-ignore`.");
+            }
+            if (lines.length > 0) {
+                output.system.push(lines.join("\n"));
             }
         },
     };
@@ -388,12 +714,18 @@ async function loadResolveConfig(directory, opencodeConfig, options) {
     const fileConfig = await readFirstJson(configPaths);
     return mergeResolveConfig(defaultResolveConfig(), fileConfig, pluginOptions);
 }
-function applyResolveConfig(config, resolveConfig) {
-    const enabled = new Set(resolveConfig.enabled ?? DEFAULT_ENABLED);
+function applyResolveConfig(config, resolveConfig, projectContext) {
+    const profile = resolveConfig.profile;
+    const isGLM = profile === "glm";
+    const isGPT = profile === "gpt";
+    const profileEnabled = isGLM ? GLM_ENABLED : isGPT ? GPT_ENABLED : undefined;
+    const tierEnabled = resolveConfig.tier ? TIER_ENABLED[resolveConfig.tier] : undefined;
+    const enabled = new Set(resolveConfig.enabled ?? tierEnabled ?? (profileEnabled ?? DEFAULT_ENABLED));
     const models = { ...DEFAULT_MODELS, ...resolveConfig.models };
     const defaultModel = typeof config.model === "string" ? config.model : undefined;
-    const autoApprove = resolveConfig.autoApprove !== false;
-    const maxParallelSubagents = resolveConfig.maxParallelSubagents;
+    const maxParallelSubagents = resolveConfig.maxParallelSubagents ?? (isGLM ? GLM_MAX_PARALLEL_SUBAGENTS : undefined);
+    // Build context injection strings from detected project info
+    const contextInjection = buildContextInjection(projectContext);
     config.agent ??= {};
     for (const name of Object.keys(DEFAULT_AGENT_CONFIG)) {
         const override = resolveConfig.agents?.[name];
@@ -401,15 +733,40 @@ function applyResolveConfig(config, resolveConfig) {
         if (!isEnabled)
             continue;
         const base = DEFAULT_AGENT_CONFIG[name];
+        const profileOverride = isGLM ? GLM_AGENT_OVERRIDES[name] : isGPT ? GPT_AGENT_OVERRIDES[name] : undefined;
         const { enabled: _enabled, model: requestedModel, permission: userPermission, ...agentOverride } = override ?? {};
         const model = resolveModel(requestedModel ?? models[name] ?? defaultModel, models);
-        const permission = buildPermission(base.permission, userPermission, autoApprove);
+        const permission = buildPermission(base.permission, userPermission);
         const agentConfig = {
             ...base,
+            ...profileOverride,
             ...agentOverride,
         };
-        if (name === "resolver" && agentOverride.prompt === undefined) {
-            agentConfig.prompt = buildResolverPrompt(maxParallelSubagents);
+        if (agentOverride.prompt === undefined) {
+            if (isGLM) {
+                if (name === "resolver")
+                    agentConfig.prompt = buildGLMResolverPrompt(undefined);
+                else if (name === "coder")
+                    agentConfig.prompt = GLM_CODER_PROMPT;
+            }
+            else if (isGPT) {
+                if (name === "resolver")
+                    agentConfig.prompt = buildGPTResolverPrompt();
+                else if (name === "coder")
+                    agentConfig.prompt = GPT_CODER_PROMPT;
+            }
+            else {
+                if (name === "resolver")
+                    agentConfig.prompt = buildResolverPrompt(maxParallelSubagents);
+            }
+            // Inject project context into all resolver-type agents
+            if ((name === "resolver" || name === "glm") && contextInjection) {
+                agentConfig.prompt = agentConfig.prompt + "\n\n" + contextInjection;
+            }
+            // Inject verify commands into coder prompts
+            if ((name === "coder") && projectContext.verifyCommands.length > 0) {
+                agentConfig.prompt = agentConfig.prompt + "\n\nAvailable verify: " + projectContext.verifyCommands.join(", ") + ".";
+            }
         }
         if (permission)
             agentConfig.permission = permission;
@@ -446,9 +803,26 @@ function applyResolveConfig(config, resolveConfig) {
         };
     }
 }
+function buildContextInjection(ctx) {
+    const lines = [];
+    if (ctx.knowledgeFiles.length > 0) {
+        lines.push(`Project knowledge files detected: ${ctx.knowledgeFiles.join(", ")}.`);
+        lines.push("Read these FIRST before inspecting code — they contain infra decisions, traps, and agent patterns.");
+    }
+    if (ctx.packageManager) {
+        lines.push(`Package manager: ${ctx.packageManager}.`);
+    }
+    if (ctx.verifyCommands.length > 0) {
+        lines.push(`Verify commands available: ${ctx.verifyCommands.join("; ")}.`);
+        lines.push("Run the relevant one after every code change. Pass = evidence. Fail = fix before reporting.");
+    }
+    if (ctx.hasTypeScript) {
+        lines.push("TypeScript project — type safety is mandatory.");
+    }
+    return lines.length > 0 ? lines.join("\n") : "";
+}
 function defaultResolveConfig() {
     return {
-        enabled: DEFAULT_ENABLED,
         models: {},
         agents: {},
         preserveNative: true,
@@ -463,6 +837,8 @@ function mergeResolveConfig(...configs) {
     for (const config of configs) {
         if (!config)
             continue;
+        result.profile = config.profile ?? result.profile;
+        result.tier = config.tier ?? result.tier;
         result.enabled = config.enabled ?? result.enabled;
         result.preserveNative = config.preserveNative ?? result.preserveNative;
         result.context7 = config.context7 ?? result.context7;
@@ -487,26 +863,14 @@ function resolveModel(model, models) {
         return undefined;
     return models[model] ?? model;
 }
-function buildPermission(basePermission, userPermission, autoApprove) {
+function buildPermission(basePermission, userPermission) {
     const merged = {
         ...(basePermission ?? {}),
         ...(userPermission ?? {}),
     };
     if (Object.keys(merged).length === 0)
         return undefined;
-    if (!autoApprove)
-        return merged;
-    const userKeys = new Set(Object.keys(userPermission ?? {}));
-    const result = { ...merged };
-    for (const key of Object.keys(result)) {
-        if (userKeys.has(key))
-            continue;
-        const value = result[key];
-        if (value === "ask") {
-            result[key] = "allow";
-        }
-    }
-    return result;
+    return merged;
 }
 function getPluginOptions(config) {
     for (const entry of config.plugin ?? []) {
@@ -582,6 +946,20 @@ function normalizeResolveConfig(value, source) {
         result.autoApprove = expectBoolean(config.autoApprove, `${source}.autoApprove`);
     if (config.autoUpdate !== undefined)
         result.autoUpdate = expectBoolean(config.autoUpdate, `${source}.autoUpdate`);
+    if (config.profile !== undefined) {
+        const profile = expectString(config.profile, `${source}.profile`);
+        if (!VALID_PROFILES.has(profile)) {
+            throw new Error(`Unknown profile "${profile}" in ${source}.profile. Valid profiles: ${[...VALID_PROFILES].join(", ")}`);
+        }
+        result.profile = profile;
+    }
+    if (config.tier !== undefined) {
+        const tier = expectString(config.tier, `${source}.tier`);
+        if (!VALID_TIERS.has(tier)) {
+            throw new Error(`Unknown tier "${tier}" in ${source}.tier. Valid tiers: ${[...VALID_TIERS].join(", ")}`);
+        }
+        result.tier = tier;
+    }
     if (config.maxParallelSubagents !== undefined) {
         const limit = expectNumber(config.maxParallelSubagents, `${source}.maxParallelSubagents`);
         if (!Number.isInteger(limit) || limit < 1) {
@@ -704,4 +1082,80 @@ function isMissingFileError(error) {
 }
 function formatError(error) {
     return error instanceof Error ? error.message : String(error);
+}
+// ── Bash command classification for permission.ask hook ─────────────────────
+const BANNED_COMMANDS = [
+    /\b(vim?|nano|emacs|pico|ed)\b/, // interactive editors
+    /\b(less|more|most|pg)\b/, // pagers
+    /\bman\s/, // man pages
+    /\b(python|python3|ipython)\b(\s*$)/, // Python REPL
+    /\b(node|bun|deno)\b(\s*$)/, // JS REPL
+    /\b(irb|ghci|scala|jshell)\b(\s*$)/, // other REPLs
+    /\b(bash|zsh|fish|sh)\s+-i\b/, // interactive shells
+    /\bgit\s+add\s+-p\b/, // interactive git add
+    /\bgit\s+rebase\s+-i\b/, // interactive rebase
+    /\bgit\s+commit\b(?!\s+-m)/, // commit without -m
+];
+const SAFE_BASH_PREFIXES = [
+    ["npm", ["test", "run", "start", "build", "lint", "typecheck", "check", "info", "list", "view", "outdated", "audit", "pack"]],
+    ["npx", []],
+    ["node", []],
+    ["bun", ["test", "run", "build", "install", "add", "remove"]],
+    ["yarn", ["test", "run", "build", "install", "add", "remove", "lint", "typecheck"]],
+    ["pnpm", ["test", "run", "build", "install", "add", "remove", "lint", "typecheck"]],
+    ["git", ["status", "log", "diff", "branch", "show", "remote", "stash", "tag", "describe"]],
+    ["tsc", []],
+    ["eslint", []],
+    ["prettier", []],
+    ["jest", []],
+    ["vitest", []],
+    ["pytest", []],
+    ["cargo", ["test", "check", "build", "clippy", "fmt"]],
+    ["make", ["test", "check", "build", "lint", "clean"]],
+];
+const DANGEROUS_BASH_PATTERNS = [
+    /\brm\s+.*-[rR].*[fF].*\s+\//, // rm -rf /... (absolute path)
+    /\bgit\s+push\s+.*(--force|-f\b)/, // force push
+    /\bgit\s+reset\s+--hard/, // hard reset
+    /\bgit\s+clean\s+-fd/, // clean untracked files
+    /\bsudo\s+rm\b/, // sudo rm
+    /\bdd\s+.*of=\/dev\//, // dd to device
+    /\bchmod\s+-R\s+777\s+\//, // chmod everything
+    /\b(DROP|TRUNCATE)\s/i, // SQL destructive
+];
+const ALWAYS_SAFE_COMMANDS = [
+    "ls", "cat", "head", "tail", "wc", "which", "echo", "pwd", "env",
+    "printenv", "whoami", "uname", "date", "df", "du", "free", "top",
+    "ps", "grep", "find", "sort", "uniq", "diff", "file", "stat",
+    "touch", "mkdir", "cp", "mv", "sed", "awk", "tr", "cut", "xargs",
+    "curl", "wget", "dig", "nslookup", "ping",
+];
+function classifyBashCommand(pattern) {
+    const cmd = pattern.trim();
+    // Check banned interactive commands first (will hang in non-interactive shell)
+    for (const re of BANNED_COMMANDS) {
+        if (re.test(cmd))
+            return "deny";
+    }
+    // Check dangerous patterns
+    for (const re of DANGEROUS_BASH_PATTERNS) {
+        if (re.test(cmd))
+            return "deny";
+    }
+    // Simple always-safe commands
+    const firstToken = cmd.split(/\s+/)[0];
+    if (ALWAYS_SAFE_COMMANDS.includes(firstToken))
+        return "allow";
+    // Prefixed commands (npm test, git status, etc.)
+    for (const [prefix, subcommands] of SAFE_BASH_PREFIXES) {
+        if (firstToken !== prefix)
+            continue;
+        // If no subcommands listed, the prefix itself is safe (e.g. npx, node)
+        if (subcommands.length === 0)
+            return "allow";
+        const secondToken = cmd.split(/\s+/)[1];
+        if (secondToken && subcommands.includes(secondToken))
+            return "allow";
+    }
+    return "ask";
 }

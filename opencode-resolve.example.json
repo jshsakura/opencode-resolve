@@ -1,5 +1,4 @@
 {
-  "enabled": ["coder", "resolver", "explorer", "reviewer", "deep-reviewer", "planner"],
   "preserveNative": true,
   "context7": true,
   "commands": false,
@@ -40,6 +39,9 @@
       "enabled": false
     },
     "researcher": {
+      "enabled": false
+    },
+    "glm": {
       "enabled": false
     }
   }

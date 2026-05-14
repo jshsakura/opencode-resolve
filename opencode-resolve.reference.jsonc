@@ -18,9 +18,46 @@
 
 {
   // -----------------------------------------------------------------------
+  // profile ("glm" | "gpt")
+  // Activates provider-specific agent configurations.
+  // Set automatically by postinstall based on detected providers.
+  //
+  // "glm" — GLM-only, optimized for ZAI coding-plan: serial coder dispatch,
+  //         reduced maxSteps, token-efficient prompts. No deep-reviewer by default.
+  // "gpt" — GPT-only, high-performance: parallel coder dispatch, full agent
+  //         roster, higher maxSteps.
+  //
+  // When omitted (mixed mode): standard agent defaults with both providers.
+  // -----------------------------------------------------------------------
+  // "profile": "glm",
+
+  // -----------------------------------------------------------------------
+  // tier ("bronze" | "silver" | "gold")
+  // Agent roster preset. Overrides the default enabled list when set.
+  //
+  // "bronze" — Minimum agents: coder + resolver only. Maximum token savings.
+  // "silver" — Standard: coder, resolver, explorer, reviewer, planner.
+  //            No deep-reviewer. Best balance for most projects.
+  // "gold"   — Full power: all 8 agents including debugger and researcher.
+  //            Maximum capability for complex tasks.
+  //
+  // Postinstall sets this automatically:
+  //   GLM → silver, GPT → gold, Mixed → no tier (DEFAULT_ENABLED applies).
+  //
+  // Explicit `enabled` array always wins over tier.
+  // -----------------------------------------------------------------------
+  // "tier": "silver",
+
+  // -----------------------------------------------------------------------
   // enabled (string[])
-  // Which resolve agents to inject.
-  // Default: ["coder", "resolver", "explorer", "reviewer", "deep-reviewer"].
+  // Which resolve agents to inject. When omitted, the tier or profile default
+  // is used. Explicit `enabled` wins over both tier and profile defaults.
+  //
+  // Default (no profile, no tier): ["coder", "resolver", "explorer", "reviewer",
+  //   "deep-reviewer", "planner"].
+  //
+  // GLM profile default: ["coder", "resolver", "explorer", "reviewer",
+  //   "planner"] — deep-reviewer omitted to save tokens.
   //
   // Core path: resolver + coder form the fixed-role verified resolve loop.
   // Internal specialists: explorer, reviewer, deep-reviewer are injected as
@@ -30,7 +67,7 @@
   // Native OpenCode agents (plan, build) are always preserved and never
   // touched by this list. Per-agent `agents.<name>.enabled` overrides this.
   // -----------------------------------------------------------------------
-  "enabled": ["coder", "resolver", "explorer", "reviewer", "deep-reviewer"],
+  // "enabled": ["coder", "resolver", "explorer", "reviewer", "deep-reviewer", "planner"],
 
   // -----------------------------------------------------------------------
   // preserveNative (boolean)
@@ -94,7 +131,7 @@
   // When resolve.json is created for the first time by postinstall, the
   // plugin inspects your OpenCode model config and writes an adaptive
   // preset:
-  //   - GLM/ZAI detected → mixed GLM + GPT aliases
+  //   - GLM/ZAI detected → GLM-only aliases (no GPT dependency)
   //   - OpenAI/GPT detected → single-provider GPT aliases using your model
   //   - Other or no model → empty (model-neutral inheritance)
   // Existing resolve.json files are never overwritten. Delete resolve.json
@@ -111,17 +148,19 @@
   //     "resolver": "strong"
   //   }
   //
-  // Example — GLM + GPT mixed preset (auto-generated for GLM/ZAI users):
+  // Example — GLM-only preset (auto-generated for GLM/ZAI users):
+  //   All agents use GLM — no GPT dependency, so token exhaustion on
+  //   third-party providers never blocks agent execution.
   //   "models": {
   //     "glm": "zai-coding-plan/glm-5.1",
-  //     "gpt": "openai/gpt-5.5",
   //     "fast": "glm",
-  //     "strong": "gpt",
+  //     "strong": "glm",
   //     "coder": "glm",
-  //     "resolver": "gpt",
-  //     "reviewer": "gpt",
-  //     "deep-reviewer": "gpt",
-  //     "explorer": "fast"
+  //     "resolver": "glm",
+  //     "reviewer": "glm",
+  //     "deep-reviewer": "glm",
+  //     "explorer": "fast",
+  //     "planner": "glm"
   //   }
   //
   // Legacy aliases (glm, gpt, quick, deep) remain supported for backward
@@ -229,6 +268,20 @@
       "enabled": false,
       "mode": "subagent",
       "maxSteps": 8
+    },
+
+    // -----------------------------------------------------------------
+    // glm — GLM-optimized orchestrator (selectable in agent picker)
+    // Disabled by default. Enable to get a standalone GLM agent with
+    // coding-plan optimized prompts: serial coder dispatch, session
+    // limit handling, token-efficient execution.
+    // Users pick this from OpenCode's agent picker as an alternative
+    // to the default resolver.
+    // -----------------------------------------------------------------
+    "glm": {
+      "enabled": false,
+      "mode": "all",
+      "maxSteps": 30
     }
   }
 }
