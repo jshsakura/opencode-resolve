@@ -1181,3 +1181,118 @@ test("experimental.text.complete skips reminder for non-edit text", async () => 
   await hooks["experimental.text.complete"]({ sessionID: "s1", messageID: "m1", partID: "p1" }, output)
   assert.ok(!output.text.includes("Reminder"), "should NOT add reminder for non-edit text")
 })
+
+// ── LSP diagnostics event + tool.execute.after integration ────────────────
+
+test("event hook captures LSP diagnostics and tool.execute.after reports them", async () => {
+  const project = await createProject({
+    "opencode.json": {},
+    "opencode-resolve.json": {},
+    "package.json": { scripts: { test: "jest" } },
+  })
+  const previousHome = process.env.HOME
+  const previousUserprofile = process.env.USERPROFILE
+  process.env.HOME = project.path
+  process.env.USERPROFILE = project.path
+  try {
+    const config = { model: "provider/model", agent: {} }
+    const hooks = await OpencodeResolve(
+      { directory: project.path, client: {}, project: {}, worktree: project.path, serverUrl: new URL("http://localhost"), $: {}, experimental_workspace: { register() {} } },
+      {},
+    )
+    await hooks.config(config)
+
+    // Simulate LSP diagnostics event
+    const testPath = "/project/src/index.ts"
+    await hooks.event({
+      event: {
+        type: "lsp.client.diagnostics",
+        properties: { serverID: "typescript", path: testPath },
+        diagnostics: [
+          { severity: 1, message: "Type 'string' is not assignable to type 'number'." },
+          { severity: 2, message: "Unused variable 'x'." },
+        ],
+      },
+    })
+
+    // Now simulate tool.execute.after on that file
+    const output = { title: "", output: "", metadata: {} }
+    await hooks["tool.execute.after"](
+      { tool: "edit", sessionID: "s1", callID: "c1", args: { filePath: testPath } },
+      output,
+    )
+
+    // Should contain both verify hint and LSP diagnostics
+    assert.ok(output.metadata._resolve_verify_hint, "should have verify hint")
+    assert.equal(output.metadata._resolve_lsp_errors, 1, "should report 1 LSP error")
+    assert.equal(output.metadata._resolve_lsp_warnings, 1, "should report 1 LSP warning")
+  } finally {
+    if (previousHome === undefined) delete process.env.HOME
+    else process.env.HOME = previousHome
+    if (previousUserprofile === undefined) delete process.env.USERPROFILE
+    else process.env.USERPROFILE = previousUserprofile
+    await project.cleanup()
+  }
+})
+
+test("event hook clears diagnostics when errors are resolved", async () => {
+  const hooks = await getHooks()
+
+  const testPath = "/project/src/index.ts"
+  // First: errors
+  await hooks.event({
+    event: {
+      type: "lsp.client.diagnostics",
+      properties: { serverID: "typescript", path: testPath },
+      diagnostics: [{ severity: 1, message: "error" }],
+    },
+  })
+
+  // Then: all clear
+  await hooks.event({
+    event: {
+      type: "lsp.client.diagnostics",
+      properties: { serverID: "typescript", path: testPath },
+      diagnostics: [],
+    },
+  })
+
+  // tool.execute.after should NOT have LSP diagnostics
+  const output = { title: "", output: "", metadata: {} }
+  await hooks["tool.execute.after"](
+    { tool: "edit", sessionID: "s1", callID: "c1", args: { filePath: testPath } },
+    output,
+  )
+  assert.equal(output.metadata._resolve_lsp_errors, undefined, "should not have LSP errors after clear")
+})
+
+test("event hook ignores non-LSP events", async () => {
+  const hooks = await getHooks()
+  // Should not throw on unrelated events
+  await hooks.event({
+    event: { type: "chat.message.created", properties: {} },
+  })
+})
+
+test("coder prompt mentions LSP diagnostics", async () => {
+  const { config } = await runPlugin({})
+  assert.match(config.agent.coder.prompt, /LSP diagnostics/)
+})
+
+test("GLM coder prompt mentions LSP diagnostics", async () => {
+  const { config } = await runPlugin(
+    { model: "zai-coding-plan/glm-5.1" },
+    undefined,
+    { profile: "glm", enabled: ["coder", "resolver"] },
+  )
+  assert.match(config.agent.coder.prompt, /LSP diagnostics/)
+})
+
+test("GPT coder prompt mentions LSP diagnostics", async () => {
+  const { config } = await runPlugin(
+    { model: "openai/gpt-5.5" },
+    undefined,
+    { profile: "gpt" },
+  )
+  assert.match(config.agent.coder.prompt, /LSP diagnostics/)
+})

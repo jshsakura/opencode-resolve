@@ -135,7 +135,7 @@ const GLM_CODER_PROMPT = [
     "You are Coder (GLM profile), a concise implementation subagent for OpenCode Resolve.",
     "",
     "Read ONLY files you will edit. Make the SMALLEST correct change.",
-    "Verify immediately: type check or lint on changed files. Report exit code + errors.",
+    "Verify immediately: type check or lint on changed files. Check LSP diagnostics when available. Report exit code + errors.",
     "Return: changed files + verification result. No prose.",
     "",
     "NO EVIDENCE = INCOMPLETE WORK.",
@@ -167,7 +167,7 @@ const GPT_CODER_PROMPT = [
     "You are Coder (GPT profile), an implementation subagent for OpenCode Resolve.",
     "",
     "Read ONLY files you need. Make the SMALLEST correct change.",
-    "Verify: type check or lint on changed files. Report exit code + errors.",
+    "Verify: type check or lint on changed files. Check LSP diagnostics when available. Report exit code + errors.",
     "Return: changed files + verification result. Keep it concise.",
     "",
     "NO EVIDENCE = INCOMPLETE WORK.",
@@ -196,7 +196,7 @@ function buildResolverPrompt(maxParallelSubagents) {
         "",
         "If piloci MCP available: piloci_recall before inspecting code, piloci_memory after learning something non-obvious.",
         "",
-        "Verify: type check or lint MUST pass on changed files. NO EVIDENCE = NOT COMPLETE.",
+        "Verify: type check or lint MUST pass on changed files. Check LSP diagnostics when available. NO EVIDENCE = NOT COMPLETE.",
         "After non-trivial work: ask user to capture lesson → HARNESS.md (infra) or AGENTS.md (agent behavior).",
         "",
         "NEVER: as any / @ts-ignore / leave code broken / delete failing tests / commit without request.",
@@ -216,6 +216,7 @@ const DEFAULT_AGENT_CONFIG = {
             "",
             "Read ONLY files you need. Make the SMALLEST correct change.",
             "Verify: type check or lint on changed files. Report exit code + errors.",
+            "After editing: check LSP diagnostics (if available) for the file. If errors remain, fix before reporting.",
             "Return: changed files + verification result. No unnecessary prose.",
             "Dispatch explorer ONLY to locate 3+ unknown files. Otherwise use local read/grep/glob.",
             "",
@@ -469,7 +470,40 @@ export const OpencodeResolve = async ({ directory }, options) => {
     // Store resolve config for use across hooks
     let storedConfig;
     let storedProjectContext;
+    // Track recent LSP diagnostics for post-edit verification
+    const recentDiagnostics = new Map();
+    const DIAGNOSTICS_TTL_MS = 30_000; // Keep diagnostics for 30 seconds
     return {
+        // ── Event: capture LSP diagnostics for post-edit verification ────────
+        event: async (input) => {
+            const evt = input.event;
+            if (evt.type === "lsp.client.diagnostics") {
+                const props = evt.properties;
+                if (props.path) {
+                    // Count diagnostics from the event data
+                    // OpenCode sends full diagnostics in the event payload
+                    const data = evt;
+                    const diagnostics = Array.isArray(data.diagnostics) ? data.diagnostics
+                        : Array.isArray(data.errors) ? data.errors
+                            : [];
+                    const errors = diagnostics.filter((d) => d.severity === 1 || d.severity === "error").length;
+                    const warnings = diagnostics.filter((d) => d.severity === 2 || d.severity === "warning").length;
+                    if (errors > 0 || warnings > 0) {
+                        recentDiagnostics.set(props.path, { errors, warnings, timestamp: Date.now() });
+                    }
+                    else {
+                        // Clean diagnostics cleared — remove stale entry
+                        recentDiagnostics.delete(props.path);
+                    }
+                    // Prune stale entries
+                    const now = Date.now();
+                    for (const [key, value] of recentDiagnostics) {
+                        if (now - value.timestamp > DIAGNOSTICS_TTL_MS)
+                            recentDiagnostics.delete(key);
+                    }
+                }
+            }
+        },
         config: async (config) => {
             const resolveConfig = await loadResolveConfig(directory, config, options);
             const projectContext = await detectProjectContext(directory);
@@ -576,16 +610,25 @@ export const OpencodeResolve = async ({ directory }, options) => {
                 output.headers["X-Custom-Retry-Strategy"] = "exponential";
             }
         },
-        // ── Tool execute after: inject verification hints after edits ─────────
+        // ── Tool execute after: inject verification hints + LSP diagnostics after edits ─
         "tool.execute.after": async (input, output) => {
             if (input.tool === "edit" || input.tool === "write") {
                 const verifyCommands = storedProjectContext?.verifyCommands;
+                const meta = { ...(output.metadata ?? {}) };
                 if (verifyCommands && verifyCommands.length > 0) {
-                    output.metadata = {
-                        ...(output.metadata ?? {}),
-                        _resolve_verify_hint: verifyCommands[0],
-                    };
+                    meta._resolve_verify_hint = verifyCommands[0];
                 }
+                // Attach LSP diagnostics for the edited file if available
+                const args = input.args;
+                const editedPath = args?.filePath;
+                if (editedPath) {
+                    const diag = recentDiagnostics.get(editedPath);
+                    if (diag && Date.now() - diag.timestamp < DIAGNOSTICS_TTL_MS) {
+                        meta._resolve_lsp_errors = diag.errors;
+                        meta._resolve_lsp_warnings = diag.warnings;
+                    }
+                }
+                output.metadata = meta;
             }
         },
         // ── Session compacting: preserve critical context during compaction ───
