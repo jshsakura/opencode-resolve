@@ -232,7 +232,7 @@ opencode plugin opencode-resolve --global --force
 
 **Companion 2 — `@slkiser/opencode-quota` (사용량/quota 추적)**
 
-> _그리고 **`@slkiser/opencode-quota`** — 컨텍스트 윈도우를 오염시키지 않고 실시간 토큰/quota 사용량을 보여줍니다. GLM coding-plan, OpenAI Plus/Pro, Qwen 등 지원. opencode-resolve가 실제로 얼마나 토큰 절약하는지 눈으로 확인하는 데 유용. 설치할까요? (권장)_
+> _그리고 **`@slkiser/opencode-quota`** — 컨텍스트 윈도우를 오염시키지 않고 실시간 토큰/quota 사용량을 보여줍니다. GLM coding-plan, OpenAI Plus/Pro, Qwen 등 지원. 내 사용량/잔여 quota 확인용으로 유용. 설치할까요? (권장)_
 
 사용자가 **예** (각 질문마다):
 

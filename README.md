@@ -232,7 +232,7 @@ Before moving to model selection, ask the user about two **independent** compani
 
 **Companion 2 — `@slkiser/opencode-quota` (quota & usage tracking)**
 
-> _And **`@slkiser/opencode-quota`** — shows your live token/quota usage without polluting the context window. Supports GLM coding-plan, OpenAI Plus/Pro, Qwen, and more. Useful for actually seeing the token savings opencode-resolve gives you. Install it? (recommended)_
+> _And **`@slkiser/opencode-quota`** — shows your live token/quota usage without polluting the context window. Supports GLM coding-plan, OpenAI Plus/Pro, Qwen, and more. Useful for keeping an eye on your own usage / remaining quota. Install it? (recommended)_
 
 For each **yes** answer:
 
