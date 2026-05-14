@@ -8,18 +8,22 @@
   "models": {},
   "agents": {
     "coder": {
+      "enabled": true,
       "mode": "all"
     },
     "resolver": {
       "enabled": true
     },
     "explorer": {
+      "enabled": true,
       "mode": "subagent"
     },
     "reviewer": {
+      "enabled": true,
       "mode": "subagent"
     },
     "deep-reviewer": {
+      "enabled": true,
       "mode": "subagent"
     },
     "architect": {

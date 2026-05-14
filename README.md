@@ -196,7 +196,9 @@ You should now see `resolver` and `coder` agents available.
 
 ## Drop-in setup (give to an LLM)
 
-Hand the block below to any reasonably capable LLM along with the instruction _"set up opencode-resolve on this machine"_ and it can finish the install end-to-end. Everything below is the entire required configuration — no other MCP servers, environment variables, or files are needed.
+Hand the block below to any reasonably capable LLM along with the instruction _"set up opencode-resolve on this machine"_ and it will finish the install end-to-end. The LLM **must run this interactively** — it discovers what providers and models are already configured, then asks the user which to pin per role. No guessing, no invented model IDs.
+
+> **For LLMs reading this:** treat every "Ask the user" prompt below as a real question — wait for the user's answer before continuing. Never proceed with a default if the user hasn't responded. Never invent model IDs that aren't in the user's `opencode.json` (or in their declared `provider.*` registry).
 
 ### Step 1 — Install and prime the cache
 
@@ -208,21 +210,72 @@ This downloads the plugin, installs it into OpenCode's package cache (`~/.cache/
 
 ### Step 2 — Register the plugin in `~/.config/opencode/opencode.json`
 
-Merge into the existing file; **do not replace it**:
+Add the string `"opencode-resolve"` to the `plugin` array. **Do not use the inline tuple form here** — keep the entry as a bare string so all role/model config lives in `resolve.json` (Step 3). This avoids split-brain configuration.
 
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "model": "<your-default-model-id>",
+  "model": "<user-default-model-id>",
   "plugin": ["opencode-resolve"]
 }
 ```
 
-> If you already have other plugins, add `"opencode-resolve"` to the existing `plugin` array.
+> If the user already has other plugins, append `"opencode-resolve"` to the existing array. **Never overwrite** their existing config.
 
-### Step 3 — Create `~/.config/opencode/resolve.json`
+### Step 3 — Pick models interactively, then write `~/.config/opencode/resolve.json`
 
-This file is auto-created by `postinstall`. If it wasn't created, or you want the canonical recommended setup, copy the block below. By default all roles inherit your OpenCode default model — no `models` block is needed.
+The LLM **drives a short Q&A** here. Goal: end with `resolve.json` containing model IDs the user explicitly chose from their own configuration.
+
+#### 3a. Discover the user's installed providers and models
+
+Read `~/.config/opencode/opencode.json` and build a candidate map:
+
+| Source | What to collect |
+|---|---|
+| `provider.*` keys | Each configured provider (e.g. `zai`, `openai`, `anthropic`). |
+| `provider.<key>.models.*` keys | The model keys the user has declared under that provider. |
+| Top-level `model` | If the prefix before `/` is not already in `provider.*`, add it as an implicit candidate (e.g. `zai-coding-plan` from `zai-coding-plan/glm-5.1`). |
+| `agent.*.model` | Any per-agent overrides — add their provider/model pairs as candidates. |
+
+If the user has **no providers configured at all**, stop and tell them to add at least one provider with a valid API key to `opencode.json` first — opencode-resolve cannot pick a model that does not exist.
+
+#### 3b. Ask the user: which provider?
+
+Print the candidate list and ask. Example wording the LLM should use:
+
+> _I found these providers in your OpenCode config. Which one should opencode-resolve roles use?_
+>
+> 1. `zai-coding-plan` — models: `glm-5.1`, `glm-4.7-flash`
+> 2. `openai` — models: `gpt-4o`, `gpt-4o-mini`, `o1`, `o1-mini`, `o3-mini`, `gpt-5.5`
+> 3. _Other (provide an explicit `provider/model` ID)_
+
+If exactly one provider candidate exists, skip the question and use it.
+
+#### 3c. Ask the user: single-tier or split?
+
+> _Do you want a single model for every role, or split — a fast model for `coder`/`explorer` and a stronger model for `resolver`/`reviewer`/`deep-reviewer`?_
+>
+> A. Single model for all roles (simplest, recommended for one-provider setups)
+> B. Split — fast + strong (recommended when you have both a cheap and a strong model)
+
+#### 3d. Ask the user: which model(s)?
+
+Show only the models under the provider picked in 3b.
+
+- For **single-tier (A)** — ask one question:
+  > _Which model should every role use?_ → list models from the chosen provider.
+- For **split (B)** — ask two questions, in order:
+  > _Pick the **fast** model for `coder` and `explorer`:_ → list models.
+  >
+  > _Pick the **strong** model for `resolver`, `reviewer`, `deep-reviewer`:_ → list models.
+
+Confirm each pick back to the user before writing the file. Example:
+
+> _I'll pin `coder` and `explorer` to `zai-coding-plan/glm-5.1`, and `resolver`/`reviewer`/`deep-reviewer` to `openai/gpt-5.5`. Proceed?_
+
+#### 3e. Write `~/.config/opencode/resolve.json`
+
+If the user picked **A (single-tier)**, write:
 
 ```json
 {
@@ -230,28 +283,86 @@ This file is auto-created by `postinstall`. If it wasn't created, or you want th
   "preserveNative": true,
   "context7": true,
   "commands": false,
-  "models": {},
+  "models": {
+    "primary":       "<chosen-provider>/<chosen-model>",
+    "coder":         "primary",
+    "explorer":      "primary",
+    "resolver":      "primary",
+    "reviewer":      "primary",
+    "deep-reviewer": "primary"
+  },
   "agents": {
-    "coder":    { "mode": "all" },
-    "resolver": { "enabled": true },
-    "explorer":      { "mode": "subagent" },
-    "reviewer":      { "mode": "subagent" },
-    "deep-reviewer": { "mode": "subagent" },
-    "architect":  { "enabled": false },
-    "gpt-coder":  { "enabled": false },
-    "debugger":   { "enabled": false },
-    "researcher": { "enabled": false }
+    "coder":         { "enabled": true,  "mode": "all" },
+    "resolver":      { "enabled": true },
+    "explorer":      { "enabled": true,  "mode": "subagent" },
+    "reviewer":      { "enabled": true,  "mode": "subagent" },
+    "deep-reviewer": { "enabled": true,  "mode": "subagent" },
+    "architect":     { "enabled": false },
+    "gpt-coder":     { "enabled": false },
+    "debugger":      { "enabled": false },
+    "researcher":    { "enabled": false }
   },
   "autoApprove": true,
   "maxParallelSubagents": 2
 }
 ```
 
-> **Want role-specific models?** Add a `models` block pinning roles to your preferred model IDs. See [Model Setup](#model-setup) for details. The recommended default uses a single efficient model for all roles — just keep `models` empty.
+If the user picked **B (split)**, write:
 
-### Step 4 — Restart OpenCode
+```json
+{
+  "enabled": ["coder", "resolver", "explorer", "reviewer", "deep-reviewer"],
+  "preserveNative": true,
+  "context7": true,
+  "commands": false,
+  "models": {
+    "fast":          "<provider>/<fast-model>",
+    "strong":        "<provider>/<strong-model>",
+    "coder":         "fast",
+    "explorer":      "fast",
+    "resolver":      "strong",
+    "reviewer":      "strong",
+    "deep-reviewer": "strong"
+  },
+  "agents": {
+    "coder":         { "enabled": true,  "mode": "all" },
+    "resolver":      { "enabled": true },
+    "explorer":      { "enabled": true,  "mode": "subagent" },
+    "reviewer":      { "enabled": true,  "mode": "subagent" },
+    "deep-reviewer": { "enabled": true,  "mode": "subagent" },
+    "architect":     { "enabled": false },
+    "gpt-coder":     { "enabled": false },
+    "debugger":      { "enabled": false },
+    "researcher":    { "enabled": false }
+  },
+  "autoApprove": true,
+  "maxParallelSubagents": 2
+}
+```
 
-Close and reopen OpenCode. The core agents are `resolver` and `coder`. Internal specialist subagents (`explorer`, `reviewer`, `deep-reviewer`) are available by default as subagents for the resolver to dispatch when justified — they are not user-facing primary roles.
+Replace every `<provider>/<model>` placeholder with the **exact** ID strings the user picked in 3b/3d — no inventing, no autocompletion, no version drift. If you cannot map the picked model to a `provider/model` string, ask the user to clarify rather than guessing.
+
+> Each enabled agent carries an explicit `enabled: true` so the file is self-documenting. The `enabled` array remains authoritative; the per-agent flag just removes ambiguity for humans reading the file.
+
+> If `resolve.json` already exists, **do not overwrite it silently**. Show the user the existing content first, summarize what would change, and ask whether to overwrite, merge, or abort.
+
+### Step 4 — Restart OpenCode and verify
+
+Close and reopen OpenCode, then confirm the install worked:
+
+```sh
+opencode run "list available agents"
+```
+
+The output **must** include `resolver` and `coder` (and `reviewer` if enabled). Two failure modes to check explicitly:
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Only OpenCode's built-in `explore` / `general` appear | Plugin didn't load | Re-run `opencode plugin opencode-resolve --global --force`; verify `"opencode-resolve"` is in `opencode.json` `plugin` array as a string. |
+| Agents appear but fail when invoked with "model not found" | A pinned model ID in `models` doesn't exist | Re-open `resolve.json`, replace the offending ID with one the user actually has, restart. |
+| The user said split but only one tier shows up | `models` block missing `fast` or `strong` | Re-run Step 3 from 3d. |
+
+Internal specialist subagents (`explorer`, `reviewer`, `deep-reviewer`) are subagent-only and won't appear in the primary picker — only `resolver` (and `coder` since it has `mode: "all"`) show up there.
 
 ### Why this template
 

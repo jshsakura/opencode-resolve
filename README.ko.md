@@ -196,7 +196,9 @@ opencode
 
 ## 드롭인 설정 (LLM에 전달)
 
-아래 블록을 능력 있는 LLM에 _"이 머신에 opencode-resolve를 설정해줘"_ 지시와 함께 전달하면 설치를 끝까지 완료할 수 있습니다. 아래가 전체 필요 설정이며 — 다른 MCP 서버, 환경 변수, 파일은 필요 없습니다.
+아래 블록을 능력 있는 LLM(Claude Code, Cursor, Codex 등)에 _"이 머신에 opencode-resolve를 설정해줘"_ 지시와 함께 전달하세요. LLM은 **인터랙티브하게** 설치를 진행해야 합니다 — 이미 설정된 provider와 model을 발견한 다음, 어느 것을 역할에 핀닝할지 사용자에게 직접 물어봅니다. 추측 금지, 임의 모델 ID 금지.
+
+> **LLM에게:** 아래 "사용자에게 질문" 단계는 모두 실제 질문입니다 — 사용자의 답변을 기다린 뒤에만 진행하세요. 응답 없이 기본값으로 넘어가지 마세요. 사용자의 `opencode.json`(또는 선언된 `provider.*` 레지스트리)에 없는 모델 ID는 절대 만들지 마세요.
 
 ### 1단계 — 설치 및 캐시 준비
 
@@ -208,7 +210,7 @@ opencode plugin opencode-resolve --global --force
 
 ### 2단계 — `~/.config/opencode/opencode.json`에 플러그인 등록
 
-기존 파일에 병합; **교체하지 마세요**:
+`plugin` 배열에 문자열 `"opencode-resolve"`를 추가합니다. **여기서는 인라인 튜플 형태를 쓰지 마세요** — 항목을 단순 문자열로 두어 모든 역할/모델 설정이 `resolve.json`(3단계)에서 관리되도록 합니다. 설정 이원화로 인한 디버깅 부담을 막습니다.
 
 ```json
 {
@@ -218,11 +220,62 @@ opencode plugin opencode-resolve --global --force
 }
 ```
 
-> 이미 다른 플러그인이 있다면, 기존 `plugin` 배열에 `"opencode-resolve"`를 추가하세요.
+> 이미 다른 플러그인이 있다면, 기존 배열에 `"opencode-resolve"`를 **추가**하세요. 기존 설정을 **덮어쓰지 마세요**.
 
-### 3단계 — `~/.config/opencode/resolve.json` 생성
+### 3단계 — 모델을 인터랙티브하게 고른 뒤 `~/.config/opencode/resolve.json` 작성
 
-이 파일은 `postinstall`에 의해 자동 생성됩니다. 생성되지 않았거나, 권장 설정을 원하면 아래 블록을 복사하세요. 기본적으로 모든 역할이 OpenCode 기본 모델을 상속합니다 — `models` 블록이 필요 없습니다.
+여기서 LLM이 **짧은 Q&A를 주도**합니다. 목표: 사용자가 자신의 설정에서 직접 고른 모델 ID로 `resolve.json`을 마무리하는 것.
+
+#### 3a. 사용자의 설치된 provider와 model 발견
+
+`~/.config/opencode/opencode.json`을 읽고 후보 맵을 만듭니다:
+
+| 출처 | 수집할 내용 |
+|---|---|
+| `provider.*` 키 | 설정된 각 provider (예: `zai`, `openai`, `anthropic`). |
+| `provider.<key>.models.*` 키 | 사용자가 해당 provider 아래 선언한 모델 키들. |
+| 최상위 `model` | `/` 앞 prefix가 `provider.*`에 없다면, 묵시적 후보로 추가 (예: `zai-coding-plan/glm-5.1`에서 `zai-coding-plan`). |
+| `agent.*.model` | 에이전트별 override — 그 provider/model 쌍도 후보에 추가. |
+
+provider가 **하나도 설정되지 않은 경우** 진행을 멈추고, `opencode.json`에 유효한 API 키를 가진 provider를 먼저 추가하라고 사용자에게 안내하세요 — opencode-resolve는 존재하지 않는 모델을 선택할 수 없습니다.
+
+#### 3b. 사용자에게 질문: 어떤 provider?
+
+후보 리스트를 출력하고 묻습니다. 예시 멘트:
+
+> _OpenCode 설정에서 다음 provider들을 찾았어요. opencode-resolve 역할에 어느 걸 쓸까요?_
+>
+> 1. `zai-coding-plan` — 모델: `glm-5.1`, `glm-4.7-flash`
+> 2. `openai` — 모델: `gpt-4o`, `gpt-4o-mini`, `o1`, `o1-mini`, `o3-mini`, `gpt-5.5`
+> 3. _기타 (명시적인 `provider/model` ID 직접 입력)_
+
+후보 provider가 정확히 하나면 질문을 건너뛰고 사용합니다.
+
+#### 3c. 사용자에게 질문: 단일 / 분할?
+
+> _모든 역할에 단일 모델을 쓸까요, 아니면 분할 — `coder`/`explorer`에는 빠른 모델, `resolver`/`reviewer`/`deep-reviewer`에는 더 강력한 모델을 쓸까요?_
+>
+> A. 모든 역할에 단일 모델 (가장 단순, 단일 provider에 권장)
+> B. 분할 — fast + strong (저렴한 모델 + 강력한 모델 둘 다 가진 경우 권장)
+
+#### 3d. 사용자에게 질문: 어떤 모델?
+
+3b에서 고른 provider의 모델만 보여주세요.
+
+- **단일 (A)** 의 경우 한 번만 질문:
+  > _모든 역할이 사용할 모델은 무엇인가요?_ → 선택한 provider의 모델 목록 제시.
+- **분할 (B)** 의 경우 순서대로 두 번 질문:
+  > _`coder`와 `explorer`용 **fast** 모델을 고르세요:_ → 모델 목록.
+  >
+  > _`resolver`, `reviewer`, `deep-reviewer`용 **strong** 모델을 고르세요:_ → 모델 목록.
+
+파일을 쓰기 전에 각 선택을 사용자에게 다시 확인시키세요. 예:
+
+> _`coder`와 `explorer`를 `zai-coding-plan/glm-5.1`로, `resolver`/`reviewer`/`deep-reviewer`를 `openai/gpt-5.5`로 핀닝합니다. 진행할까요?_
+
+#### 3e. `~/.config/opencode/resolve.json` 작성
+
+사용자가 **A (단일)** 를 골랐다면:
 
 ```json
 {
@@ -230,28 +283,86 @@ opencode plugin opencode-resolve --global --force
   "preserveNative": true,
   "context7": true,
   "commands": false,
-  "models": {},
+  "models": {
+    "primary":       "<선택한-provider>/<선택한-모델>",
+    "coder":         "primary",
+    "explorer":      "primary",
+    "resolver":      "primary",
+    "reviewer":      "primary",
+    "deep-reviewer": "primary"
+  },
   "agents": {
-    "coder":    { "mode": "all" },
-    "resolver": { "enabled": true },
-    "explorer":      { "mode": "subagent" },
-    "reviewer":      { "mode": "subagent" },
-    "deep-reviewer": { "mode": "subagent" },
-    "architect":  { "enabled": false },
-    "gpt-coder":  { "enabled": false },
-    "debugger":   { "enabled": false },
-    "researcher": { "enabled": false }
+    "coder":         { "enabled": true,  "mode": "all" },
+    "resolver":      { "enabled": true },
+    "explorer":      { "enabled": true,  "mode": "subagent" },
+    "reviewer":      { "enabled": true,  "mode": "subagent" },
+    "deep-reviewer": { "enabled": true,  "mode": "subagent" },
+    "architect":     { "enabled": false },
+    "gpt-coder":     { "enabled": false },
+    "debugger":      { "enabled": false },
+    "researcher":    { "enabled": false }
   },
   "autoApprove": true,
   "maxParallelSubagents": 2
 }
 ```
 
-> **역할별 모델을 원하나요?** `models` 블록에 역할을 원하는 모델 ID로 핀닝하세요. 자세한 내용은 [모델 설정](#모델-설정)을 참조하세요. 권장 기본값은 모든 역할에 하나의 효율적인 모델을 사용하는 것 — `models`를 비워두세요.
+사용자가 **B (분할)** 를 골랐다면:
 
-### 4단계 — OpenCode 재시작
+```json
+{
+  "enabled": ["coder", "resolver", "explorer", "reviewer", "deep-reviewer"],
+  "preserveNative": true,
+  "context7": true,
+  "commands": false,
+  "models": {
+    "fast":          "<provider>/<fast-모델>",
+    "strong":        "<provider>/<strong-모델>",
+    "coder":         "fast",
+    "explorer":      "fast",
+    "resolver":      "strong",
+    "reviewer":      "strong",
+    "deep-reviewer": "strong"
+  },
+  "agents": {
+    "coder":         { "enabled": true,  "mode": "all" },
+    "resolver":      { "enabled": true },
+    "explorer":      { "enabled": true,  "mode": "subagent" },
+    "reviewer":      { "enabled": true,  "mode": "subagent" },
+    "deep-reviewer": { "enabled": true,  "mode": "subagent" },
+    "architect":     { "enabled": false },
+    "gpt-coder":     { "enabled": false },
+    "debugger":      { "enabled": false },
+    "researcher":    { "enabled": false }
+  },
+  "autoApprove": true,
+  "maxParallelSubagents": 2
+}
+```
 
-OpenCode를 닫았다가 다시 여세요. 핵심 에이전트는 `resolver`와 `coder`입니다. 내부 전문가 서브에이전트(`explorer`, `reviewer`, `deep-reviewer`)는 기본적으로 서브에이전트로 사용 가능하며, resolver가 필요하다고 판단할 때 디스패치됩니다 — 사용자 대면 기본 역할이 아닙니다.
+`<provider>/<모델>` 플레이스홀더는 모두 사용자가 3b/3d에서 고른 **정확한** ID 문자열로 교체 — 임의 생성 금지, 자동완성 금지, 버전 드리프트 금지. 고른 모델을 `provider/model` 문자열로 매핑할 수 없으면 추측하지 말고 사용자에게 다시 물어보세요.
+
+> 활성 에이전트마다 명시적인 `enabled: true`를 두어 파일이 자체 문서화됩니다. `enabled` 배열이 여전히 권위 있으며, 에이전트별 플래그는 사람이 파일을 읽을 때의 모호함만 제거합니다.
+
+> `resolve.json`이 이미 존재하면 **조용히 덮어쓰지 마세요**. 기존 내용을 먼저 사용자에게 보여주고, 무엇이 바뀔지 요약한 다음, 덮어쓸지 / 병합할지 / 중단할지 물어보세요.
+
+### 4단계 — OpenCode 재시작 및 검증
+
+OpenCode를 닫았다가 다시 연 후, 설치가 잘 됐는지 확인하세요:
+
+```sh
+opencode run "list available agents"
+```
+
+출력에 `resolver`와 `coder`가(활성화 시 `reviewer`도) **반드시** 포함되어야 합니다. 명시적으로 점검할 실패 모드 두 가지:
+
+| 증상 | 원인 | 조치 |
+|---|---|---|
+| OpenCode 내장 `explore` / `general`만 나옴 | 플러그인이 로드되지 않음 | `opencode plugin opencode-resolve --global --force` 재실행; `opencode.json`의 `plugin` 배열에 `"opencode-resolve"`가 문자열로 들어있는지 확인. |
+| 에이전트는 보이는데 호출 시 "model not found" | `models`에 핀닝된 ID가 실제로 없음 | `resolve.json`을 다시 열어, 해당 ID를 사용자가 실제 보유한 ID로 교체 후 재시작. |
+| 분할(B)을 골랐는데 한 단계만 작동 | `models` 블록에 `fast` 또는 `strong` 누락 | 3단계의 3d부터 다시 실행. |
+
+내부 전문가 서브에이전트(`explorer`, `reviewer`, `deep-reviewer`)는 서브에이전트 전용이므로 기본 picker에는 나타나지 않습니다 — `resolver`(그리고 `mode: "all"`을 가진 `coder`)만 거기 보입니다.
 
 ### 이 템플릿을 사용하는 이유
 
