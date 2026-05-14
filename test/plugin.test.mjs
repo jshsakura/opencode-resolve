@@ -1118,3 +1118,66 @@ test("experimental.chat.system.transform skips injection when no project context
   assert.equal(output.system.length, 1)
   assert.equal(output.system[0], "You are an AI assistant.")
 })
+
+test("tool.execute.before adds hint for git commit without -m", async () => {
+  const hooks = await getHooks()
+  const output = { args: { command: "git commit" } }
+  await hooks["tool.execute.before"]({ tool: "bash", sessionID: "s1", callID: "c1" }, output)
+  assert.ok(output.args._resolve_hint, "should add hint for git commit without -m")
+  assert.ok(output.args._resolve_hint.includes("git commit -m"), "hint should mention -m flag")
+})
+
+test("tool.execute.before does not modify git commit -m", async () => {
+  const hooks = await getHooks()
+  const output = { args: { command: 'git commit -m "fix: something"' } }
+  await hooks["tool.execute.before"]({ tool: "bash", sessionID: "s1", callID: "c1" }, output)
+  assert.equal(output.args._resolve_hint, undefined, "should not add hint for git commit -m")
+})
+
+test("tool.execute.before does not modify non-bash tools", async () => {
+  const hooks = await getHooks()
+  const output = { args: { filePath: "/tmp/test.ts" } }
+  await hooks["tool.execute.before"]({ tool: "edit", sessionID: "s1", callID: "c1" }, output)
+  assert.equal(output.args.filePath, "/tmp/test.ts", "should not modify edit args")
+})
+
+test("chat.headers adds retry strategy for ZAI/GLM providers", async () => {
+  const hooks = await getHooks()
+  const output = { headers: {} }
+  await hooks["chat.headers"](
+    { sessionID: "s1", agent: "resolver", model: { id: "glm-5.1" }, provider: { source: "config", info: { id: "zai-coding-plan" }, options: {} }, message: {} },
+    output,
+  )
+  assert.equal(output.headers["X-Custom-Retry-Strategy"], "exponential")
+})
+
+test("chat.headers skips retry strategy for non-GLM providers", async () => {
+  const hooks = await getHooks()
+  const output = { headers: {} }
+  await hooks["chat.headers"](
+    { sessionID: "s1", agent: "resolver", model: { id: "gpt-4" }, provider: { source: "config", info: { id: "openai" }, options: {} }, message: {} },
+    output,
+  )
+  assert.equal(output.headers["X-Custom-Retry-Strategy"], undefined)
+})
+
+test("experimental.text.complete adds verification reminder for unverified edits", async () => {
+  const hooks = await getHooks()
+  const output = { text: "I edited the file:\n```typescript\nconst x = 1;\n```" }
+  await hooks["experimental.text.complete"]({ sessionID: "s1", messageID: "m1", partID: "p1" }, output)
+  assert.ok(output.text.includes("verify your changes"), "should add verification reminder")
+})
+
+test("experimental.text.complete skips reminder when already verified", async () => {
+  const hooks = await getHooks()
+  const output = { text: "I edited the file and verified:\n```typescript\nconst x = 1;\n```\nverified with tsc --noEmit ✅" }
+  await hooks["experimental.text.complete"]({ sessionID: "s1", messageID: "m1", partID: "p1" }, output)
+  assert.ok(!output.text.includes("Reminder"), "should NOT add reminder when already verified")
+})
+
+test("experimental.text.complete skips reminder for non-edit text", async () => {
+  const hooks = await getHooks()
+  const output = { text: "The architecture looks good. Let me think about it." }
+  await hooks["experimental.text.complete"]({ sessionID: "s1", messageID: "m1", partID: "p1" }, output)
+  assert.ok(!output.text.includes("Reminder"), "should NOT add reminder for non-edit text")
+})

@@ -558,6 +558,24 @@ export const OpencodeResolve = async ({ directory }, options) => {
                 text: "[opencode-resolve] Drive to verified resolution. Classify intent, dispatch focused subagents, verify after each, iterate on failure. Report completion only when verified.",
             });
         },
+        // ── Tool execute before: pre-process tool args ────────────────────────
+        "tool.execute.before": async (input, output) => {
+            // For bash: inject hints for common mistakes
+            if (input.tool === "bash" && output.args && typeof output.args === "object") {
+                const cmd = output.args.command ?? output.args.cmd;
+                if (typeof cmd === "string" && cmd.includes("git commit") && !cmd.includes("-m")) {
+                    output.args = { ...output.args, _resolve_hint: "Use 'git commit -m \"message\"' — interactive commit is blocked." };
+                }
+            }
+        },
+        // ── Chat headers: provider-specific optimizations ─────────────────────
+        "chat.headers": async (input, output) => {
+            const providerID = input.provider?.info?.id ?? "";
+            // For GLM providers: add retry-after hint to avoid rate limiting
+            if (providerID.includes("zai") || providerID.includes("glm") || providerID.includes("bigmodel")) {
+                output.headers["X-Custom-Retry-Strategy"] = "exponential";
+            }
+        },
         // ── Tool execute after: inject verification hints after edits ─────────
         "tool.execute.after": async (input, output) => {
             if (input.tool === "edit" || input.tool === "write") {
@@ -625,6 +643,17 @@ export const OpencodeResolve = async ({ directory }, options) => {
             }
             if (lines.length > 0) {
                 output.system.push(lines.join("\n"));
+            }
+        },
+        // ── Text complete: post-turn verification nudge ──────────────────────
+        "experimental.text.complete": async (_input, output) => {
+            // After each LLM turn, if the output looks like code changes were made,
+            // append a verification reminder
+            const text = output.text ?? "";
+            const looksLikeEdit = text.includes("```") || text.includes("edit") || text.includes("wrote") || text.includes("changed");
+            const alreadyVerified = text.includes("verified") || text.includes("pass") || text.includes("✅") || text.includes("tsc --noEmit");
+            if (looksLikeEdit && !alreadyVerified) {
+                output.text = text + "\n\n[opencode-resolve] Reminder: verify your changes before reporting completion.";
             }
         },
     };
