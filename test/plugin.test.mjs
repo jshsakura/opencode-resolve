@@ -1296,3 +1296,120 @@ test("GPT coder prompt mentions LSP diagnostics", async () => {
   )
   assert.match(config.agent.coder.prompt, /LSP diagnostics/)
 })
+
+// ── Custom tools registration tests ──────────────────────────────────────
+
+test("custom tools are registered with correct names", async () => {
+  const hooks = await getHooks()
+  assert.equal(typeof hooks.tool, "object")
+  assert.ok(hooks.tool["resolve-verify"], "should have resolve-verify tool")
+  assert.ok(hooks.tool["resolve-diagnostics"], "should have resolve-diagnostics tool")
+  assert.ok(hooks.tool["resolve-context"], "should have resolve-context tool")
+  assert.ok(hooks.tool["resolve-git-status"], "should have resolve-git-status tool")
+  assert.ok(hooks.tool["resolve-deps"], "should have resolve-deps tool")
+})
+
+test("resolve-verify tool has execute function and description", async () => {
+  const hooks = await getHooks()
+  const t = hooks.tool["resolve-verify"]
+  assert.equal(typeof t.execute, "function")
+  assert.ok(t.description.includes("verification"))
+  assert.ok(t.args.command, "should have command arg schema")
+})
+
+test("resolve-diagnostics tool has execute function and description", async () => {
+  const hooks = await getHooks()
+  const t = hooks.tool["resolve-diagnostics"]
+  assert.equal(typeof t.execute, "function")
+  assert.ok(t.description.includes("LSP diagnostics"))
+})
+
+test("resolve-context tool has execute function and returns project info", async () => {
+  const project = await createProject({
+    "opencode.json": {},
+    "opencode-resolve.json": {},
+    "tsconfig.json": { compilerOptions: {} },
+    "package.json": { scripts: { test: "jest" } },
+    "HARNESS.md": "# harness",
+  })
+  const previousHome = process.env.HOME
+  const previousUserprofile = process.env.USERPROFILE
+  process.env.HOME = project.path
+  process.env.USERPROFILE = project.path
+  try {
+    const config = { model: "provider/model", agent: {} }
+    const hooks = await OpencodeResolve(
+      { directory: project.path, client: {}, project: {}, worktree: project.path, serverUrl: new URL("http://localhost"), $: {}, experimental_workspace: { register() {} } },
+      {},
+    )
+    await hooks.config(config)
+
+    const result = await hooks.tool["resolve-context"].execute(
+      {},
+      { sessionID: "s1", messageID: "m1", agent: "resolver", directory: project.path, worktree: project.path, abort: new AbortController().signal, metadata() {}, ask: () => ({}) },
+    )
+    const text = typeof result === "string" ? result : result.output
+    assert.ok(text.includes("HARNESS.md"), "should mention HARNESS.md")
+    assert.ok(text.includes("TypeScript"), "should mention TypeScript")
+    assert.ok(text.includes("npm test"), "should mention verify command")
+  } finally {
+    if (previousHome === undefined) delete process.env.HOME
+    else process.env.HOME = previousHome
+    if (previousUserprofile === undefined) delete process.env.USERPROFILE
+    else process.env.USERPROFILE = previousUserprofile
+    await project.cleanup()
+  }
+})
+
+test("resolve-deps tool returns dependencies from package.json", async () => {
+  const project = await createProject({
+    "opencode.json": {},
+    "opencode-resolve.json": {},
+    "package.json": { dependencies: { lodash: "^4.17.21", zod: "^3.22.0" }, devDependencies: { typescript: "^5.3.0" } },
+  })
+  const previousHome = process.env.HOME
+  const previousUserprofile = process.env.USERPROFILE
+  process.env.HOME = project.path
+  process.env.USERPROFILE = project.path
+  try {
+    const config = { model: "provider/model", agent: {} }
+    const hooks = await OpencodeResolve(
+      { directory: project.path, client: {}, project: {}, worktree: project.path, serverUrl: new URL("http://localhost"), $: {}, experimental_workspace: { register() {} } },
+      {},
+    )
+    await hooks.config(config)
+
+    // Dependencies
+    const depsResult = await hooks.tool["resolve-deps"].execute(
+      {},
+      { sessionID: "s1", messageID: "m1", agent: "resolver", directory: project.path, worktree: project.path, abort: new AbortController().signal, metadata() {}, ask: () => ({}) },
+    )
+    const depsText = typeof depsResult === "string" ? depsResult : depsResult.output
+    assert.ok(depsText.includes("lodash"), "should list lodash")
+    assert.ok(depsText.includes("zod"), "should list zod")
+
+    // DevDependencies
+    const devResult = await hooks.tool["resolve-deps"].execute(
+      { dev: true },
+      { sessionID: "s1", messageID: "m1", agent: "resolver", directory: project.path, worktree: project.path, abort: new AbortController().signal, metadata() {}, ask: () => ({}) },
+    )
+    const devText = typeof devResult === "string" ? devResult : devResult.output
+    assert.ok(devText.includes("typescript"), "should list typescript in devDeps")
+  } finally {
+    if (previousHome === undefined) delete process.env.HOME
+    else process.env.HOME = previousHome
+    if (previousUserprofile === undefined) delete process.env.USERPROFILE
+    else process.env.USERPROFILE = previousUserprofile
+    await project.cleanup()
+  }
+})
+
+test("resolve-diagnostics returns no active diagnostics when empty", async () => {
+  const hooks = await getHooks()
+  const result = await hooks.tool["resolve-diagnostics"].execute(
+    {},
+    { sessionID: "s1", messageID: "m1", agent: "resolver", directory: "/tmp", worktree: "/tmp", abort: new AbortController().signal, metadata() {}, ask: () => ({}) },
+  )
+  const text = typeof result === "string" ? result : result.output
+  assert.ok(text.includes("No active"), "should report no active diagnostics")
+})

@@ -5,6 +5,7 @@ import { homedir } from "node:os"
 import { basename, dirname, isAbsolute, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import type { Config, Plugin } from "@opencode-ai/plugin"
+import { tool } from "@opencode-ai/plugin"
 
 const PLUGIN_VERSION = readPluginVersion()
 const UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000
@@ -831,7 +832,147 @@ export const OpencodeResolve: Plugin = async ({ directory }, options) => {
         output.text = text + "\n\n[opencode-resolve] Reminder: verify your changes before reporting completion."
       }
     },
+
+    // ── Custom tools ──────────────────────────────────────────────────────
+    tool: {
+      "resolve-verify": tool({
+        description: "Run project verification commands (typecheck, lint, test) and return results. Use after editing files to confirm correctness.",
+        args: {
+          command: tool.schema.string().optional().describe("Specific verify command to run. If omitted, runs the first detected verify command (e.g. typecheck or lint)."),
+        },
+        async execute(args, ctx) {
+          const projCtx = storedProjectContext
+          if (!projCtx || projCtx.verifyCommands.length === 0) {
+            return "No verify commands detected for this project. Add typecheck/lint/test scripts to package.json."
+          }
+          const cmd = args.command ?? projCtx.verifyCommands[0]
+          try {
+            const result = await runCommand(cmd, ctx.directory, 30_000)
+            ctx.metadata({ title: `verify: ${cmd}` })
+            if (result.exitCode === 0) {
+              return { output: `✅ ${cmd} passed.\n${truncateOutput(result.stdout, 500)}`, metadata: { exitCode: 0 } }
+            }
+            return { output: `❌ ${cmd} failed (exit ${result.exitCode}).\n${truncateOutput(result.stderr || result.stdout, 1000)}`, metadata: { exitCode: result.exitCode } }
+          } catch (err) {
+            return `⚠️ Failed to run '${cmd}': ${err instanceof Error ? err.message : String(err)}`
+          }
+        },
+      }),
+
+      "resolve-diagnostics": tool({
+        description: "Get current LSP diagnostics snapshot. Returns errors and warnings per file from the language server.",
+        args: {
+          path: tool.schema.string().optional().describe("Specific file path to check. If omitted, returns all files with active diagnostics."),
+        },
+        async execute(args) {
+          if (recentDiagnostics.size === 0) {
+            return "No active LSP diagnostics."
+          }
+          const now = Date.now()
+          const entries: string[] = []
+          for (const [filePath, diag] of recentDiagnostics) {
+            if (now - diag.timestamp > DIAGNOSTICS_TTL_MS) continue
+            if (args.path && filePath !== args.path) continue
+            entries.push(`${filePath}: ${diag.errors} errors, ${diag.warnings} warnings`)
+          }
+          if (entries.length === 0) {
+            return args.path ? `No active diagnostics for ${args.path}.` : "No active LSP diagnostics."
+          }
+          return entries.join("\n")
+        },
+      }),
+
+      "resolve-context": tool({
+        description: "Get detected project context: knowledge files, verify commands, package manager, TypeScript status.",
+        args: {},
+        async execute() {
+          const ctx = storedProjectContext
+          if (!ctx) return "No project context detected."
+          const lines: string[] = []
+          if (ctx.knowledgeFiles.length > 0) lines.push(`Knowledge files: ${ctx.knowledgeFiles.join(", ")}`)
+          if (ctx.verifyCommands.length > 0) lines.push(`Verify commands: ${ctx.verifyCommands.join("; ")}`)
+          if (ctx.packageManager) lines.push(`Package manager: ${ctx.packageManager}`)
+          if (ctx.hasTypeScript) lines.push("TypeScript: yes")
+          if (ctx.hasHarness) lines.push("HARNESS.md: present")
+          if (ctx.hasAgents) lines.push("AGENTS.md: present")
+          return lines.length > 0 ? lines.join("\n") : "Empty project — no context detected."
+        },
+      }),
+
+      "resolve-git-status": tool({
+        description: "Get git status summary: branch, staged/unstaged/untracked file counts, and short diff stat.",
+        args: {},
+        async execute(_args, ctx) {
+          try {
+            const branch = await runCommand("git rev-parse --abbrev-ref HEAD", ctx.directory, 5_000)
+            const status = await runCommand("git status --porcelain", ctx.directory, 5_000)
+            const diffStat = await runCommand("git diff --stat", ctx.directory, 5_000)
+            const lines = [
+              `Branch: ${branch.stdout.trim()}`,
+              `Changed files: ${status.stdout.trim().split("\n").filter(Boolean).length}`,
+            ]
+            if (diffStat.stdout.trim()) {
+              lines.push(`Diff:\n${truncateOutput(diffStat.stdout, 500)}`)
+            }
+            return lines.join("\n")
+          } catch {
+            return "Not a git repository or git unavailable."
+          }
+        },
+      }),
+
+      "resolve-deps": tool({
+        description: "List dependencies and devDependencies from package.json with version info.",
+        args: {
+          dev: tool.schema.boolean().optional().describe("If true, show devDependencies only. If false/omitted, show dependencies."),
+        },
+        async execute(args, ctx) {
+          try {
+            const pkgRaw = await readFile(join(ctx.directory, "package.json"), "utf8")
+            const pkg = JSON.parse(pkgRaw)
+            const section = args.dev ? pkg.devDependencies : pkg.dependencies
+            if (!section || Object.keys(section).length === 0) {
+              return args.dev ? "No devDependencies found." : "No dependencies found."
+            }
+            return Object.entries(section as Record<string, string>).map(([name, ver]) => `${name}: ${ver}`).join("\n")
+          } catch {
+            return "No package.json found or unreadable."
+          }
+        },
+      }),
+    },
   }
+}
+
+// ── Command runner helper for custom tools ────────────────────────────────
+
+function runCommand(command: string, cwd: string, timeoutMs: number): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+  return new Promise((resolve) => {
+    const proc = spawn("sh", ["-c", command], {
+      cwd,
+      env: { ...process.env, CI: "true", GIT_TERMINAL_PROMPT: "0" },
+      stdio: ["ignore", "pipe", "pipe"],
+    })
+    let stdout = ""
+    let stderr = ""
+    const timer = setTimeout(() => { proc.kill("SIGKILL") }, timeoutMs)
+
+    proc.stdout.on("data", (d: Buffer) => { stdout += d.toString() })
+    proc.stderr.on("data", (d: Buffer) => { stderr += d.toString() })
+    proc.on("close", (code) => {
+      clearTimeout(timer)
+      resolve({ stdout, stderr, exitCode: code ?? 1 })
+    })
+    proc.on("error", (err) => {
+      clearTimeout(timer)
+      resolve({ stdout: "", stderr: err.message, exitCode: 1 })
+    })
+  })
+}
+
+function truncateOutput(text: string, maxLen: number): string {
+  if (text.length <= maxLen) return text
+  return text.slice(0, maxLen) + `\n... (${text.length - maxLen} more bytes truncated)`
 }
 
 async function maybeAutoUpdate(): Promise<void> {
