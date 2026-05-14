@@ -222,6 +222,23 @@ opencode plugin opencode-resolve --global --force
 
 > 이미 다른 플러그인이 있다면, 기존 배열에 `"opencode-resolve"`를 **추가**하세요. 기존 설정을 **덮어쓰지 마세요**.
 
+#### 2b. 권장 companion 플러그인 제안
+
+모델 선택으로 넘어가기 전에, 사용자에게 **한 번** `@tarquinen/opencode-dcp` (Dynamic Context Pruning) 도 같이 설치할지 묻습니다. 별개의 OpenCode 플러그인으로, 대화 컨텍스트에서 obsolete tool output을 잘라내 긴 resolver 루프의 토큰 비용을 낮춥니다. opencode-resolve가 필수로 요구하진 않지만 — 궁합이 좋습니다.
+
+권장 멘트:
+
+> _opencode-resolve는 **`@tarquinen/opencode-dcp`** 와 궁합이 좋아요 — obsolete tool output을 가지치기해서 긴 resolver 루프의 토큰 비용을 줄입니다. 같이 설치할까요? (권장)_
+
+사용자가 **예**:
+
+1. `opencode plugin @tarquinen/opencode-dcp@latest --global --force` 실행 (캐시 priming).
+2. `~/.config/opencode/opencode.json`의 `plugin` 배열에 `"@tarquinen/opencode-dcp@latest"`를 추가 — 이미 있으면 스킵.
+
+사용자가 **아니오**: 스킵 — 이 항목으로 `opencode.json`을 수정하지 마세요. 어느 쪽이든 3단계로 진행.
+
+> `context7` MCP는 `resolve.json`에서 `context7: true`(기본값)이면 opencode-resolve가 런타임에 자동 등록합니다. 별도 질문 불필요.
+
 ### 3단계 — 모델을 인터랙티브하게 고른 뒤 `~/.config/opencode/resolve.json` 작성
 
 여기서 LLM이 **짧은 Q&A를 주도**합니다. 목표: 사용자가 자신의 설정에서 직접 고른 모델 ID로 `resolve.json`을 마무리하는 것.
@@ -253,10 +270,14 @@ provider가 **하나도 설정되지 않은 경우** 진행을 멈추고, `openc
 
 #### 3c. 사용자에게 질문: 단일 / 분할?
 
-> _모든 역할에 단일 모델을 쓸까요, 아니면 분할 — `coder`/`explorer`에는 빠른 모델, `resolver`/`reviewer`/`deep-reviewer`에는 더 강력한 모델을 쓸까요?_
+기본 권장은 **B (분할)**. opencode-resolve의 resolver↔coder 루프는 본질적으로 doer 쪽은 더 싼 모델, judge 쪽은 더 강한 모델로 갈리는 게 유리하고, 거의 모든 최신 OpenCode 환경에서 최소 두 개의 모델 tier에 접근 가능합니다. A는 사용자가 모델이 하나뿐이거나 명시적으로 단순함을 원할 때만 fallback으로 제시.
+
+> _권장: **분할** — `coder`/`explorer`에는 fast 모델, `resolver`/`reviewer`/`deep-reviewer`에는 strong 모델. 선택:_
 >
-> A. 모든 역할에 단일 모델 (가장 단순, 단일 provider에 권장)
-> B. 분할 — fast + strong (저렴한 모델 + 강력한 모델 둘 다 가진 경우 권장)
+> **B. 분할 — fast + strong (권장)**
+> A. 모든 역할에 단일 모델 (모델이 하나뿐이거나 최대한 단순한 게 필요한 경우만)
+
+사용자가 그냥 엔터를 누르거나 "권장"이라고 답하면 B로 기본값 처리. 명시적으로 단일을 고른 경우에만 A로 진행.
 
 #### 3d. 사용자에게 질문: 어떤 모델?
 
@@ -272,6 +293,19 @@ provider가 **하나도 설정되지 않은 경우** 진행을 멈추고, `openc
 파일을 쓰기 전에 각 선택을 사용자에게 다시 확인시키세요. 예:
 
 > _`coder`와 `explorer`를 `zai-coding-plan/glm-5.1`로, `resolver`/`reviewer`/`deep-reviewer`를 `openai/gpt-5.5`로 핀닝합니다. 진행할까요?_
+
+#### 3d-bis. fast 모델 family에 맞춰 `maxParallelSubagents` 결정
+
+opencode-resolve의 정체성은 **토큰 절약** — resolver는 빠르게 계획하고 유형별로 subagent를 디스패치하며, 병렬 캡은 역할당입니다. 사용자가 방금 고른 **fast** (doer 쪽) 모델 family에 맞춰 캡을 정하세요:
+
+| Fast 모델 family | `maxParallelSubagents` |
+|---|---|
+| GLM / ZAI (예: `zai-coding-plan/glm-5.1`) | **2** |
+| 그 외 전부 (GPT, Claude, Gemini, Mistral, local, …) | **4** |
+
+GLM/ZAI 프로바이더는 burst 디스패치에 더 strictly throttle되고 wide fan-out의 이득이 적어, 역할당 2가 sweet spot입니다. 그 외 family는 4를 잘 받아내고 resolver가 더 넓은 fan-out에서 의미 있게 속도 이득 — fast tier가 명시적으로 GLM/ZAI가 아닌 한 기본값은 4.
+
+단일 (A) 케이스도 동일한 family 기반 규칙을 선택한 단일 모델에 적용.
 
 #### 3e. `~/.config/opencode/resolve.json` 작성
 

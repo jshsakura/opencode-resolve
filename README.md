@@ -222,6 +222,23 @@ Add the string `"opencode-resolve"` to the `plugin` array. **Do not use the inli
 
 > If the user already has other plugins, append `"opencode-resolve"` to the existing array. **Never overwrite** their existing config.
 
+#### 2b. Offer the recommended companion plugin
+
+Before moving to model selection, ask the user **once** whether to also install `@tarquinen/opencode-dcp` (Dynamic Context Pruning). It is a separate OpenCode plugin that strips obsolete tool outputs from the conversation context, which keeps long resolver loops cheap. opencode-resolve does not require it — but pairs well with it.
+
+Suggested wording:
+
+> _opencode-resolve pairs well with **`@tarquinen/opencode-dcp`** — it prunes obsolete tool outputs so long resolver loops cost fewer tokens. Want to install it too? (recommended)_
+
+If the user says **yes**:
+
+1. Run `opencode plugin @tarquinen/opencode-dcp@latest --global --force` (primes the cache).
+2. Append `"@tarquinen/opencode-dcp@latest"` to the `plugin` array in `~/.config/opencode/opencode.json`, only if it is not already present.
+
+If the user says **no**, skip — do not modify `opencode.json` for this entry. Either way, proceed to Step 3.
+
+> `context7` MCP is registered automatically by opencode-resolve at runtime when `context7: true` (the default in `resolve.json`). No separate question is needed for that.
+
 ### Step 3 — Pick models interactively, then write `~/.config/opencode/resolve.json`
 
 The LLM **drives a short Q&A** here. Goal: end with `resolve.json` containing model IDs the user explicitly chose from their own configuration.
@@ -253,10 +270,14 @@ If exactly one provider candidate exists, skip the question and use it.
 
 #### 3c. Ask the user: single-tier or split?
 
-> _Do you want a single model for every role, or split — a fast model for `coder`/`explorer` and a stronger model for `resolver`/`reviewer`/`deep-reviewer`?_
+The default recommendation is **B (split)** — opencode-resolve's resolver↔coder loop genuinely benefits from a cheaper model on the doer side and a stronger model on the judge side, and almost every modern OpenCode setup has access to at least two model tiers. Offer A only as the fallback when the user has just one model available or explicitly wants simplicity.
+
+> _Recommended: **split** — a fast model for `coder`/`explorer` and a stronger model for `resolver`/`reviewer`/`deep-reviewer`. Choose:_
 >
-> A. Single model for all roles (simplest, recommended for one-provider setups)
-> B. Split — fast + strong (recommended when you have both a cheap and a strong model)
+> **B. Split — fast + strong (recommended)**
+> A. Single model for all roles (only if you have one model or want maximum simplicity)
+
+Default to B if the user just hits enter or says "recommended". Only fall through to A on an explicit single-model choice.
 
 #### 3d. Ask the user: which model(s)?
 
@@ -272,6 +293,19 @@ Show only the models under the provider picked in 3b.
 Confirm each pick back to the user before writing the file. Example:
 
 > _I'll pin `coder` and `explorer` to `zai-coding-plan/glm-5.1`, and `resolver`/`reviewer`/`deep-reviewer` to `openai/gpt-5.5`. Proceed?_
+
+#### 3d-bis. Pick `maxParallelSubagents` from the fast model family
+
+opencode-resolve's identity is **token efficiency** — the resolver plans fast and dispatches subagents by type, and the parallel cap is per-role. Set the cap from the **fast** (doer-side) model family the user just picked:
+
+| Fast model family | `maxParallelSubagents` |
+|---|---|
+| GLM / ZAI (e.g. `zai-coding-plan/glm-5.1`) | **2** |
+| Anything else (GPT, Claude, Gemini, Mistral, local, …) | **4** |
+
+GLM/ZAI providers throttle harder under burst dispatch and benefit less from wide fan-out, so 2 parallel per role is the sweet spot. Every other family tested tolerates 4 well and the resolver gets meaningful speedup from the wider fan-out — the default is 4 unless the fast tier is explicitly a GLM/ZAI model.
+
+For single-tier (A), use the same family-based rule on the chosen single model.
 
 #### 3e. Write `~/.config/opencode/resolve.json`
 
