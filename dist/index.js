@@ -1,6 +1,20 @@
+import { readFileSync } from "node:fs";
 import { access, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { basename, isAbsolute, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+const PLUGIN_VERSION = readPluginVersion();
+function readPluginVersion() {
+    try {
+        const pkgRoot = dirname(dirname(fileURLToPath(import.meta.url)));
+        const pkg = JSON.parse(readFileSync(join(pkgRoot, "package.json"), "utf8"));
+        return typeof pkg?.version === "string" ? pkg.version : "unknown";
+    }
+    catch {
+        return "unknown";
+    }
+}
+console.log(`[opencode-resolve] v${PLUGIN_VERSION} loaded`);
 const DEFAULT_MODELS = {};
 const DEFAULT_ENABLED = ["coder", "resolver", "explorer", "reviewer", "deep-reviewer"];
 const VALID_AGENT_NAMES = ["coder", "reviewer", "resolver", "architect", "gpt-coder", "debugger", "researcher", "explorer", "deep-reviewer"];

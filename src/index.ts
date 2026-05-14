@@ -1,7 +1,23 @@
+import { readFileSync } from "node:fs"
 import { access, readFile } from "node:fs/promises"
 import { homedir } from "node:os"
-import { basename, isAbsolute, join, resolve } from "node:path"
+import { basename, dirname, isAbsolute, join, resolve } from "node:path"
+import { fileURLToPath } from "node:url"
 import type { Config, Plugin } from "@opencode-ai/plugin"
+
+const PLUGIN_VERSION = readPluginVersion()
+
+function readPluginVersion(): string {
+  try {
+    const pkgRoot = dirname(dirname(fileURLToPath(import.meta.url)))
+    const pkg = JSON.parse(readFileSync(join(pkgRoot, "package.json"), "utf8"))
+    return typeof pkg?.version === "string" ? pkg.version : "unknown"
+  } catch {
+    return "unknown"
+  }
+}
+
+console.log(`[opencode-resolve] v${PLUGIN_VERSION} loaded`)
 
 type PermissionValue = "ask" | "allow" | "deny"
 

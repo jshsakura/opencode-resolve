@@ -20,11 +20,25 @@ if (process.env.OPENCODE_RESOLVE_SKIP_POSTINSTALL === "1") {
   process.exit(0)
 }
 
+const pluginVersion = await readOwnVersion()
+console.log(`[${packageName}] installing v${pluginVersion}`)
+
 try {
   await registerPlugin()
+  console.log(`[${packageName}] v${pluginVersion} install complete — restart OpenCode to load the plugin`)
 } catch (error) {
   console.warn(`[${packageName}] automatic OpenCode registration skipped: ${formatError(error)}`)
   console.warn(`[${packageName}] add "${packageName}" to your OpenCode plugin list manually if needed.`)
+}
+
+async function readOwnVersion() {
+  try {
+    const raw = await readFile(join(root, "package.json"), "utf8")
+    const parsed = JSON.parse(raw)
+    return typeof parsed?.version === "string" ? parsed.version : "unknown"
+  } catch {
+    return "unknown"
+  }
 }
 
 async function registerPlugin() {
