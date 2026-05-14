@@ -301,18 +301,15 @@ Confirm each pick back to the user before writing the file. Example:
 
 > _I'll pin `coder` and `explorer` to `zai-coding-plan/glm-5.1`, and `resolver`/`reviewer`/`deep-reviewer` to `openai/gpt-5.5`. Proceed?_
 
-#### 3d-bis. Pick `maxParallelSubagents` from the `coder` model
+#### 3d-bis. Skip `maxParallelSubagents` unless the user explicitly wants a hard cap
 
-opencode-resolve's identity is **token efficiency** — the resolver plans fast and dispatches subagents by type, and the parallel cap is per-role. The cap is determined by the `coder` model only — coder is the fan-out subject, so its rate budget is what matters:
+The default flow does **not** write `maxParallelSubagents` to `resolve.json`. The resolver prompt ships with soft fan-out guidance — fan out coders when work is genuinely independent, back off on rate-limit errors, explorer is unrestricted, reviewer/deep-reviewer/planner are singletons by nature. This matches how oh-my-openagent (per-model semaphore, default no real cap) and OpenCode core (no built-in concurrency rule) handle the same concern, and avoids overconstraining a model that's already aware of rate limits.
 
-| `coder` model ID contains | `maxParallelSubagents` |
-|---|---|
-| `glm` (any GLM model — most often the GLM coding-plan) | **2** |
-| anything else (GPT, Claude, Gemini, local, …) | **4** |
+Only ask about `maxParallelSubagents` if the user explicitly mentions wanting to cap fan-out. Common case: GLM coding-plan users who want to **guarantee** they never burst beyond 1 or 2 coder calls. Suggested wording:
 
-The GLM constraint comes from the GLM coding-plan's per-account rate limits — even a powerful GLM gets throttled under burst dispatch. Every other family tested tolerates 4 well and the resolver gets meaningful speedup. Don't look at the strong/reasoner model — the cap follows the doer, not the judge.
+> _(optional, ask only if relevant)_ _Your `coder` model is GLM — the coding-plan throttles under bursts. Pin `maxParallelSubagents: 2` to be safe?_
 
-For single-tier (A) and two-tier (B), apply the same rule to whichever model the `coder` agent ends up using.
+Otherwise, omit the field entirely.
 
 #### 3e. Write `~/.config/opencode/resolve.json`
 
@@ -348,8 +345,7 @@ For single-tier (A) and two-tier (B), apply the same rule to whichever model the
     "researcher":    { "enabled": false }
   },
   "autoApprove": true,
-  "autoUpdate": true,
-  "maxParallelSubagents": 2
+  "autoUpdate": true
 }
 ```
 
@@ -382,7 +378,7 @@ For single-tier (A) and two-tier (B), apply the same rule to whichever model the
 }
 ```
 
-Replace every `<provider>/<model>` placeholder with the **exact** ID strings the user picked. Set `maxParallelSubagents` to **2** if the `coder` model ID contains `glm`, otherwise **4**.
+Replace every `<provider>/<model>` placeholder with the **exact** ID strings the user picked. **Do not** add `maxParallelSubagents` unless the user explicitly asked for a hard cap (see 3d-bis).
 
 Replace every `<provider>/<model>` placeholder with the **exact** ID strings the user picked in 3b/3d — no inventing, no autocompletion, no version drift. If you cannot map the picked model to a `provider/model` string, ask the user to clarify rather than guessing.
 

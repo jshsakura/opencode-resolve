@@ -76,10 +76,14 @@ const VALID_AGENT_KEYS = new Set([
     "permission",
 ]);
 function buildResolverPrompt(maxParallelSubagents) {
-    const limit = Math.max(1, Math.trunc(maxParallelSubagents));
-    const parallelRule = limit === 1
-        ? "CRITICAL: Dispatch at most ONE subagent of each role concurrently. Never run two coders in parallel. Wait for an in-flight coder to finish before dispatching another."
-        : `CRITICAL: Dispatch at most ${limit} subagents of the same role concurrently. Never exceed ${limit} coders in parallel. Wait for in-flight subagents of a given role to finish before dispatching more of that role.`;
+    const explicitLimit = typeof maxParallelSubagents === "number" && Number.isFinite(maxParallelSubagents)
+        ? Math.max(1, Math.trunc(maxParallelSubagents))
+        : undefined;
+    const parallelRule = explicitLimit === undefined
+        ? "Parallel dispatch policy: fan out coder dispatches when the work is genuinely independent (different files, no shared state). Rate limits are per-model — coder/silver-tier models (e.g. GLM coding-plan) can throttle under heavy burst, so back off if you see rate-limit errors. Explorer runs on a lighter model and fans out freely when scope discovery genuinely needs it. Reviewer, deep-reviewer, and planner are dispatched as singletons by their nature."
+        : explicitLimit === 1
+            ? "CRITICAL: User has pinned the coder concurrency cap to 1. Dispatch at most ONE coder concurrently. Wait for an in-flight coder to finish before dispatching another. Explorer is unrestricted (read-only, light model). Reviewer, deep-reviewer, and planner are singletons by nature."
+            : `CRITICAL: User has pinned the coder concurrency cap to ${explicitLimit}. Dispatch at most ${explicitLimit} coders concurrently. Wait for in-flight coders to finish before dispatching more. Explorer is unrestricted (read-only, light model). Reviewer, deep-reviewer, and planner are singletons by nature.`;
     return [
         "You are Resolver, the context-efficient orchestrator agent for OpenCode Resolve.",
         "Your job is to drive the user's task to a verified resolution using minimal context and the fewest LLM calls possible.",
@@ -159,7 +163,7 @@ const DEFAULT_AGENT_CONFIG = {
         color: "#FF7AC6",
         maxSteps: 30,
         description: "Primary orchestrator in the fixed-role verified loop (resolver→coder). Decomposes work into verified checkpoints, dispatches coder, verifies each, and carries forward progress. Internal subagents (explorer, reviewer, deep-reviewer) are available by default but dispatched only when justified.",
-        prompt: buildResolverPrompt(DEFAULT_MAX_PARALLEL_SUBAGENTS),
+        prompt: buildResolverPrompt(undefined),
         permission: {
             edit: "ask",
             bash: "ask",
@@ -389,7 +393,7 @@ function applyResolveConfig(config, resolveConfig) {
     const models = { ...DEFAULT_MODELS, ...resolveConfig.models };
     const defaultModel = typeof config.model === "string" ? config.model : undefined;
     const autoApprove = resolveConfig.autoApprove !== false;
-    const maxParallelSubagents = resolveConfig.maxParallelSubagents ?? DEFAULT_MAX_PARALLEL_SUBAGENTS;
+    const maxParallelSubagents = resolveConfig.maxParallelSubagents;
     config.agent ??= {};
     for (const name of Object.keys(DEFAULT_AGENT_CONFIG)) {
         const override = resolveConfig.agents?.[name];
@@ -451,7 +455,6 @@ function defaultResolveConfig() {
         context7: true,
         commands: false,
         autoApprove: true,
-        maxParallelSubagents: DEFAULT_MAX_PARALLEL_SUBAGENTS,
         autoUpdate: true,
     };
 }

@@ -131,28 +131,31 @@ test("autoApprove: false preserves the conservative ask defaults", async () => {
   assert.equal(config.agent.resolver.permission.edit, "ask")
 })
 
-test("resolver prompt enforces per-role dispatch limit by default (2)", async () => {
+test("resolver prompt defaults to soft fan-out guidance with no hard cap", async () => {
   const { config } = await runPlugin({})
 
-  assert.match(config.agent.resolver.prompt, /at most 2 subagents of the same role/)
-  assert.match(config.agent.resolver.prompt, /Never exceed 2 coders in parallel/)
+  assert.match(config.agent.resolver.prompt, /fan out coder dispatches when the work is genuinely independent/i)
+  assert.match(config.agent.resolver.prompt, /back off if you see rate-limit errors/i)
+  assert.match(config.agent.resolver.prompt, /Explorer runs on a lighter model and fans out freely/i)
+  assert.doesNotMatch(config.agent.resolver.prompt, /at most \d+ coders concurrently/i)
 })
 
-test("maxParallelSubagents = 1 produces the strict serial-per-role wording", async () => {
+test("maxParallelSubagents = 1 produces an explicit single-coder cap", async () => {
   const { config } = await runPlugin({
     plugin: [["opencode-resolve", { maxParallelSubagents: 1 }]],
   })
 
-  assert.match(config.agent.resolver.prompt, /at most ONE subagent of each role concurrently/)
-  assert.match(config.agent.resolver.prompt, /Never run two coders in parallel/)
+  assert.match(config.agent.resolver.prompt, /User has pinned the coder concurrency cap to 1/)
+  assert.match(config.agent.resolver.prompt, /Dispatch at most ONE coder concurrently/)
 })
 
-test("maxParallelSubagents > 2 relaxes the resolver per-role rule", async () => {
+test("maxParallelSubagents > 1 produces an explicit N-coder cap", async () => {
   const { config } = await runPlugin({
     plugin: [["opencode-resolve", { maxParallelSubagents: 3 }]],
   })
 
-  assert.match(config.agent.resolver.prompt, /at most 3 subagents of the same role/)
+  assert.match(config.agent.resolver.prompt, /User has pinned the coder concurrency cap to 3/)
+  assert.match(config.agent.resolver.prompt, /Dispatch at most 3 coders concurrently/)
 })
 
 test("user-supplied resolver prompt is preserved over the templated default", async () => {

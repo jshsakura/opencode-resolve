@@ -5,7 +5,6 @@
   "commands": false,
   "autoApprove": true,
   "autoUpdate": true,
-  "maxParallelSubagents": 2,
   "models": {},
   "agents": {
     "coder": {

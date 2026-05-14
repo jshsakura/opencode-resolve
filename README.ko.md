@@ -301,18 +301,15 @@ provider가 **하나도 설정되지 않은 경우** 진행을 멈추고, `openc
 
 > _`coder`와 `explorer`를 `zai-coding-plan/glm-5.1`로, `resolver`/`reviewer`/`deep-reviewer`를 `openai/gpt-5.5`로 핀닝합니다. 진행할까요?_
 
-#### 3d-bis. `coder` 모델 기준 `maxParallelSubagents` 결정
+#### 3d-bis. 사용자가 명시적으로 hard cap 원할 때만 `maxParallelSubagents` 설정
 
-opencode-resolve의 정체성은 **토큰 절약** — resolver는 빠르게 계획하고 유형별로 subagent를 디스패치하며, 병렬 캡은 역할당입니다. 캡은 **coder 모델 하나만 보고** 정합니다 (coder가 fan-out 주체이므로 rate budget이 거기서 결정):
+기본 흐름은 `maxParallelSubagents`를 `resolve.json`에 **쓰지 않습니다**. resolver prompt에 soft 가이드라인이 들어있어요 — 진짜 독립적인 작업이면 coder fan out, rate-limit 에러 보이면 backoff, explorer 무제한, reviewer/deep-reviewer/planner는 본질적으로 singleton. oh-my-openagent (per-model semaphore, 사실상 default 무제한) 와 OpenCode core (built-in concurrency 룰 없음) 의 처리와 동일한 결, rate limit을 이미 인지한 모델을 과제약하지 않음.
 
-| `coder` 모델 ID에 포함된 | `maxParallelSubagents` |
-|---|---|
-| `glm` (어떤 GLM이든 — 보통 GLM coding-plan) | **2** |
-| 그 외 (GPT, Claude, Gemini, local, …) | **4** |
+`maxParallelSubagents`는 사용자가 hard cap을 명시적으로 원할 때만 물어보세요. 흔한 케이스: GLM coding-plan 사용자가 "burst 절대 안 됨" 보장 원할 때. 권장 멘트:
 
-GLM의 제약은 GLM coding-plan의 계정당 rate limit 때문 — 강력한 GLM이라도 burst 디스패치 시 throttle 걸림. 그 외 family는 4를 잘 받아냄. strong/reasoner 모델은 보지 마세요 — 캡은 doer를 따름.
+> _(optional, 관련된 경우만)_ _`coder` 모델이 GLM이네요 — coding-plan은 burst 시 throttle 걸립니다. 안전하게 `maxParallelSubagents: 2`로 핀닝할까요?_
 
-단일(A) / 2단계(B) 케이스도 결국 coder가 쓰는 모델 하나만 보고 적용.
+그 외엔 필드 자체를 생략.
 
 #### 3e. `~/.config/opencode/resolve.json` 작성
 
@@ -348,8 +345,7 @@ GLM의 제약은 GLM coding-plan의 계정당 rate limit 때문 — 강력한 GL
     "researcher":    { "enabled": false }
   },
   "autoApprove": true,
-  "autoUpdate": true,
-  "maxParallelSubagents": 2
+  "autoUpdate": true
 }
 ```
 
@@ -382,7 +378,7 @@ GLM의 제약은 GLM coding-plan의 계정당 rate limit 때문 — 강력한 GL
 }
 ```
 
-`<provider>/<모델>` 플레이스홀더는 모두 사용자가 고른 **정확한** ID로 교체. `maxParallelSubagents`는 **coder 모델 ID에 `glm` 포함되면 2, 그 외 4**.
+`<provider>/<모델>` 플레이스홀더는 모두 사용자가 고른 **정확한** ID로 교체. **`maxParallelSubagents`는 사용자가 명시적으로 hard cap 요청한 경우에만 추가** (3d-bis 참고).
 
 `<provider>/<모델>` 플레이스홀더는 모두 사용자가 3b/3d에서 고른 **정확한** ID 문자열로 교체 — 임의 생성 금지, 자동완성 금지, 버전 드리프트 금지. 고른 모델을 `provider/model` 문자열로 매핑할 수 없으면 추측하지 말고 사용자에게 다시 물어보세요.
 

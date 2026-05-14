@@ -19,7 +19,8 @@ test("postinstall creates OpenCode config and resolve config", async () => {
     assert.deepEqual(opencodeConfig.plugin, ["opencode-resolve"])
     assert.deepEqual(resolveConfig.enabled, ["coder", "resolver", "explorer", "reviewer", "deep-reviewer", "planner"])
     assert.equal(resolveConfig.autoApprove, true)
-    assert.equal(resolveConfig.maxParallelSubagents, 2)
+    // maxParallelSubagents intentionally omitted from default — power-user opt-in only
+    assert.equal(resolveConfig.maxParallelSubagents, undefined)
     // No opencode model => models stays empty (inherited preset)
     assert.deepEqual(resolveConfig.models, {})
   } finally {
@@ -61,7 +62,7 @@ test("postinstall migrates an existing resolve.json by adding only missing top-l
     assert.deepEqual(migrated.enabled, ["coder", "reviewer"], "user enabled list preserved")
     assert.deepEqual(migrated.models, { glm: "custom/glm", coder: "glm" }, "user models preserved")
     assert.equal(migrated.autoApprove, false, "user autoApprove preserved")
-    assert.equal(migrated.maxParallelSubagents, 2, "missing key added with default")
+    assert.equal(migrated.maxParallelSubagents, undefined, "no longer added by migration — opt-in only")
   } finally {
     await rm(configHome, { recursive: true, force: true })
   }
@@ -207,7 +208,7 @@ test("postinstall preserves existing resolve.json regardless of model changes", 
     assert.deepEqual(migrated.enabled, ["coder"], "user enabled list preserved")
     assert.deepEqual(migrated.models, { custom: "anthropic/claude-sonnet-4" }, "user models preserved")
     assert.equal(migrated.autoApprove, false, "user autoApprove preserved")
-    assert.equal(migrated.maxParallelSubagents, 2, "missing key added")
+    assert.equal(migrated.maxParallelSubagents, undefined, "no longer added by migration — opt-in only")
   } finally {
     await rm(configHome, { recursive: true, force: true })
   }
