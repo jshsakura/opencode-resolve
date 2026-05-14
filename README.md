@@ -222,20 +222,26 @@ Add the string `"opencode-resolve"` to the `plugin` array. **Do not use the inli
 
 > If the user already has other plugins, append `"opencode-resolve"` to the existing array. **Never overwrite** their existing config.
 
-#### 2b. Offer the recommended companion plugin
+#### 2b. Offer the recommended companion plugins
 
-Before moving to model selection, ask the user **once** whether to also install `@tarquinen/opencode-dcp` (Dynamic Context Pruning). It is a separate OpenCode plugin that strips obsolete tool outputs from the conversation context, which keeps long resolver loops cheap. opencode-resolve does not require it — but pairs well with it.
+Before moving to model selection, ask the user about two **independent** companion plugins — one question each, recommended-by-default. Both are separate OpenCode plugins; opencode-resolve does not require them but pairs well with both.
 
-Suggested wording:
+**Companion 1 — `@tarquinen/opencode-dcp` (Dynamic Context Pruning)**
 
-> _opencode-resolve pairs well with **`@tarquinen/opencode-dcp`** — it prunes obsolete tool outputs so long resolver loops cost fewer tokens. Want to install it too? (recommended)_
+> _opencode-resolve pairs well with **`@tarquinen/opencode-dcp`** — it prunes obsolete tool outputs so long resolver loops cost fewer tokens. Want to install it? (recommended)_
 
-If the user says **yes**:
+**Companion 2 — `@slkiser/opencode-quota` (quota & usage tracking)**
 
-1. Run `opencode plugin @tarquinen/opencode-dcp@latest --global --force` (primes the cache).
-2. Append `"@tarquinen/opencode-dcp@latest"` to the `plugin` array in `~/.config/opencode/opencode.json`, only if it is not already present.
+> _And **`@slkiser/opencode-quota`** — shows your live token/quota usage without polluting the context window. Supports GLM coding-plan, OpenAI Plus/Pro, Qwen, and more. Useful for actually seeing the token savings opencode-resolve gives you. Install it? (recommended)_
 
-If the user says **no**, skip — do not modify `opencode.json` for this entry. Either way, proceed to Step 3.
+For each **yes** answer:
+
+1. Run `opencode plugin <package>@latest --global --force` (primes the cache).
+2. Append `"<package>@latest"` to the `plugin` array in `~/.config/opencode/opencode.json`, only if it is not already present.
+
+Where `<package>` is `@tarquinen/opencode-dcp` or `@slkiser/opencode-quota`.
+
+For each **no**, skip — do not modify `opencode.json` for that entry. Proceed to Step 3 either way.
 
 > `context7` MCP is registered automatically by opencode-resolve at runtime when `context7: true` (the default in `resolve.json`). No separate question is needed for that.
 
@@ -268,16 +274,17 @@ Print the candidate list and ask. Example wording the LLM should use:
 
 If exactly one provider candidate exists, skip the question and use it.
 
-#### 3c. Ask the user: single-tier or split?
+#### 3c. Ask the user: single, two-tier, or three-tier split?
 
-The default recommendation is **B (split)** — opencode-resolve's resolver↔coder loop genuinely benefits from a cheaper model on the doer side and a stronger model on the judge side, and almost every modern OpenCode setup has access to at least two model tiers. Offer A only as the fallback when the user has just one model available or explicitly wants simplicity.
+The default recommendation is **C (three-tier bronze/silver/gold)** — opencode-resolve has three qualitatively distinct workloads (read-only scout → write/patch → reason/judge) and three matching tiers cost about the same as two-tier but read role costs more accurately. Fall back to B if the user only has two models, A only when they have one.
 
-> _Recommended: **split** — a fast model for `coder`/`explorer` and a stronger model for `resolver`/`reviewer`/`deep-reviewer`. Choose:_
+> _Recommended: **three-tier** — a cheap scout model for `explorer`, a mid coder for `coder`, and a strong reasoner for `resolver`/`reviewer`/`deep-reviewer`/`planner`. Choose:_
 >
-> **B. Split — fast + strong (recommended)**
+> **C. Three-tier — bronze (scout) + silver (coder) + gold (reasoner) — recommended**
+> B. Two-tier — fast + strong (when you only have two models)
 > A. Single model for all roles (only if you have one model or want maximum simplicity)
 
-Default to B if the user just hits enter or says "recommended". Only fall through to A on an explicit single-model choice.
+Default to C if the user just hits enter or says "recommended". Only fall back if they don't have enough distinct models. Same-provider split is fully valid (e.g. `openai/gpt-4o-mini` / `openai/gpt-5.3-codex` / `openai/o4-mini`, or `zai/glm-4.7-flash` / `zai-coding-plan/glm-5.1` / `zai/glm-5`).
 
 #### 3d. Ask the user: which model(s)?
 
@@ -294,36 +301,39 @@ Confirm each pick back to the user before writing the file. Example:
 
 > _I'll pin `coder` and `explorer` to `zai-coding-plan/glm-5.1`, and `resolver`/`reviewer`/`deep-reviewer` to `openai/gpt-5.5`. Proceed?_
 
-#### 3d-bis. Pick `maxParallelSubagents` from the fast model family
+#### 3d-bis. Pick `maxParallelSubagents` from the `coder` model
 
-opencode-resolve's identity is **token efficiency** — the resolver plans fast and dispatches subagents by type, and the parallel cap is per-role. Set the cap from the **fast** (doer-side) model family the user just picked:
+opencode-resolve's identity is **token efficiency** — the resolver plans fast and dispatches subagents by type, and the parallel cap is per-role. The cap is determined by the `coder` model only — coder is the fan-out subject, so its rate budget is what matters:
 
-| Fast model family | `maxParallelSubagents` |
+| `coder` model ID contains | `maxParallelSubagents` |
 |---|---|
-| GLM / ZAI (e.g. `zai-coding-plan/glm-5.1`) | **2** |
-| Anything else (GPT, Claude, Gemini, Mistral, local, …) | **4** |
+| `glm` (any GLM model — most often the GLM coding-plan) | **2** |
+| anything else (GPT, Claude, Gemini, local, …) | **4** |
 
-GLM/ZAI providers throttle harder under burst dispatch and benefit less from wide fan-out, so 2 parallel per role is the sweet spot. Every other family tested tolerates 4 well and the resolver gets meaningful speedup from the wider fan-out — the default is 4 unless the fast tier is explicitly a GLM/ZAI model.
+The GLM constraint comes from the GLM coding-plan's per-account rate limits — even a powerful GLM gets throttled under burst dispatch. Every other family tested tolerates 4 well and the resolver gets meaningful speedup. Don't look at the strong/reasoner model — the cap follows the doer, not the judge.
 
-For single-tier (A), use the same family-based rule on the chosen single model.
+For single-tier (A) and two-tier (B), apply the same rule to whichever model the `coder` agent ends up using.
 
 #### 3e. Write `~/.config/opencode/resolve.json`
 
-If the user picked **A (single-tier)**, write:
+**Three-tier (C, recommended)** — use the `bronze`/`silver`/`gold` aliases:
 
 ```json
 {
-  "enabled": ["coder", "resolver", "explorer", "reviewer", "deep-reviewer"],
+  "enabled": ["coder", "resolver", "explorer", "reviewer", "deep-reviewer", "planner"],
   "preserveNative": true,
   "context7": true,
   "commands": false,
   "models": {
-    "primary":       "<chosen-provider>/<chosen-model>",
-    "coder":         "primary",
-    "explorer":      "primary",
-    "resolver":      "primary",
-    "reviewer":      "primary",
-    "deep-reviewer": "primary"
+    "bronze":        "<provider>/<scout-model>",
+    "silver":        "<provider>/<coder-model>",
+    "gold":          "<provider>/<reasoner-model>",
+    "explorer":      "bronze",
+    "coder":         "silver",
+    "resolver":      "gold",
+    "reviewer":      "gold",
+    "deep-reviewer": "gold",
+    "planner":       "gold"
   },
   "agents": {
     "coder":         { "enabled": true,  "mode": "all" },
@@ -331,48 +341,48 @@ If the user picked **A (single-tier)**, write:
     "explorer":      { "enabled": true,  "mode": "subagent" },
     "reviewer":      { "enabled": true,  "mode": "subagent" },
     "deep-reviewer": { "enabled": true,  "mode": "subagent" },
+    "planner":       { "enabled": true,  "mode": "subagent" },
     "architect":     { "enabled": false },
     "gpt-coder":     { "enabled": false },
     "debugger":      { "enabled": false },
     "researcher":    { "enabled": false }
   },
   "autoApprove": true,
+  "autoUpdate": true,
   "maxParallelSubagents": 2
 }
 ```
 
-If the user picked **B (split)**, write:
+**Two-tier (B)** — collapse bronze and silver if the user has only two models:
 
 ```json
-{
-  "enabled": ["coder", "resolver", "explorer", "reviewer", "deep-reviewer"],
-  "preserveNative": true,
-  "context7": true,
-  "commands": false,
-  "models": {
-    "fast":          "<provider>/<fast-model>",
-    "strong":        "<provider>/<strong-model>",
-    "coder":         "fast",
-    "explorer":      "fast",
-    "resolver":      "strong",
-    "reviewer":      "strong",
-    "deep-reviewer": "strong"
-  },
-  "agents": {
-    "coder":         { "enabled": true,  "mode": "all" },
-    "resolver":      { "enabled": true },
-    "explorer":      { "enabled": true,  "mode": "subagent" },
-    "reviewer":      { "enabled": true,  "mode": "subagent" },
-    "deep-reviewer": { "enabled": true,  "mode": "subagent" },
-    "architect":     { "enabled": false },
-    "gpt-coder":     { "enabled": false },
-    "debugger":      { "enabled": false },
-    "researcher":    { "enabled": false }
-  },
-  "autoApprove": true,
-  "maxParallelSubagents": 2
+"models": {
+  "silver":        "<provider>/<coder-model>",
+  "gold":          "<provider>/<reasoner-model>",
+  "explorer":      "silver",
+  "coder":         "silver",
+  "resolver":      "gold",
+  "reviewer":      "gold",
+  "deep-reviewer": "gold",
+  "planner":       "gold"
 }
 ```
+
+**Single-tier (A)** — every role on one model:
+
+```json
+"models": {
+  "gold":          "<provider>/<single-model>",
+  "explorer":      "gold",
+  "coder":         "gold",
+  "resolver":      "gold",
+  "reviewer":      "gold",
+  "deep-reviewer": "gold",
+  "planner":       "gold"
+}
+```
+
+Replace every `<provider>/<model>` placeholder with the **exact** ID strings the user picked. Set `maxParallelSubagents` to **2** if the `coder` model ID contains `glm`, otherwise **4**.
 
 Replace every `<provider>/<model>` placeholder with the **exact** ID strings the user picked in 3b/3d — no inventing, no autocompletion, no version drift. If you cannot map the picked model to a `provider/model` string, ask the user to clarify rather than guessing.
 

@@ -1,6 +1,6 @@
 {
   "name": "opencode-resolve",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "OpenCode plugin that adds a small coder/reviewer agent set while preserving native plan/build behavior.",
   "type": "module",
   "homepage": "https://github.com/jshsakura/opencode-resolve#readme",

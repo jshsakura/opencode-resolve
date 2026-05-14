@@ -222,20 +222,26 @@ opencode plugin opencode-resolve --global --force
 
 > 이미 다른 플러그인이 있다면, 기존 배열에 `"opencode-resolve"`를 **추가**하세요. 기존 설정을 **덮어쓰지 마세요**.
 
-#### 2b. 권장 companion 플러그인 제안
+#### 2b. 권장 companion 플러그인 제안 (2개)
 
-모델 선택으로 넘어가기 전에, 사용자에게 **한 번** `@tarquinen/opencode-dcp` (Dynamic Context Pruning) 도 같이 설치할지 묻습니다. 별개의 OpenCode 플러그인으로, 대화 컨텍스트에서 obsolete tool output을 잘라내 긴 resolver 루프의 토큰 비용을 낮춥니다. opencode-resolve가 필수로 요구하진 않지만 — 궁합이 좋습니다.
+모델 선택으로 넘어가기 전에, **독립적인** 두 companion 플러그인을 각각 한 번씩 물어봅니다 — 둘 다 권장 기본값. 별개의 OpenCode 플러그인이라 필수는 아니지만 opencode-resolve와 궁합이 좋습니다.
 
-권장 멘트:
+**Companion 1 — `@tarquinen/opencode-dcp` (Dynamic Context Pruning)**
 
-> _opencode-resolve는 **`@tarquinen/opencode-dcp`** 와 궁합이 좋아요 — obsolete tool output을 가지치기해서 긴 resolver 루프의 토큰 비용을 줄입니다. 같이 설치할까요? (권장)_
+> _opencode-resolve는 **`@tarquinen/opencode-dcp`** 와 궁합이 좋아요 — obsolete tool output을 가지치기해서 긴 resolver 루프의 토큰 비용을 줄입니다. 설치할까요? (권장)_
 
-사용자가 **예**:
+**Companion 2 — `@slkiser/opencode-quota` (사용량/quota 추적)**
 
-1. `opencode plugin @tarquinen/opencode-dcp@latest --global --force` 실행 (캐시 priming).
-2. `~/.config/opencode/opencode.json`의 `plugin` 배열에 `"@tarquinen/opencode-dcp@latest"`를 추가 — 이미 있으면 스킵.
+> _그리고 **`@slkiser/opencode-quota`** — 컨텍스트 윈도우를 오염시키지 않고 실시간 토큰/quota 사용량을 보여줍니다. GLM coding-plan, OpenAI Plus/Pro, Qwen 등 지원. opencode-resolve가 실제로 얼마나 토큰 절약하는지 눈으로 확인하는 데 유용. 설치할까요? (권장)_
 
-사용자가 **아니오**: 스킵 — 이 항목으로 `opencode.json`을 수정하지 마세요. 어느 쪽이든 3단계로 진행.
+사용자가 **예** (각 질문마다):
+
+1. `opencode plugin <package>@latest --global --force` 실행 (캐시 priming).
+2. `~/.config/opencode/opencode.json`의 `plugin` 배열에 `"<package>@latest"` 추가 — 이미 있으면 스킵.
+
+`<package>`는 `@tarquinen/opencode-dcp` 또는 `@slkiser/opencode-quota`.
+
+각 **아니오**: 그 항목 스킵 — `opencode.json`을 그것 때문에 수정하지 마세요. 어느 쪽이든 3단계로 진행.
 
 > `context7` MCP는 `resolve.json`에서 `context7: true`(기본값)이면 opencode-resolve가 런타임에 자동 등록합니다. 별도 질문 불필요.
 
@@ -268,16 +274,17 @@ provider가 **하나도 설정되지 않은 경우** 진행을 멈추고, `openc
 
 후보 provider가 정확히 하나면 질문을 건너뛰고 사용합니다.
 
-#### 3c. 사용자에게 질문: 단일 / 분할?
+#### 3c. 사용자에게 질문: 단일 / 2단계 / 3단계?
 
-기본 권장은 **B (분할)**. opencode-resolve의 resolver↔coder 루프는 본질적으로 doer 쪽은 더 싼 모델, judge 쪽은 더 강한 모델로 갈리는 게 유리하고, 거의 모든 최신 OpenCode 환경에서 최소 두 개의 모델 tier에 접근 가능합니다. A는 사용자가 모델이 하나뿐이거나 명시적으로 단순함을 원할 때만 fallback으로 제시.
+기본 권장은 **C (3단계, 브론즈/실버/골드)**. opencode-resolve는 질적으로 다른 세 가지 작업(read-only 스카웃 → write/patch → reason/judge)을 가지며, 이를 3단계로 매핑하는 게 2단계보다 역할별 비용을 더 정확히 반영합니다. 사용자가 모델 두 개만 있으면 B로 fallback, 하나뿐이면 A.
 
-> _권장: **분할** — `coder`/`explorer`에는 fast 모델, `resolver`/`reviewer`/`deep-reviewer`에는 strong 모델. 선택:_
+> _권장: **3단계** — `explorer`에 가벼운 스카웃, `coder`에 중간 구현 모델, `resolver`/`reviewer`/`deep-reviewer`/`planner`에 강한 reasoner. 선택:_
 >
-> **B. 분할 — fast + strong (권장)**
-> A. 모든 역할에 단일 모델 (모델이 하나뿐이거나 최대한 단순한 게 필요한 경우만)
+> **C. 3단계 — 브론즈(스카웃) + 실버(코더) + 골드(추론) — 권장**
+> B. 2단계 — fast + strong (모델 두 개만 있을 때)
+> A. 모든 역할에 단일 모델 (모델 하나뿐이거나 최대한 단순한 게 필요한 경우만)
 
-사용자가 그냥 엔터를 누르거나 "권장"이라고 답하면 B로 기본값 처리. 명시적으로 단일을 고른 경우에만 A로 진행.
+사용자가 그냥 엔터를 누르거나 "권장"이라고 답하면 C로. 모델 부족 시에만 fallback. **same-provider 분할도 완전 유효** — 예: `openai/gpt-4o-mini` / `openai/gpt-5.3-codex` / `openai/o4-mini`, 또는 `zai/glm-4.7-flash` / `zai-coding-plan/glm-5.1` / `zai/glm-5`.
 
 #### 3d. 사용자에게 질문: 어떤 모델?
 
@@ -294,36 +301,39 @@ provider가 **하나도 설정되지 않은 경우** 진행을 멈추고, `openc
 
 > _`coder`와 `explorer`를 `zai-coding-plan/glm-5.1`로, `resolver`/`reviewer`/`deep-reviewer`를 `openai/gpt-5.5`로 핀닝합니다. 진행할까요?_
 
-#### 3d-bis. fast 모델 family에 맞춰 `maxParallelSubagents` 결정
+#### 3d-bis. `coder` 모델 기준 `maxParallelSubagents` 결정
 
-opencode-resolve의 정체성은 **토큰 절약** — resolver는 빠르게 계획하고 유형별로 subagent를 디스패치하며, 병렬 캡은 역할당입니다. 사용자가 방금 고른 **fast** (doer 쪽) 모델 family에 맞춰 캡을 정하세요:
+opencode-resolve의 정체성은 **토큰 절약** — resolver는 빠르게 계획하고 유형별로 subagent를 디스패치하며, 병렬 캡은 역할당입니다. 캡은 **coder 모델 하나만 보고** 정합니다 (coder가 fan-out 주체이므로 rate budget이 거기서 결정):
 
-| Fast 모델 family | `maxParallelSubagents` |
+| `coder` 모델 ID에 포함된 | `maxParallelSubagents` |
 |---|---|
-| GLM / ZAI (예: `zai-coding-plan/glm-5.1`) | **2** |
-| 그 외 전부 (GPT, Claude, Gemini, Mistral, local, …) | **4** |
+| `glm` (어떤 GLM이든 — 보통 GLM coding-plan) | **2** |
+| 그 외 (GPT, Claude, Gemini, local, …) | **4** |
 
-GLM/ZAI 프로바이더는 burst 디스패치에 더 strictly throttle되고 wide fan-out의 이득이 적어, 역할당 2가 sweet spot입니다. 그 외 family는 4를 잘 받아내고 resolver가 더 넓은 fan-out에서 의미 있게 속도 이득 — fast tier가 명시적으로 GLM/ZAI가 아닌 한 기본값은 4.
+GLM의 제약은 GLM coding-plan의 계정당 rate limit 때문 — 강력한 GLM이라도 burst 디스패치 시 throttle 걸림. 그 외 family는 4를 잘 받아냄. strong/reasoner 모델은 보지 마세요 — 캡은 doer를 따름.
 
-단일 (A) 케이스도 동일한 family 기반 규칙을 선택한 단일 모델에 적용.
+단일(A) / 2단계(B) 케이스도 결국 coder가 쓰는 모델 하나만 보고 적용.
 
 #### 3e. `~/.config/opencode/resolve.json` 작성
 
-사용자가 **A (단일)** 를 골랐다면:
+**3단계 (C, 권장)** — `bronze`/`silver`/`gold` alias 사용:
 
 ```json
 {
-  "enabled": ["coder", "resolver", "explorer", "reviewer", "deep-reviewer"],
+  "enabled": ["coder", "resolver", "explorer", "reviewer", "deep-reviewer", "planner"],
   "preserveNative": true,
   "context7": true,
   "commands": false,
   "models": {
-    "primary":       "<선택한-provider>/<선택한-모델>",
-    "coder":         "primary",
-    "explorer":      "primary",
-    "resolver":      "primary",
-    "reviewer":      "primary",
-    "deep-reviewer": "primary"
+    "bronze":        "<provider>/<스카웃-모델>",
+    "silver":        "<provider>/<코더-모델>",
+    "gold":          "<provider>/<추론-모델>",
+    "explorer":      "bronze",
+    "coder":         "silver",
+    "resolver":      "gold",
+    "reviewer":      "gold",
+    "deep-reviewer": "gold",
+    "planner":       "gold"
   },
   "agents": {
     "coder":         { "enabled": true,  "mode": "all" },
@@ -331,48 +341,48 @@ GLM/ZAI 프로바이더는 burst 디스패치에 더 strictly throttle되고 wid
     "explorer":      { "enabled": true,  "mode": "subagent" },
     "reviewer":      { "enabled": true,  "mode": "subagent" },
     "deep-reviewer": { "enabled": true,  "mode": "subagent" },
+    "planner":       { "enabled": true,  "mode": "subagent" },
     "architect":     { "enabled": false },
     "gpt-coder":     { "enabled": false },
     "debugger":      { "enabled": false },
     "researcher":    { "enabled": false }
   },
   "autoApprove": true,
+  "autoUpdate": true,
   "maxParallelSubagents": 2
 }
 ```
 
-사용자가 **B (분할)** 를 골랐다면:
+**2단계 (B)** — 모델이 두 개뿐이면 bronze와 silver 통합:
 
 ```json
-{
-  "enabled": ["coder", "resolver", "explorer", "reviewer", "deep-reviewer"],
-  "preserveNative": true,
-  "context7": true,
-  "commands": false,
-  "models": {
-    "fast":          "<provider>/<fast-모델>",
-    "strong":        "<provider>/<strong-모델>",
-    "coder":         "fast",
-    "explorer":      "fast",
-    "resolver":      "strong",
-    "reviewer":      "strong",
-    "deep-reviewer": "strong"
-  },
-  "agents": {
-    "coder":         { "enabled": true,  "mode": "all" },
-    "resolver":      { "enabled": true },
-    "explorer":      { "enabled": true,  "mode": "subagent" },
-    "reviewer":      { "enabled": true,  "mode": "subagent" },
-    "deep-reviewer": { "enabled": true,  "mode": "subagent" },
-    "architect":     { "enabled": false },
-    "gpt-coder":     { "enabled": false },
-    "debugger":      { "enabled": false },
-    "researcher":    { "enabled": false }
-  },
-  "autoApprove": true,
-  "maxParallelSubagents": 2
+"models": {
+  "silver":        "<provider>/<코더-모델>",
+  "gold":          "<provider>/<추론-모델>",
+  "explorer":      "silver",
+  "coder":         "silver",
+  "resolver":      "gold",
+  "reviewer":      "gold",
+  "deep-reviewer": "gold",
+  "planner":       "gold"
 }
 ```
+
+**단일 (A)** — 모든 역할이 단일 모델:
+
+```json
+"models": {
+  "gold":          "<provider>/<단일-모델>",
+  "explorer":      "gold",
+  "coder":         "gold",
+  "resolver":      "gold",
+  "reviewer":      "gold",
+  "deep-reviewer": "gold",
+  "planner":       "gold"
+}
+```
+
+`<provider>/<모델>` 플레이스홀더는 모두 사용자가 고른 **정확한** ID로 교체. `maxParallelSubagents`는 **coder 모델 ID에 `glm` 포함되면 2, 그 외 4**.
 
 `<provider>/<모델>` 플레이스홀더는 모두 사용자가 3b/3d에서 고른 **정확한** ID 문자열로 교체 — 임의 생성 금지, 자동완성 금지, 버전 드리프트 금지. 고른 모델을 `provider/model` 문자열로 매핑할 수 없으면 추측하지 말고 사용자에게 다시 물어보세요.
 

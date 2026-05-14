@@ -1,9 +1,13 @@
-import { readFileSync } from "node:fs";
+import { spawn } from "node:child_process";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { access, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 const PLUGIN_VERSION = readPluginVersion();
+const UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
+const UPDATE_CHECK_FILE = join(homedir(), ".cache", "opencode-resolve", "update-check.json");
+const PLUGIN_CACHE_DIR = join(homedir(), ".cache", "opencode", "packages", "opencode-resolve@latest");
 function readPluginVersion() {
     try {
         const pkgRoot = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -16,10 +20,34 @@ function readPluginVersion() {
 }
 console.log(`[opencode-resolve] v${PLUGIN_VERSION} loaded`);
 const DEFAULT_MODELS = {};
-const DEFAULT_ENABLED = ["coder", "resolver", "explorer", "reviewer", "deep-reviewer"];
-const VALID_AGENT_NAMES = ["coder", "reviewer", "resolver", "architect", "gpt-coder", "debugger", "researcher", "explorer", "deep-reviewer"];
+const DEFAULT_ENABLED = ["coder", "resolver", "explorer", "reviewer", "deep-reviewer", "planner"];
+const VALID_AGENT_NAMES = [
+    "coder",
+    "reviewer",
+    "resolver",
+    "architect",
+    "gpt-coder",
+    "debugger",
+    "researcher",
+    "explorer",
+    "deep-reviewer",
+    "planner",
+];
 const VALID_AGENT_NAME_SET = new Set(VALID_AGENT_NAMES);
-const VALID_MODEL_ALIASES = [...VALID_AGENT_NAMES, "glm", "gpt", "quick", "deep", "fast", "strong", "mini", "codex"];
+const VALID_MODEL_ALIASES = [
+    ...VALID_AGENT_NAMES,
+    "glm",
+    "gpt",
+    "quick",
+    "deep",
+    "fast",
+    "strong",
+    "mini",
+    "codex",
+    "bronze",
+    "silver",
+    "gold",
+];
 const VALID_MODEL_ALIAS_SET = new Set(VALID_MODEL_ALIASES);
 const VALID_MODES = new Set(["subagent", "primary", "all"]);
 const VALID_PERMISSION_VALUES = new Set(["ask", "allow", "deny"]);
@@ -32,6 +60,7 @@ const VALID_TOP_LEVEL_KEYS = new Set([
     "commands",
     "autoApprove",
     "maxParallelSubagents",
+    "autoUpdate",
     "config",
 ]);
 const DEFAULT_MAX_PARALLEL_SUBAGENTS = 2;
@@ -56,7 +85,7 @@ function buildResolverPrompt(maxParallelSubagents) {
         "Your job is to drive the user's task to a verified resolution using minimal context and the fewest LLM calls possible.",
         "",
         "Core path: You and Coder form the fixed-role verified resolve loop — this is the default path.",
-        "Internal specialist subagents (explorer, reviewer, deep-reviewer) are available by default as subagents, but they are NOT the default path.",
+        "Internal specialist subagents (explorer, reviewer, deep-reviewer, planner) are available by default as subagents, but they are NOT the default path.",
         "Dispatch them only when justified — avoid context waste.",
         "",
         "Checkpointed execution: for large tasks, decompose work into small verified checkpoints. For each checkpoint, iterate up to 3 attempts on the same failing checkpoint. When a checkpoint passes verification, carry forward only: decisions, changed files, verification results, and blockers — then proceed to the next checkpoint. If blocked after max 3 attempts on one checkpoint, report the exact blocker with evidence. This preserves context and handles arbitrarily long tasks.",
@@ -75,6 +104,7 @@ function buildResolverPrompt(maxParallelSubagents) {
         "- explorer: fast read-only codebase scout. Prefer local read/grep/glob for narrow scope; dispatch explorer only when scope is genuinely unknown and local tools are insufficient.",
         "- reviewer: lightweight read-only audit. Dispatch only for post-change verification gaps on non-trivial changes.",
         "- deep-reviewer: thorough read-only review. Dispatch ONLY for risky, security-sensitive, architectural, or high-impact changes.",
+        "- planner: advanced read-only planner. Dispatch ONLY when the user explicitly asks for a plan, decomposition, or implementation strategy. Do NOT call planner for routine sub-task planning you can absorb inline.",
         "",
         "Note: this parallel rule is enforced via prompt only — there is no runtime cap on subagent dispatches. Honor it strictly to avoid file conflicts and wasted context.",
     ].join("\n");
@@ -95,6 +125,8 @@ const DEFAULT_AGENT_CONFIG = {
             "Implement the smallest patch that satisfies the requirement.",
             "Run targeted verification when practical (single test file, type check, or lint — not full suites).",
             "Return a concise summary: changed files list + command results. No unnecessary prose.",
+            "",
+            "Scope-discovery gate: dispatch the `explorer` subagent ONLY when the scope is genuinely unclear — i.e. you need to locate 3+ unknown files, OR a named pattern's location is genuinely unknown. For known files, single-file uncertainty, or routine doubt, read directly with the local read/grep/glob tools. Never dispatch explorer for casual exploration — token efficiency is the discipline.",
         ].join("\n"),
         permission: {
             edit: "ask",
@@ -236,15 +268,107 @@ const DEFAULT_AGENT_CONFIG = {
             webfetch: "ask",
         },
     },
+    planner: {
+        mode: "subagent",
+        color: "#F4A300",
+        maxSteps: 10,
+        description: "Internal advanced planner dispatched by the resolver when the user explicitly asks for a plan, decomposition, or implementation strategy. Read-only. Returns a concrete plan; never edits code.",
+        prompt: [
+            "You are Planner, the advanced planning subagent for OpenCode Resolve.",
+            "You are dispatched by the resolver only when the user explicitly asks for a plan, decomposition, or implementation strategy — not for routine sub-task planning the resolver handles inline.",
+            "You MUST NOT modify the project: no file edits, no writes, no shell commands that change state.",
+            "Inspect the relevant code with read-only tools (read, grep, glob, list) before proposing.",
+            "Return: clear phasing, file-level boundaries per phase, verification checkpoints, risks, and explicit trade-offs. Be concrete — name files, name decisions, name the cost of each option.",
+            "Be token-efficient: produce the smallest plan that fully covers the user's intent. No filler, no boilerplate, no restating the request.",
+        ].join("\n"),
+        permission: {
+            edit: "deny",
+            bash: "deny",
+            webfetch: "ask",
+        },
+    },
 };
 export const OpencodeResolve = async ({ directory }, options) => {
     return {
         config: async (config) => {
             const resolveConfig = await loadResolveConfig(directory, config, options);
             applyResolveConfig(config, resolveConfig);
+            if (resolveConfig.autoUpdate !== false && process.env.OPENCODE_RESOLVE_NO_AUTO_UPDATE !== "1") {
+                maybeAutoUpdate().catch(() => { });
+            }
         },
     };
 };
+async function maybeAutoUpdate() {
+    try {
+        const previous = readUpdateCheckCache();
+        if (previous && Date.now() - previous.checkedAt < UPDATE_CHECK_INTERVAL_MS) {
+            return;
+        }
+    }
+    catch {
+        // ignore corrupt cache and re-check
+    }
+    let latest;
+    try {
+        const response = await fetch("https://registry.npmjs.org/opencode-resolve/latest", {
+            headers: { Accept: "application/json" },
+            signal: AbortSignal.timeout(5000),
+        });
+        if (!response.ok)
+            return;
+        const data = (await response.json());
+        if (typeof data?.version !== "string")
+            return;
+        latest = data.version;
+    }
+    catch {
+        return;
+    }
+    try {
+        mkdirSync(dirname(UPDATE_CHECK_FILE), { recursive: true });
+        writeFileSync(UPDATE_CHECK_FILE, JSON.stringify({ checkedAt: Date.now(), latest }));
+    }
+    catch {
+        // best-effort; don't block on cache write failure
+    }
+    if (!isNewerVersion(latest, PLUGIN_VERSION))
+        return;
+    console.log(`[opencode-resolve] new version v${latest} available (current: v${PLUGIN_VERSION}) — refreshing cache in background. Restart OpenCode to activate (current session stays on v${PLUGIN_VERSION}).`);
+    try {
+        spawn("sh", ["-c", `rm -rf "${PLUGIN_CACHE_DIR}" && opencode plugin opencode-resolve --global --force`], { detached: true, stdio: "ignore" }).unref();
+    }
+    catch {
+        // If spawn fails, the user already saw the notice and can run the command manually.
+    }
+}
+function readUpdateCheckCache() {
+    try {
+        const raw = readFileSync(UPDATE_CHECK_FILE, "utf8");
+        const parsed = JSON.parse(raw);
+        if (typeof parsed?.checkedAt === "number" &&
+            typeof parsed?.latest === "string") {
+            return { checkedAt: parsed.checkedAt, latest: parsed.latest };
+        }
+    }
+    catch {
+        // file missing or unparseable
+    }
+    return undefined;
+}
+function isNewerVersion(candidate, baseline) {
+    const a = candidate.split(".").map((n) => Number.parseInt(n, 10));
+    const b = baseline.split(".").map((n) => Number.parseInt(n, 10));
+    for (let i = 0; i < Math.max(a.length, b.length); i++) {
+        const av = Number.isFinite(a[i]) ? a[i] : 0;
+        const bv = Number.isFinite(b[i]) ? b[i] : 0;
+        if (av > bv)
+            return true;
+        if (av < bv)
+            return false;
+    }
+    return false;
+}
 export default OpencodeResolve;
 async function loadResolveConfig(directory, opencodeConfig, options) {
     const pluginOptions = normalizeResolveConfig(options ?? getPluginOptions(opencodeConfig), "plugin options");
@@ -328,6 +452,7 @@ function defaultResolveConfig() {
         commands: false,
         autoApprove: true,
         maxParallelSubagents: DEFAULT_MAX_PARALLEL_SUBAGENTS,
+        autoUpdate: true,
     };
 }
 function mergeResolveConfig(...configs) {
@@ -341,6 +466,7 @@ function mergeResolveConfig(...configs) {
         result.commands = config.commands ?? result.commands;
         result.autoApprove = config.autoApprove ?? result.autoApprove;
         result.maxParallelSubagents = config.maxParallelSubagents ?? result.maxParallelSubagents;
+        result.autoUpdate = config.autoUpdate ?? result.autoUpdate;
         result.models = { ...result.models, ...config.models };
         result.agents = mergeAgents(result.agents, config.agents);
     }
@@ -451,6 +577,8 @@ function normalizeResolveConfig(value, source) {
         result.commands = expectBoolean(config.commands, `${source}.commands`);
     if (config.autoApprove !== undefined)
         result.autoApprove = expectBoolean(config.autoApprove, `${source}.autoApprove`);
+    if (config.autoUpdate !== undefined)
+        result.autoUpdate = expectBoolean(config.autoUpdate, `${source}.autoUpdate`);
     if (config.maxParallelSubagents !== undefined) {
         const limit = expectNumber(config.maxParallelSubagents, `${source}.maxParallelSubagents`);
         if (!Number.isInteger(limit) || limit < 1) {

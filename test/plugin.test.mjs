@@ -29,11 +29,80 @@ test("injects default coder, resolver, and internal specialist subagents using t
   assert.equal(config.agent.reviewer.mode, "subagent")
   assert.equal(config.agent.explorer.mode, "subagent")
   assert.equal(config.agent["deep-reviewer"].mode, "subagent")
+  assert.equal(config.agent.planner.mode, "subagent")
+  assert.equal(config.agent.planner.model, "provider/default-model")
   // Disabled agents remain undefined
   assert.equal(config.agent.architect, undefined)
   assert.equal(config.agent["gpt-coder"], undefined)
   assert.equal(config.agent.debugger, undefined)
   assert.equal(config.agent.researcher, undefined)
+})
+
+test("resolver prompt mentions planner dispatch on explicit plan-request", async () => {
+  const { config } = await runPlugin({})
+  assert.match(
+    config.agent.resolver.prompt,
+    /planner: advanced read-only planner.*explicitly asks for a plan/i,
+  )
+})
+
+test("coder prompt includes the explorer scope-discovery gate", async () => {
+  const { config } = await runPlugin({})
+  assert.match(
+    config.agent.coder.prompt,
+    /dispatch the `explorer` subagent ONLY when the scope is genuinely unclear/i,
+  )
+})
+
+test("bronze/silver/gold aliases resolve to their pinned model ids", async () => {
+  const { config } = await runPlugin({
+    model: "default/model",
+    plugin: [
+      [
+        "opencode-resolve",
+        {
+          models: {
+            bronze: "vendor/glm-4.7-flash",
+            silver: "vendor/glm-5.1",
+            gold: "vendor/strong",
+            explorer: "bronze",
+            coder: "silver",
+            resolver: "gold",
+            reviewer: "gold",
+            "deep-reviewer": "gold",
+            planner: "gold",
+          },
+        },
+      ],
+    ],
+  })
+
+  assert.equal(config.agent.explorer.model, "vendor/glm-4.7-flash")
+  assert.equal(config.agent.coder.model, "vendor/glm-5.1")
+  assert.equal(config.agent.resolver.model, "vendor/strong")
+  assert.equal(config.agent.reviewer.model, "vendor/strong")
+  assert.equal(config.agent["deep-reviewer"].model, "vendor/strong")
+  assert.equal(config.agent.planner.model, "vendor/strong")
+})
+
+test("autoUpdate parses as boolean and rejects non-boolean values", async () => {
+  // valid: accepts true
+  const { config: configTrue } = await runPlugin({
+    plugin: [["opencode-resolve", { autoUpdate: true }]],
+  })
+  assert.equal(typeof configTrue.agent.resolver, "object")
+
+  // valid: accepts false
+  const { config: configFalse } = await runPlugin({
+    plugin: [["opencode-resolve", { autoUpdate: false }]],
+  })
+  assert.equal(typeof configFalse.agent.resolver, "object")
+
+  // invalid: rejects non-boolean
+  await assert.rejects(
+    runPlugin({ plugin: [["opencode-resolve", { autoUpdate: "yes" }]] }),
+    /autoUpdate must be a boolean/,
+  )
 })
 
 test("autoApprove defaults to true and flips ask permissions to allow", async () => {

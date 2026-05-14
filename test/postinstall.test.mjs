@@ -17,7 +17,7 @@ test("postinstall creates OpenCode config and resolve config", async () => {
     const resolveConfig = await readJson(join(configHome, "resolve.json"))
 
     assert.deepEqual(opencodeConfig.plugin, ["opencode-resolve"])
-    assert.deepEqual(resolveConfig.enabled, ["coder", "resolver", "explorer", "reviewer", "deep-reviewer"])
+    assert.deepEqual(resolveConfig.enabled, ["coder", "resolver", "explorer", "reviewer", "deep-reviewer", "planner"])
     assert.equal(resolveConfig.autoApprove, true)
     assert.equal(resolveConfig.maxParallelSubagents, 2)
     // No opencode model => models stays empty (inherited preset)
@@ -120,7 +120,7 @@ test("postinstall creates GPT-only preset when opencode model is openai/gpt-*", 
     assert.equal(resolveConfig.models["deep-reviewer"], "gpt")
     assert.equal(resolveConfig.models.explorer, "gpt")
     // enabled, agents, and other fields are preserved from example
-    assert.deepEqual(resolveConfig.enabled, ["coder", "resolver", "explorer", "reviewer", "deep-reviewer"])
+    assert.deepEqual(resolveConfig.enabled, ["coder", "resolver", "explorer", "reviewer", "deep-reviewer", "planner"])
   } finally {
     await rm(configHome, { recursive: true, force: true })
   }

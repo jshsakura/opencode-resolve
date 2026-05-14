@@ -1,9 +1,10 @@
 {
-  "enabled": ["coder", "resolver", "explorer", "reviewer", "deep-reviewer"],
+  "enabled": ["coder", "resolver", "explorer", "reviewer", "deep-reviewer", "planner"],
   "preserveNative": true,
   "context7": true,
   "commands": false,
   "autoApprove": true,
+  "autoUpdate": true,
   "maxParallelSubagents": 2,
   "models": {},
   "agents": {
@@ -23,6 +24,10 @@
       "mode": "subagent"
     },
     "deep-reviewer": {
+      "enabled": true,
+      "mode": "subagent"
+    },
+    "planner": {
       "enabled": true,
       "mode": "subagent"
     },
