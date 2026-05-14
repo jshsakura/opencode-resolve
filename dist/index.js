@@ -119,8 +119,10 @@ function buildGLMResolverPrompt(maxParallelSubagents) {
         `Dispatch up to ${limit} coder(s) concurrently. Wait for in-flight coders before dispatching more.`,
         "Dispatch coder with: TASK (atomic goal), OUTCOME (success criteria), MUST DO, MUST NOT DO, CONTEXT (files/patterns).",
         "After EVERY coder return: verify it works + follows codebase patterns. If not → re-dispatch with fix.",
+        "INTELLIGENT RECOVERY: On verify failure, dispatch debugger FIRST to diagnose root cause, THEN re-dispatch coder with precise fix. Do NOT blindly retry.",
         "Trivial fixes → apply yourself. No subagent needed.",
         "3 consecutive failures → STOP, REVERT, REPORT, ASK user.",
+        "10+ failures on same task → call architect to rethink the approach before continuing.",
         "",
         "If piloci MCP available: piloci_recall before inspecting code, piloci_memory after learning something non-obvious.",
         "",
@@ -129,7 +131,7 @@ function buildGLMResolverPrompt(maxParallelSubagents) {
         "",
         "NEVER: as any / @ts-ignore / leave code broken / delete failing tests / commit without request.",
         "",
-        "Specialists: explorer (scope unknown), reviewer (verification gap), planner (user asks for plan). No deep-reviewer.",
+        "Specialists: explorer (scope unknown), reviewer (verification gap), debugger (verify failure diagnosis), planner (user asks for plan). No deep-reviewer.",
     ].join("\n");
 }
 const GLM_CODER_PROMPT = [
@@ -151,8 +153,10 @@ function buildGPTResolverPrompt() {
         "Parallel coder dispatch for independent work. Deep-reviewer available for risky changes.",
         "Dispatch coder with: TASK (atomic goal), OUTCOME (success criteria), MUST DO, MUST NOT DO, CONTEXT (files/patterns).",
         "After EVERY coder return: verify it works + follows codebase patterns. If not → re-dispatch with fix.",
+        "INTELLIGENT RECOVERY: On verify failure, dispatch debugger FIRST to diagnose root cause, THEN re-dispatch coder with precise fix. Do NOT blindly retry.",
         "Trivial fixes → apply yourself. No subagent needed.",
         "3 consecutive failures → STOP, REVERT, REPORT, ASK user.",
+        "10+ failures on same task → call architect to rethink the approach before continuing.",
         "",
         "If piloci MCP available: piloci_recall before inspecting code, piloci_memory after learning something non-obvious.",
         "",
@@ -161,7 +165,7 @@ function buildGPTResolverPrompt() {
         "",
         "NEVER: as any / @ts-ignore / leave code broken / delete failing tests / commit without request.",
         "",
-        "Specialists: explorer (scope unknown), reviewer (verification gap), deep-reviewer (risky/security/architectural), planner (user asks for plan).",
+        "Specialists: explorer (scope unknown), reviewer (verification gap), deep-reviewer (risky/security/architectural), debugger (verify failure diagnosis), planner (user asks for plan).",
     ].join("\n");
 }
 const GPT_CODER_PROMPT = [
@@ -192,8 +196,10 @@ function buildResolverPrompt(maxParallelSubagents) {
         `Parallel: ${parallelRule}`,
         "Dispatch coder with: TASK (atomic goal), OUTCOME (success criteria), MUST DO, MUST NOT DO, CONTEXT (files/patterns).",
         "After EVERY coder return: verify it works + follows codebase patterns. If not → re-dispatch with fix.",
+        "INTELLIGENT RECOVERY: On verify failure, dispatch debugger FIRST to diagnose root cause, THEN re-dispatch coder with precise fix. Do NOT blindly retry.",
         "Trivial fixes → apply yourself. No subagent needed.",
         "3 consecutive failures → STOP, REVERT, REPORT, ASK user.",
+        "10+ failures on same task → call architect to rethink the approach before continuing.",
         "",
         "If piloci MCP available: piloci_recall before inspecting code, piloci_memory after learning something non-obvious.",
         "",
@@ -202,7 +208,7 @@ function buildResolverPrompt(maxParallelSubagents) {
         "",
         "NEVER: as any / @ts-ignore / leave code broken / delete failing tests / commit without request.",
         "",
-        "Specialists: explorer (scope unknown), reviewer (verification gap), deep-reviewer (risky/security/architectural), planner (user asks for plan).",
+        "Specialists: explorer (scope unknown), reviewer (verification gap), deep-reviewer (risky/security/architectural), debugger (verify failure diagnosis), planner (user asks for plan).",
     ].join("\n");
 }
 const DEFAULT_AGENT_CONFIG = {
@@ -474,15 +480,30 @@ export const OpencodeResolve = async ({ directory }, options) => {
     // Track recent LSP diagnostics for post-edit verification
     const recentDiagnostics = new Map();
     const DIAGNOSTICS_TTL_MS = 30_000; // Keep diagnostics for 30 seconds
+    // Track failure patterns for runtime warnings
+    const failurePatterns = new Map();
+    const FAILURE_PATTERN_TTL_MS = 120_000; // 2 minutes
+    const FAILURE_THRESHOLD = 10; // warn after 10 same-command failures — Ralph Loop should keep going
+    const STRATEGY_PIVOT_THRESHOLD = 20; // after 20 total failures, suggest architect intervention
+    let failureWarnings = []; // injected into system prompt
+    let totalFailures = 0; // cross-tool failure count for strategy pivot
+    // ── Ralph Loop: edit hotspot + loop detection ───────────────────────────
+    const editHotspots = new Map();
+    const EDIT_HOTSPOT_THRESHOLD = 10; // same file edited ≥10 times before suggesting strategy change
+    const EDIT_HOTSPOT_TTL_MS = 600_000; // 10 minutes window — give the loop room to work
+    let totalEdits = 0;
+    let totalToolCalls = 0;
+    let sessionStartTime = Date.now();
+    let loopWarnings = []; // injected alongside failure warnings
+    let lastStrategyHint = ""; // avoid repeating the same hint
     return {
-        // ── Event: capture LSP diagnostics for post-edit verification ────────
+        // ── Event: capture LSP diagnostics + track failure patterns ───────────
         event: async (input) => {
             const evt = input.event;
+            // LSP diagnostics tracking
             if (evt.type === "lsp.client.diagnostics") {
                 const props = evt.properties;
                 if (props.path) {
-                    // Count diagnostics from the event data
-                    // OpenCode sends full diagnostics in the event payload
                     const data = evt;
                     const diagnostics = Array.isArray(data.diagnostics) ? data.diagnostics
                         : Array.isArray(data.errors) ? data.errors
@@ -493,14 +514,107 @@ export const OpencodeResolve = async ({ directory }, options) => {
                         recentDiagnostics.set(props.path, { errors, warnings, timestamp: Date.now() });
                     }
                     else {
-                        // Clean diagnostics cleared — remove stale entry
                         recentDiagnostics.delete(props.path);
                     }
-                    // Prune stale entries
                     const now = Date.now();
                     for (const [key, value] of recentDiagnostics) {
                         if (now - value.timestamp > DIAGNOSTICS_TTL_MS)
                             recentDiagnostics.delete(key);
+                    }
+                }
+            }
+            // Tool execution failure tracking via message.part.updated
+            // When a tool result part appears with a non-zero exit code, track it
+            if (evt.type === "message.part.updated") {
+                const props = evt.properties;
+                const part = props.part;
+                if (part?.type === "tool-result" || part?.type === "tool-result") {
+                    const exitCode = part?.metadata?.exitCode ?? part?.output?.metadata?.exitCode;
+                    const toolName = part?.toolID ?? part?.tool ?? "";
+                    if (exitCode !== undefined && exitCode !== 0 && typeof toolName === "string") {
+                        const existing = failurePatterns.get(toolName);
+                        const msg = String(part?.output ?? part?.error ?? "").slice(0, 200);
+                        if (existing) {
+                            existing.count++;
+                            existing.lastMessage = msg;
+                            existing.timestamp = Date.now();
+                        }
+                        else {
+                            failurePatterns.set(toolName, { count: 1, lastMessage: msg, timestamp: Date.now() });
+                        }
+                        // Prune stale entries
+                        const now = Date.now();
+                        for (const [k, v] of failurePatterns) {
+                            if (now - v.timestamp > FAILURE_PATTERN_TTL_MS)
+                                failurePatterns.delete(k);
+                        }
+                        // Generate warnings for recurring failures
+                        totalFailures++;
+                        failureWarnings = [];
+                        for (const [, v] of failurePatterns) {
+                            if (v.count >= FAILURE_THRESHOLD) {
+                                failureWarnings.push(`Tool '${toolName}' failed ${v.count} times. Last: ${v.lastMessage}`);
+                            }
+                        }
+                    }
+                }
+            }
+            // Track session errors for recurring issues
+            if (evt.type === "session.error") {
+                const data = evt;
+                const msg = String(data?.error?.message ?? data?.message ?? "").slice(0, 200);
+                if (msg) {
+                    const existing = failurePatterns.get("session");
+                    if (existing) {
+                        existing.count++;
+                        existing.lastMessage = msg;
+                        existing.timestamp = Date.now();
+                    }
+                    else {
+                        failurePatterns.set("session", { count: 1, lastMessage: msg, timestamp: Date.now() });
+                    }
+                    failureWarnings = [];
+                    totalFailures++;
+                    for (const [, v] of failurePatterns) {
+                        if (v.count >= FAILURE_THRESHOLD) {
+                            failureWarnings.push(`Session error repeated ${v.count} times: ${v.lastMessage}`);
+                        }
+                    }
+                }
+            }
+            // ── Ralph Loop: track edit tool calls for hotspot detection ────────
+            if (evt.type === "message.part.updated") {
+                const props = evt.properties;
+                const part = props.part;
+                if (part?.type === "tool-invocation" || part?.type === "tool-use") {
+                    totalToolCalls++;
+                    const toolName = part.tool ?? part.toolName ?? "";
+                    if (toolName === "edit" || toolName === "write") {
+                        totalEdits++;
+                        const filePath = part.args?.filePath ?? part.args?.path ?? "";
+                        if (filePath) {
+                            const existing = editHotspots.get(filePath);
+                            if (existing) {
+                                existing.count++;
+                                existing.lastEditTime = Date.now();
+                            }
+                            else {
+                                editHotspots.set(filePath, { count: 1, lastEditTime: Date.now() });
+                            }
+                            // Prune stale entries
+                            const now = Date.now();
+                            for (const [k, v] of editHotspots) {
+                                if (now - v.lastEditTime > EDIT_HOTSPOT_TTL_MS)
+                                    editHotspots.delete(k);
+                            }
+                            // Generate loop warnings
+                            loopWarnings = [];
+                            for (const [file, data] of editHotspots) {
+                                if (data.count >= EDIT_HOTSPOT_THRESHOLD) {
+                                    loopWarnings.push(`File '${file}' edited ${data.count} times — consider a different approach. Keep iterating.`);
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -528,6 +642,9 @@ export const OpencodeResolve = async ({ directory }, options) => {
                 GCM_INTERACTIVE: "never",
                 npm_config_yes: "true",
                 PIP_NO_INPUT: "1",
+                NODE_OPTIONS: process.env.NODE_OPTIONS ?? "", // preserve existing
+                NO_COLOR: output.env?.NO_COLOR, // preserve if set
+                LANG: output.env?.LANG ?? "en_US.UTF-8", // consistent locale
             };
         },
         // ── Permission: classify bash commands + block banned interactive tools ─
@@ -543,18 +660,20 @@ export const OpencodeResolve = async ({ directory }, options) => {
                     output.status = action;
             }
         },
-        // ── Chat params: per-profile temperature and token limits ─────────────
+        // ── Chat params: per-profile temperature, token limits, topP, topK ──────
         "chat.params": async (input, output) => {
             const profile = storedConfig?.profile;
             if (profile === "glm") {
-                // GLM: lower temperature for deterministic code, tighter token budget
                 output.temperature = Math.min(output.temperature, 0.4);
                 if (output.maxOutputTokens === undefined || output.maxOutputTokens > 16384) {
                     output.maxOutputTokens = 16384;
                 }
+                // GLM: tighter topP for deterministic output
+                if (output.topP === undefined || output.topP > 0.9) {
+                    output.topP = 0.85;
+                }
             }
             else if (profile === "gpt") {
-                // GPT: allow higher temperature for creative reasoning
                 output.temperature = Math.min(output.temperature, 0.7);
                 if (output.maxOutputTokens === undefined) {
                     output.maxOutputTokens = 32768;
@@ -565,16 +684,24 @@ export const OpencodeResolve = async ({ directory }, options) => {
             if (readOnlyAgents.has(input.agent)) {
                 output.temperature = Math.min(output.temperature, 0.3);
             }
+            // Write agents: slightly higher temperature for creative problem-solving
+            const writeAgents = new Set(["coder", "resolver", "glm", "gpt-coder"]);
+            if (writeAgents.has(input.agent) && output.temperature === undefined) {
+                output.temperature = 0.5;
+            }
         },
         // ── Tool definition: enrich tool descriptions with discipline hints ──
         "tool.definition": async (input, output) => {
-            // tool.definition runs once per tool per session, not per agent.
-            // We add usage discipline hints that guide the LLM toward correct behavior.
             const hints = {
                 edit: "\n[opencode-resolve] Read the file first. Make the smallest correct change. Verify after editing.",
                 write: "\n[opencode-resolve] Only write new files when explicitly needed. Prefer editing existing files.",
                 bash: "\n[opencode-resolve] Commands run in non-interactive mode. No interactive editors, pagers, or REPLs. Use -c flags for scripting.",
                 task: "\n[opencode-resolve] Dispatch subagents with: TASK (atomic goal), OUTCOME (success criteria), MUST DO, MUST NOT DO, CONTEXT.",
+                glob: "\n[opencode-resolve] Use specific patterns. Avoid '**/*' unless genuinely needed — prefer scoped searches.",
+                grep: "\n[opencode-resolve] Use specific regex patterns. Combine with include filter for targeted search.",
+                read: "\n[opencode-resolve] Read only what you need. Use offset/limit for large files. Check file-info tool for quick metadata.",
+                webfetch: "\n[opencode-resolve] Only fetch URLs when you genuinely need external information. Prefer local docs and code first.",
+                todowrite: "\n[opencode-resolve] Keep todos current. Mark completed immediately. One in_progress at a time.",
             };
             if (hints[input.toolID]) {
                 output.description = output.description + hints[input.toolID];
@@ -593,13 +720,22 @@ export const OpencodeResolve = async ({ directory }, options) => {
                 text: "[opencode-resolve] Drive to verified resolution. Classify intent, dispatch focused subagents, verify after each, iterate on failure. Report completion only when verified.",
             });
         },
-        // ── Tool execute before: pre-process tool args ────────────────────────
+        // ── Tool execute before: pre-process tool args + warn on risky patterns ──
         "tool.execute.before": async (input, output) => {
             // For bash: inject hints for common mistakes
             if (input.tool === "bash" && output.args && typeof output.args === "object") {
                 const cmd = output.args.command ?? output.args.cmd;
                 if (typeof cmd === "string" && cmd.includes("git commit") && !cmd.includes("-m")) {
                     output.args = { ...output.args, _resolve_hint: "Use 'git commit -m \"message\"' — interactive commit is blocked." };
+                }
+            }
+            // For write: warn about overwriting existing files
+            if (input.tool === "write" && output.args && typeof output.args === "object") {
+                const filePath = output.args.filePath ?? output.args.path;
+                if (typeof filePath === "string") {
+                    const meta = { ...(output.args._resolve_meta ?? {}) };
+                    meta._resolve_write_note = "Verify file contents after writing. Use edit instead of write for existing files when possible.";
+                    output.args = { ...output.args, _resolve_meta: meta };
                 }
             }
         },
@@ -611,7 +747,7 @@ export const OpencodeResolve = async ({ directory }, options) => {
                 output.headers["X-Custom-Retry-Strategy"] = "exponential";
             }
         },
-        // ── Tool execute after: inject verification hints + LSP diagnostics after edits ─
+        // ── Tool execute after: inject verification hints + LSP diagnostics + failure extraction ──
         "tool.execute.after": async (input, output) => {
             if (input.tool === "edit" || input.tool === "write") {
                 const verifyCommands = storedProjectContext?.verifyCommands;
@@ -628,39 +764,131 @@ export const OpencodeResolve = async ({ directory }, options) => {
                         meta._resolve_lsp_errors = diag.errors;
                         meta._resolve_lsp_warnings = diag.warnings;
                     }
+                    // Ralph Loop: track edit hotspot
+                    const existing = editHotspots.get(editedPath);
+                    if (existing) {
+                        existing.count++;
+                        existing.lastEditTime = Date.now();
+                    }
+                    else {
+                        editHotspots.set(editedPath, { count: 1, lastEditTime: Date.now() });
+                    }
+                    // Ralph Loop: inject loop warning into metadata
+                    const hotspot = editHotspots.get(editedPath);
+                    if (hotspot && hotspot.count >= EDIT_HOTSPOT_THRESHOLD) {
+                        meta._resolve_loop_warning = `This file has been edited ${hotspot.count} times. Consider a different approach.`;
+                    }
                 }
                 output.metadata = meta;
+                // Ralph Loop: update loopWarnings after every edit/write
+                loopWarnings = [];
+                for (const [file, data] of editHotspots) {
+                    if (data.count >= EDIT_HOTSPOT_THRESHOLD) {
+                        loopWarnings.push(`File '${file}' edited ${data.count} times — consider a different approach for this file. Keep iterating.`);
+                    }
+                }
+            }
+            // For bash: extract key error lines from failing commands
+            if (input.tool === "bash") {
+                const outputText = typeof output.output === "string" ? output.output
+                    : output.output?.output ?? "";
+                const exitCode = output.metadata?.exitCode ?? output.output?.metadata?.exitCode;
+                if (exitCode && exitCode !== 0 && typeof outputText === "string") {
+                    const errorLines = outputText.split("\n")
+                        .filter((l) => /\b(error|Error|ERROR|fail|FAIL|FAILED|cannot|Cannot|TypeError|SyntaxError|ReferenceError)\b/.test(l))
+                        .slice(0, 5);
+                    if (errorLines.length > 0) {
+                        const meta = { ...(output.metadata ?? {}) };
+                        meta._resolve_key_errors = errorLines;
+                        output.metadata = meta;
+                    }
+                }
             }
         },
         // ── Session compacting: preserve critical context during compaction ───
         "experimental.session.compacting": async (_input, output) => {
             const ctx = storedProjectContext;
-            if (!ctx)
+            const cfg = storedConfig;
+            if (!ctx && !cfg)
                 return;
             const contextLines = [];
-            if (ctx.knowledgeFiles.length > 0) {
+            // Profile and tier info
+            if (cfg?.profile)
+                contextLines.push(`Profile: ${cfg.profile}.`);
+            if (cfg?.tier)
+                contextLines.push(`Tier: ${cfg.tier}.`);
+            // Project context
+            if (ctx?.knowledgeFiles.length) {
                 contextLines.push(`Project knowledge files: ${ctx.knowledgeFiles.join(", ")}.`);
             }
-            if (ctx.verifyCommands.length > 0) {
+            if (ctx?.verifyCommands.length) {
                 contextLines.push(`Verify commands: ${ctx.verifyCommands.join("; ")}.`);
             }
-            if (ctx.hasTypeScript) {
+            if (ctx?.hasTypeScript) {
                 contextLines.push("TypeScript project — type safety is mandatory.");
             }
-            if (ctx.packageManager) {
+            if (ctx?.packageManager) {
                 contextLines.push(`Package manager: ${ctx.packageManager}.`);
+            }
+            // Active failure warnings
+            if (failureWarnings.length > 0) {
+                contextLines.push(`Active warnings: ${failureWarnings.join("; ")}`);
+            }
+            // Ralph Loop: preserve loop state
+            if (loopWarnings.length > 0) {
+                contextLines.push(`Loop warnings: ${loopWarnings.join("; ")}`);
+            }
+            // Ralph Loop: preserve session stats
+            if (totalEdits > 0) {
+                contextLines.push(`Session stats: ${totalEdits} edits, ${totalToolCalls} tool calls.`);
             }
             if (contextLines.length > 0) {
                 output.context.push("[" + "opencode-resolve" + "] Project context (preserve): " + contextLines.join(" "));
             }
         },
-        // ── Chat messages transform: replace generic summarize prompt ──────────
+        // ── Chat messages transform: replace generic summarize prompts ──────────
         "experimental.chat.messages.transform": async (_input, output) => {
-            const GENERIC_SUMMARIZE = "Summarize the task tool output above and continue with your task.";
+            const replacements = [
+                // Exact: default OpenCode "continue" prompt
+                ["Summarize the task tool output above and continue with your task.",
+                    "Analyze the subtask result above. If it succeeded, continue. If it failed, diagnose and retry. Report completion only when verified."],
+                // Regex: any "Summarize ... and continue" variant
+                [/Summarize the .+ output above and continue/i,
+                    "Analyze the result above. If it succeeded, continue to the next step. If it failed, diagnose root cause and retry with a fix."],
+                // Regex: generic "continue with your task" ending
+                [/continue with your task\.$/i,
+                    "continue driving toward verified completion."],
+                // Regex: "I've completed..." without verification
+                [/I('ve| have) (completed|finished|done) (the )?.*\.$/i,
+                    "Verify your changes pass typecheck/lint/test before reporting completion."],
+                // Regex: passive "Let me know if..."
+                [/let me know if (you|you'd like) .*/i,
+                    "Proceed with the next step. If blocked, diagnose and report specifically what failed."],
+                // Regex: "Would you like me to..."
+                [/would you like me to .*/i,
+                    "Proceed with the most effective next step autonomously."],
+                // Ralph Loop: detect "I'll try again" — encourage different approach, don't stop
+                [/I('ll| will) (try again|retry|attempt again|redo)/i,
+                    "Diagnose the ROOT CAUSE of the failure, then apply a DIFFERENT fix. The Ralph Loop keeps going."],
+                // Regex: "I'm not sure" — uncertainty without action
+                [/I('m| am) (not sure|unsure|uncertain) .*/i,
+                    "Resolve uncertainty by reading the code, checking diagnostics, or using resolve-search. Keep driving."],
+                // Regex: "This might work" — low confidence
+                [/this (might|should|could|may) work/i,
+                    "CONFIRM it works by running verification. Do not assume."],
+                // Regex: "It seems to be working" — unverified claim
+                [/it (seems|appears|looks) to (be )?(working|fine|correct)/i,
+                    "VERIFY with typecheck/lint/test. 'Seems to work' is not evidence."],
+            ];
             for (const msg of output.messages) {
                 for (const part of msg.parts) {
-                    if (part.type === "text" && part.text === GENERIC_SUMMARIZE) {
-                        part.text = "Analyze the subtask result above. If it succeeded, continue. If it failed, diagnose and retry. Report completion only when verified.";
+                    if (part.type !== "text")
+                        continue;
+                    for (const [pattern, replacement] of replacements) {
+                        if (typeof pattern === "string" ? part.text === pattern : pattern.test(part.text)) {
+                            part.text = replacement;
+                            break; // first match wins
+                        }
                     }
                 }
             }
@@ -670,34 +898,92 @@ export const OpencodeResolve = async ({ directory }, options) => {
             // Always enable auto-continue — the resolver should keep driving
             output.enabled = true;
         },
-        // ── System prompt transform: inject project context ──────────────────
+        // ── System prompt transform: inject project context + failure + loop warnings ──
         "experimental.chat.system.transform": async (_input, output) => {
             const ctx = storedProjectContext;
-            if (!ctx)
+            const hasFailures = failureWarnings.length > 0;
+            const hasLoops = loopWarnings.length > 0;
+            if (!ctx && !hasFailures && !hasLoops)
                 return;
             const lines = [];
-            if (ctx.knowledgeFiles.length > 0) {
+            if (ctx?.knowledgeFiles.length) {
                 lines.push(`[opencode-resolve] Project knowledge: ${ctx.knowledgeFiles.join(", ")}. Read before modifying code.`);
             }
-            if (ctx.verifyCommands.length > 0) {
+            if (ctx?.verifyCommands.length) {
                 lines.push(`[opencode-resolve] Verify commands: ${ctx.verifyCommands.join("; ")}. Run after changes.`);
             }
-            if (ctx.hasTypeScript) {
+            if (ctx?.hasTypeScript) {
                 lines.push("[opencode-resolve] TypeScript project — type safety is mandatory. No `as any` or `@ts-ignore`.");
+            }
+            // Inject failure pattern warnings — encourage trying different approaches, don't stop
+            if (hasFailures) {
+                lines.push("[opencode-resolve] ⚠️ Recurring failures detected:");
+                for (const w of failureWarnings.slice(0, 3)) {
+                    lines.push(`  - ${w}`);
+                }
+                lines.push("Keep going — try a different approach for the same goal. The Ralph Loop should drive to completion.");
+            }
+            // Strategy Pivot: after many total failures, suggest architect intervention
+            if (totalFailures >= STRATEGY_PIVOT_THRESHOLD) {
+                lines.push(`[opencode-resolve] 🔀 STRATEGY PIVOT: ${totalFailures} total failures detected.`);
+                lines.push("The current approach is not working. Dispatch ARCHITECT to analyze the problem from scratch and propose a fundamentally different strategy.");
+                lines.push("Then apply the new strategy. Do NOT keep retrying the same approach.");
+            }
+            // Ralph Loop: inject strategy hints when same file edited many times
+            if (hasLoops) {
+                lines.push("[opencode-resolve] 🔄 Ralph Loop: heavy editing detected on same file(s):");
+                for (const w of loopWarnings.slice(0, 3)) {
+                    lines.push(`  - ${w}`);
+                }
+                const strategies = [
+                    "Re-read the file carefully. You may be missing existing code that conflicts with your edit.",
+                    "Try a completely different approach — revert your last change and try a different fix.",
+                    "Use resolve-diagnostics to check current LSP errors before the next edit.",
+                    "Break the problem into smaller pieces. Edit one function at a time, verify between each.",
+                    "Check if the error is actually in a DIFFERENT file — the real issue may be upstream.",
+                    "Read the test file if it exists — the test often reveals the expected behavior.",
+                    "Check imports — missing or wrong imports are a common cause of cascading errors.",
+                    "Use resolve-search to find similar patterns elsewhere in the codebase.",
+                ];
+                const hint = strategies[Math.floor(Date.now() / 30_000) % strategies.length];
+                if (hint !== lastStrategyHint) {
+                    lines.push(`Strategy suggestion: ${hint}`);
+                    lastStrategyHint = hint;
+                }
+                lines.push("Keep driving — the Ralph Loop should keep iterating until verified resolution.");
+            }
+            // Ralph Loop: inject session context when significant work done
+            if (totalEdits >= 20 && failureWarnings.length > 0) {
+                lines.push(`[opencode-resolve] 📊 Session stats: ${totalEdits} edits, ${totalToolCalls} tool calls, ${Math.round((Date.now() - sessionStartTime) / 1000)}s elapsed.`);
+                lines.push("Significant iteration with failures. Consider a fundamentally different approach — but keep going.");
             }
             if (lines.length > 0) {
                 output.system.push(lines.join("\n"));
             }
         },
-        // ── Text complete: post-turn verification nudge ──────────────────────
+        // ── Text complete: post-turn verification nudge + loop detection ──────
         "experimental.text.complete": async (_input, output) => {
-            // After each LLM turn, if the output looks like code changes were made,
-            // append a verification reminder
             const text = output.text ?? "";
-            const looksLikeEdit = text.includes("```") || text.includes("edit") || text.includes("wrote") || text.includes("changed");
-            const alreadyVerified = text.includes("verified") || text.includes("pass") || text.includes("✅") || text.includes("tsc --noEmit");
-            if (looksLikeEdit && !alreadyVerified) {
-                output.text = text + "\n\n[opencode-resolve] Reminder: verify your changes before reporting completion.";
+            if (!text)
+                return;
+            // Detect if this turn involved code changes
+            const editSignals = ["```", "edit", "wrote", "changed", "created", "updated", "modified", "deleted", "removed", "added", "renamed"];
+            const looksLikeEdit = editSignals.some(s => text.toLowerCase().includes(s));
+            // Detect if verification was already mentioned
+            const verifySignals = ["verified", "pass", "✅", "tsc --noEmit", "eslint", "npm test", "vitest pass", "all tests pass", "no errors", "0 errors", "build succeeded"];
+            const alreadyVerified = verifySignals.some(s => text.toLowerCase().includes(s));
+            // Detect if the turn ended with a question or handoff (shouldn't nudge)
+            const handoffPatterns = [/\?$/, /let me know/i, /would you like/i, /what do you think/i];
+            const isHandoff = handoffPatterns.some(p => p.test(text.trim()));
+            // Ralph Loop: detect loop-like patterns in the response text
+            const loopSignals = ["trying again", "attempting", "retrying", "second attempt", "third attempt", "another approach", "let me try"];
+            const looksLikeLoop = loopSignals.some(s => text.toLowerCase().includes(s));
+            if (looksLikeEdit && !alreadyVerified && !isHandoff) {
+                output.text = text + "\n\n[opencode-resolve] Reminder: verify your changes (resolve-verify) before reporting completion.";
+            }
+            // Ralph Loop: if loop detected in text AND hotspot exists, suggest strategy change
+            if (looksLikeLoop && loopWarnings.length > 0) {
+                output.text = (output.text ?? text) + "\n\n[opencode-resolve] 🔄 Ralph Loop: heavy iteration detected. Use resolve-diagnostics to check current state, then try a different approach. Keep driving to completion.";
             }
         },
         // ── Custom tools ──────────────────────────────────────────────────────
@@ -815,6 +1101,1058 @@ export const OpencodeResolve = async ({ directory }, options) => {
                     }
                 },
             }),
+            "resolve-search": tool({
+                description: "Search codebase with ripgrep. Returns matching file paths, line numbers, and content. Faster and more targeted than grep tool.",
+                args: {
+                    query: tool.schema.string().describe("Search pattern (regex supported)."),
+                    glob: tool.schema.string().optional().describe("File glob filter (e.g. '*.ts', '*.{ts,tsx}')."),
+                    max_results: tool.schema.number().optional().describe("Max results to return (default 30)."),
+                },
+                async execute(args, ctx) {
+                    const maxResults = Math.min(args.max_results ?? 30, 100);
+                    let cmd = `rg --no-heading --line-number --max-count ${maxResults} --color never`;
+                    if (args.glob)
+                        cmd += ` --glob '${sanitizeShellArg(args.glob)}'`;
+                    cmd += ` '${sanitizeShellArg(args.query)}' .`;
+                    try {
+                        const result = await runCommand(cmd, ctx.directory, 15_000);
+                        if (result.exitCode === 1)
+                            return "No matches found.";
+                        if (result.exitCode !== 0)
+                            return `Search error: ${truncateOutput(result.stderr, 300)}`;
+                        const lines = result.stdout.trim().split("\n").slice(0, maxResults);
+                        ctx.metadata({ title: `search: ${args.query} (${lines.length} results)` });
+                        return truncateOutput(lines.join("\n"), 3000);
+                    }
+                    catch (err) {
+                        return `Search failed: ${err instanceof Error ? err.message : String(err)}`;
+                    }
+                },
+            }),
+            "resolve-test": tool({
+                description: "Run specific test file(s) or test pattern. Detects test runner from project context (npm/yarn/pnpm/bun).",
+                args: {
+                    file: tool.schema.string().optional().describe("Test file path or glob pattern (e.g. 'test/plugin.test.mjs')."),
+                    pattern: tool.schema.string().optional().describe("Test name pattern to filter (e.g. 'GLM profile')."),
+                    runner: tool.schema.string().optional().describe("Override test runner command (e.g. 'vitest run', 'jest')."),
+                },
+                async execute(args, ctx) {
+                    const projCtx = storedProjectContext;
+                    // Determine test command
+                    let testCmd = args.runner;
+                    if (!testCmd) {
+                        // Find test runner from verify commands or package manager
+                        const testVerify = projCtx?.verifyCommands.find(c => /\btest\b/.test(c));
+                        if (testVerify) {
+                            testCmd = testVerify;
+                        }
+                        else {
+                            const pm = projCtx?.packageManager ?? "npm";
+                            testCmd = `${pm} test`;
+                        }
+                    }
+                    // Append file filter
+                    if (args.file)
+                        testCmd += ` '${sanitizeShellArg(args.file)}'`;
+                    // Append pattern filter
+                    if (args.pattern) {
+                        const safePattern = sanitizeShellArg(args.pattern);
+                        if (testCmd.includes("vitest"))
+                            testCmd += ` -t '${safePattern}'`;
+                        else if (testCmd.includes("jest"))
+                            testCmd += ` -t '${safePattern}'`;
+                        else
+                            testCmd += ` --grep '${safePattern}'`;
+                    }
+                    try {
+                        const result = await runCommand(testCmd, ctx.directory, 60_000);
+                        ctx.metadata({ title: `test: ${args.file ?? "all"}${args.pattern ? ` /${args.pattern}/` : ""}` });
+                        if (result.exitCode === 0) {
+                            return { output: `✅ Tests passed.\n${truncateOutput(result.stdout, 800)}`, metadata: { exitCode: 0 } };
+                        }
+                        return { output: `❌ Tests failed (exit ${result.exitCode}).\n${truncateOutput(result.stderr || result.stdout, 1500)}`, metadata: { exitCode: result.exitCode } };
+                    }
+                    catch (err) {
+                        return `⚠️ Test runner failed: ${err instanceof Error ? err.message : String(err)}`;
+                    }
+                },
+            }),
+            "resolve-pattern": tool({
+                description: "Detect code anti-patterns in specified files. Scans for: 'as any', '@ts-ignore', '@ts-nocheck', empty catch blocks, console.log, TODO/FIXME, and large functions.",
+                args: {
+                    paths: tool.schema.string().optional().describe("File or directory paths to scan (space-separated). Defaults to 'src/'."),
+                    checks: tool.schema.array(tool.schema.string()).optional().describe("Specific checks to run: 'as-any', 'ts-ignore', 'empty-catch', 'console-log', 'todo', 'large-functions'. Default: all."),
+                },
+                async execute(args, ctx) {
+                    const targets = args.paths ?? "src/";
+                    const safeTargets = targets.split(" ").map(t => `'${sanitizeShellArg(t)}'`).join(" ");
+                    const allChecks = ["as-any", "ts-ignore", "empty-catch", "console-log", "todo", "large-functions"];
+                    const checks = (args.checks?.length ? args.checks : allChecks);
+                    const patterns = {
+                        "as-any": { regex: "\\bas\\s+any\\b", label: "as any" },
+                        "ts-ignore": { regex: "@ts-(?:ignore|nocheck|expect-error)", label: "@ts-ignore/@ts-nocheck" },
+                        "empty-catch": { regex: "catch\\s*\\([^)]*\\)\\s*\\{\\s*\\}", label: "empty catch" },
+                        "console-log": { regex: "console\\.log\\(", label: "console.log" },
+                        "todo": { regex: "\\b(?:TODO|FIXME|HACK|XXX)\\b", label: "TODO/FIXME" },
+                    };
+                    const results = [];
+                    for (const check of checks) {
+                        if (check === "large-functions") {
+                            // Find files over 300 lines
+                            try {
+                                const wc = await runCommand(`find ${safeTargets} -name '*.ts' -o -name '*.tsx' -o -name '*.js' -o -name '*.mjs' | head -50 | xargs wc -l 2>/dev/null | sort -rn | head -20`, ctx.directory, 10_000);
+                                if (wc.exitCode === 0) {
+                                    const bigFiles = wc.stdout.trim().split("\n").filter(l => {
+                                        const num = parseInt(l.trim());
+                                        return !isNaN(num) && num > 300;
+                                    });
+                                    if (bigFiles.length > 0)
+                                        results.push(`Large files (>300 lines):\n${bigFiles.join("\n")}`);
+                                }
+                            }
+                            catch { /* skip */ }
+                            continue;
+                        }
+                        const p = patterns[check];
+                        if (!p)
+                            continue;
+                        try {
+                            const rg = await runCommand(`rg --no-heading --line-number --color never '${p.regex}' ${safeTargets} 2>/dev/null | head -20`, ctx.directory, 10_000);
+                            if (rg.exitCode === 0 && rg.stdout.trim()) {
+                                const count = rg.stdout.trim().split("\n").length;
+                                results.push(`${p.label} (${count} found):\n${truncateOutput(rg.stdout.trim(), 800)}`);
+                            }
+                        }
+                        catch { /* skip */ }
+                    }
+                    ctx.metadata({ title: `pattern scan: ${checks.join(", ")}${results.length > 0 ? ` (${results.length} issues)` : " (clean)"}` });
+                    return results.length > 0 ? results.join("\n\n") : "No anti-patterns detected. ✅";
+                },
+            }),
+            "resolve-complexity": tool({
+                description: "Analyze file complexity: line count, import count, export count, and function count. Helps identify files that may need refactoring.",
+                args: {
+                    paths: tool.schema.string().optional().describe("File or directory paths to analyze (space-separated). Defaults to 'src/'."),
+                    threshold: tool.schema.number().optional().describe("Only show files with more than this many lines (default 50)."),
+                },
+                async execute(args, ctx) {
+                    const targets = args.paths ?? "src/";
+                    const safeTargets = targets.split(" ").map(t => `'${sanitizeShellArg(t)}'`).join(" ");
+                    const threshold = args.threshold ?? 50;
+                    try {
+                        const result = await runCommand(`find ${safeTargets} -type f \\( -name '*.ts' -o -name '*.tsx' -o -name '*.js' -o -name '*.mjs' \\) | head -100 | xargs wc -l 2>/dev/null | sort -rn | head -30`, ctx.directory, 10_000);
+                        if (result.exitCode !== 0 || !result.stdout.trim())
+                            return "No source files found.";
+                        const lines = result.stdout.trim().split("\n").filter(l => {
+                            const num = parseInt(l.trim());
+                            return !isNaN(num) && num >= threshold;
+                        });
+                        // Enrich with import/export/function counts for top files
+                        const enriched = [];
+                        for (const line of lines.slice(0, 10)) {
+                            const parts = line.trim().split(/\s+/);
+                            const lineCount = parseInt(parts[0]);
+                            const filePath = parts.slice(1).join(" ");
+                            if (!filePath || filePath === "total") {
+                                enriched.push(line);
+                                continue;
+                            }
+                            try {
+                                const imports = await runCommand(`grep -c '\\bimport\\b\\|\\brequire(' '${filePath}' 2>/dev/null || echo 0`, ctx.directory, 5_000);
+                                const exports = await runCommand(`grep -c '\\bexport\\b' '${filePath}' 2>/dev/null || echo 0`, ctx.directory, 5_000);
+                                const fns = await runCommand(`grep -cE '\\bfunction\\b|=>\\s*[{(]|\\basync\\b' '${filePath}' 2>/dev/null || echo 0`, ctx.directory, 5_000);
+                                enriched.push(`${filePath}: ${lineCount} lines, ${imports.stdout.trim()} imports, ${exports.stdout.trim()} exports, ~${fns.stdout.trim()} functions`);
+                            }
+                            catch {
+                                enriched.push(`${filePath}: ${lineCount} lines`);
+                            }
+                        }
+                        ctx.metadata({ title: `complexity: ${enriched.length} files analyzed` });
+                        return enriched.length > 0 ? enriched.join("\n") : `All files under ${threshold} lines. ✅`;
+                    }
+                    catch (err) {
+                        return `Analysis failed: ${err instanceof Error ? err.message : String(err)}`;
+                    }
+                },
+            }),
+            "resolve-file-info": tool({
+                description: "Get file metadata quickly: size, last modified, line count, language, and whether it's tracked by git. Faster than reading full file contents.",
+                args: {
+                    path: tool.schema.string().describe("File path to inspect."),
+                },
+                async execute(args, ctx) {
+                    const filePath = resolve(ctx.directory, args.path);
+                    try {
+                        const s = await stat(filePath);
+                        if (!s.isFile())
+                            return `${args.path}: not a file.`;
+                        const ext = filePath.split(".").pop()?.toLowerCase() ?? "";
+                        const langMap = {
+                            ts: "TypeScript", tsx: "TypeScript (JSX)", js: "JavaScript", mjs: "JavaScript (ESM)",
+                            json: "JSON", md: "Markdown", yml: "YAML", yaml: "YAML", py: "Python",
+                            go: "Go", rs: "Rust", java: "Java", rb: "Ruby", sh: "Shell", css: "CSS", html: "HTML",
+                        };
+                        const lines = [
+                            `Path: ${args.path}`,
+                            `Size: ${s.size} bytes`,
+                            `Modified: ${s.mtime.toISOString()}`,
+                            `Language: ${langMap[ext] ?? ext.toUpperCase()}`,
+                        ];
+                        // Quick line count
+                        try {
+                            const wc = await runCommand(`wc -l '${filePath}'`, ctx.directory, 5_000);
+                            if (wc.exitCode === 0)
+                                lines.push(`Lines: ${wc.stdout.trim().split(/\s+/)[0]}`);
+                        }
+                        catch { /* skip */ }
+                        // Git tracked?
+                        try {
+                            const git = await runCommand(`git ls-files --error-unmatch '${filePath}' 2>/dev/null`, ctx.directory, 3_000);
+                            lines.push(`Git: ${git.exitCode === 0 ? "tracked" : "untracked"}`);
+                        }
+                        catch {
+                            lines.push("Git: not a git repo");
+                        }
+                        ctx.metadata({ title: `file-info: ${args.path}` });
+                        return lines.join("\n");
+                    }
+                    catch {
+                        return `File not found: ${args.path}`;
+                    }
+                },
+            }),
+            "resolve-outdated": tool({
+                description: "Check which dependencies are outdated by comparing package.json versions against npm registry. Returns current vs latest for each package.",
+                args: {
+                    dev: tool.schema.boolean().optional().describe("Check devDependencies instead of dependencies."),
+                    filter: tool.schema.string().optional().describe("Only check packages matching this prefix (e.g. '@opencode-ai')."),
+                },
+                async execute(args, ctx) {
+                    try {
+                        const pkgRaw = await readFile(join(ctx.directory, "package.json"), "utf8");
+                        const pkg = JSON.parse(pkgRaw);
+                        const section = args.dev ? pkg.devDependencies : pkg.dependencies;
+                        if (!section || Object.keys(section).length === 0) {
+                            return args.dev ? "No devDependencies." : "No dependencies.";
+                        }
+                        const entries = Object.entries(section)
+                            .filter(([name]) => !args.filter || name.startsWith(args.filter))
+                            .slice(0, 20); // limit checks to avoid flooding npm
+                        if (entries.length === 0)
+                            return "No matching packages.";
+                        const results = [];
+                        // Batch check with npm outdated (fast, single command)
+                        const pkgNames = entries.map(([name]) => `"${name}"`).join(" ");
+                        const outdated = await runCommand(`npm outdated ${pkgNames} --json --long 2>/dev/null || true`, ctx.directory, 30_000);
+                        if (outdated.stdout.trim()) {
+                            try {
+                                const data = JSON.parse(outdated.stdout);
+                                for (const [name, info] of Object.entries(data)) {
+                                    results.push(`${name}: ${info.current ?? "?"} → ${info.latest ?? "?"}`);
+                                }
+                            }
+                            catch {
+                                // fallback: show raw
+                                results.push(truncateOutput(outdated.stdout, 500));
+                            }
+                        }
+                        ctx.metadata({ title: `outdated: ${results.length} packages checked` });
+                        return results.length > 0 ? `Outdated packages:\n${results.join("\n")}` : "All checked packages are up to date. ✅";
+                    }
+                    catch {
+                        return "No package.json found or npm unavailable.";
+                    }
+                },
+            }),
+            "resolve-readme": tool({
+                description: "Extract key information from project README: description, setup instructions, dependencies, and architecture notes. Saves reading the full file.",
+                args: {
+                    max_length: tool.schema.number().optional().describe("Max summary length (default 2000)."),
+                },
+                async execute(args, ctx) {
+                    const maxLen = args.max_length ?? 2000;
+                    // Try common README locations
+                    for (const name of ["README.md", "readme.md", "README.MD", "README", "README.txt"]) {
+                        const filePath = join(ctx.directory, name);
+                        try {
+                            const content = await readFile(filePath, "utf8");
+                            if (!content.trim())
+                                continue;
+                            // Extract structured info: first heading, first paragraph, any ## sections
+                            const lines = content.split("\n");
+                            const heading = lines.find(l => l.startsWith("#"));
+                            const sections = [];
+                            let currentSection = [];
+                            for (const line of lines) {
+                                if (line.startsWith("## ")) {
+                                    if (currentSection.length > 0) {
+                                        sections.push(currentSection.join("\n").trim());
+                                    }
+                                    currentSection = [line];
+                                }
+                                else {
+                                    currentSection.push(line);
+                                }
+                            }
+                            if (currentSection.length > 0)
+                                sections.push(currentSection.join("\n").trim());
+                            // Build summary
+                            const summaryParts = [];
+                            if (heading)
+                                summaryParts.push(heading);
+                            // Extract key sections
+                            for (const section of sections) {
+                                const sectionLines = section.split("\n");
+                                const title = sectionLines[0];
+                                const keySections = /install|setup|usage|architect|config|getting.start|require|depend/i;
+                                if (keySections.test(title)) {
+                                    summaryParts.push(section.slice(0, 500).trim());
+                                }
+                            }
+                            const summary = summaryParts.join("\n\n");
+                            ctx.metadata({ title: `readme: ${name}` });
+                            return truncateOutput(summary, maxLen) || "README exists but is empty or unparseable.";
+                        }
+                        catch { /* not found, try next */ }
+                    }
+                    return "No README found in project root.";
+                },
+            }),
+            "resolve-init": tool({
+                description: "Initialize opencode-resolve config files for the project. Creates resolve.json with detected settings, and optionally HARNESS.md + AGENTS.md scaffolds.",
+                args: {
+                    dry_run: tool.schema.boolean().optional().describe("If true, show what would be created without writing files."),
+                    harness: tool.schema.boolean().optional().describe("Also create HARNESS.md scaffold."),
+                    agents: tool.schema.boolean().optional().describe("Also create AGENTS.md scaffold."),
+                },
+                async execute(args, ctx) {
+                    const projCtx = storedProjectContext;
+                    const results = [];
+                    const dryRun = args.dry_run ?? false;
+                    // Build resolve.json content
+                    const resolveConfig = {};
+                    if (storedConfig?.profile)
+                        resolveConfig.profile = storedConfig.profile;
+                    if (storedConfig?.tier)
+                        resolveConfig.tier = storedConfig.tier;
+                    if (projCtx?.verifyCommands.length) {
+                        results.push(`Detected verify: ${projCtx.verifyCommands.join(", ")}`);
+                    }
+                    if (projCtx?.packageManager) {
+                        results.push(`Package manager: ${projCtx.packageManager}`);
+                    }
+                    if (projCtx?.hasTypeScript) {
+                        results.push("TypeScript: yes");
+                    }
+                    if (!dryRun) {
+                        const configPath = join(ctx.directory, "opencode-resolve.json");
+                        try {
+                            await access(configPath);
+                            results.push("resolve.json: already exists, skipping");
+                        }
+                        catch {
+                            writeFileSync(configPath, JSON.stringify(resolveConfig, null, 2) + "\n");
+                            results.push("resolve.json: created");
+                        }
+                    }
+                    else {
+                        results.push(`[DRY RUN] Would create resolve.json: ${JSON.stringify(resolveConfig)}`);
+                    }
+                    // HARNESS.md scaffold
+                    if (args.harness) {
+                        const harnessContent = [
+                            "# Project Infrastructure",
+                            "",
+                            "## Build & Verify",
+                            ...(projCtx?.verifyCommands.map(c => `- \`${c}\``) ?? []),
+                            "",
+                            "## Architecture Decisions",
+                            "- _Add key decisions here_",
+                            "",
+                            "## Known Traps",
+                            "- _Add project-specific pitfalls here_",
+                        ].join("\n");
+                        if (!dryRun) {
+                            const harnessPath = join(ctx.directory, "HARNESS.md");
+                            try {
+                                await access(harnessPath);
+                                results.push("HARNESS.md: already exists, skipping");
+                            }
+                            catch {
+                                writeFileSync(harnessPath, harnessContent + "\n");
+                                results.push("HARNESS.md: created");
+                            }
+                        }
+                        else {
+                            results.push(`[DRY RUN] Would create HARNESS.md (${harnessContent.length} bytes)`);
+                        }
+                    }
+                    // AGENTS.md scaffold
+                    if (args.agents) {
+                        const agentsContent = [
+                            "# Agent Behavior Patterns",
+                            "",
+                            "## Delegation Strategy",
+                            "- _Document how tasks should be delegated here_",
+                            "",
+                            "## Verification Protocol",
+                            "- _Document verification expectations here_",
+                            "",
+                            "## Model-Specific Notes",
+                            "- _Add GLM/GPT specific patterns here_",
+                        ].join("\n");
+                        if (!dryRun) {
+                            const agentsPath = join(ctx.directory, "AGENTS.md");
+                            try {
+                                await access(agentsPath);
+                                results.push("AGENTS.md: already exists, skipping");
+                            }
+                            catch {
+                                writeFileSync(agentsPath, agentsContent + "\n");
+                                results.push("AGENTS.md: created");
+                            }
+                        }
+                        else {
+                            results.push(`[DRY RUN] Would create AGENTS.md (${agentsContent.length} bytes)`);
+                        }
+                    }
+                    ctx.metadata({ title: `init: ${results.length} items` });
+                    return results.join("\n");
+                },
+            }),
+            "resolve-diff": tool({
+                description: "Show focused git diff summary. Supports comparing against last commit, a specific commit, or between branches. Much faster than reading full diff.",
+                args: {
+                    ref: tool.schema.string().optional().describe("Git ref to compare against (e.g. 'HEAD~1', 'main', 'v1.0.0'). Defaults to staged+unstaged changes."),
+                    file: tool.schema.string().optional().describe("Only show diff for this file path."),
+                    stat_only: tool.schema.boolean().optional().describe("If true, only show file-level stat (no line diffs)."),
+                },
+                async execute(args, ctx) {
+                    try {
+                        let cmd;
+                        const fileFilter = args.file ? ` -- '${sanitizeShellArg(args.file)}'` : "";
+                        if (args.ref) {
+                            const safeRef = sanitizeShellArg(args.ref);
+                            if (args.stat_only) {
+                                cmd = `git diff --stat ${safeRef}${fileFilter}`;
+                            }
+                            else {
+                                cmd = `git diff --stat --patch ${safeRef}${fileFilter}`;
+                            }
+                        }
+                        else {
+                            if (args.stat_only) {
+                                cmd = `git diff --stat HEAD${fileFilter}`;
+                            }
+                            else {
+                                cmd = `git diff --stat --patch HEAD${fileFilter}`;
+                            }
+                        }
+                        const result = await runCommand(cmd, ctx.directory, 15_000);
+                        if (result.exitCode !== 0)
+                            return `Git diff failed: ${truncateOutput(result.stderr, 300)}`;
+                        if (!result.stdout.trim())
+                            return "No changes detected.";
+                        ctx.metadata({ title: `diff: ${args.ref ?? "HEAD"}${args.file ? ` ${args.file}` : ""}` });
+                        return truncateOutput(result.stdout, 3000);
+                    }
+                    catch {
+                        return "Not a git repository or git unavailable.";
+                    }
+                },
+            }),
+            "resolve-scripts": tool({
+                description: "List package.json scripts with their commands. Helps discover available build, test, lint, and dev commands.",
+                args: {
+                    filter: tool.schema.string().optional().describe("Only show scripts matching this substring (e.g. 'test', 'build')."),
+                    verbose: tool.schema.boolean().optional().describe("If true, also show the full command for each script."),
+                },
+                async execute(args, ctx) {
+                    try {
+                        const pkgRaw = await readFile(join(ctx.directory, "package.json"), "utf8");
+                        const pkg = JSON.parse(pkgRaw);
+                        const scripts = pkg.scripts;
+                        if (!scripts || Object.keys(scripts).length === 0)
+                            return "No scripts found in package.json.";
+                        const entries = Object.entries(scripts)
+                            .filter(([name]) => !args.filter || name.includes(args.filter));
+                        if (entries.length === 0)
+                            return `No scripts matching '${args.filter}'.`;
+                        const lines = entries.map(([name, cmd]) => {
+                            if (args.verbose)
+                                return `${name}: ${cmd}`;
+                            return name;
+                        });
+                        ctx.metadata({ title: `scripts: ${entries.length} found` });
+                        return `Available scripts:\n${lines.join("\n")}`;
+                    }
+                    catch {
+                        return "No package.json found or unreadable.";
+                    }
+                },
+            }),
+            "resolve-env": tool({
+                description: "Check environment configuration. Reads .env.example if present, lists required variables, and shows which ones are set in the current environment.",
+                args: {
+                    show_values: tool.schema.boolean().optional().describe("If true, show actual values (WARNING: may expose secrets). Default: false (names only)."),
+                },
+                async execute(args, ctx) {
+                    const results = [];
+                    // Check for .env.example
+                    for (const name of [".env.example", ".env.sample", ".env.template"]) {
+                        try {
+                            const content = await readFile(join(ctx.directory, name), "utf8");
+                            const vars = content.split("\n")
+                                .map(l => l.trim())
+                                .filter(l => l && !l.startsWith("#"))
+                                .map(l => l.split("=")[0].trim())
+                                .filter(Boolean);
+                            if (vars.length > 0) {
+                                results.push(`${name} variables: ${vars.join(", ")}`);
+                                // Check which are set
+                                const set = [];
+                                const missing = [];
+                                for (const v of vars) {
+                                    if (process.env[v]) {
+                                        set.push(args.show_values ? `${v}=${process.env[v]}` : v);
+                                    }
+                                    else {
+                                        missing.push(v);
+                                    }
+                                }
+                                if (set.length > 0)
+                                    results.push(`Set: ${set.join(", ")}`);
+                                if (missing.length > 0)
+                                    results.push(`Missing: ${missing.join(", ")}`);
+                            }
+                            break; // found one, stop looking
+                        }
+                        catch { /* not found, try next */ }
+                    }
+                    // Check for .env
+                    try {
+                        await access(join(ctx.directory, ".env"));
+                        results.push(".env: present (not reading for safety)");
+                    }
+                    catch { /* no .env */ }
+                    if (results.length === 0)
+                        return "No .env.example or .env files found.";
+                    ctx.metadata({ title: `env: ${results.length} items` });
+                    return results.join("\n");
+                },
+            }),
+            "resolve-coverage": tool({
+                description: "Run test coverage analysis. Detects coverage command from package.json scripts or uses npx c8/vitest --coverage. Returns coverage summary.",
+                args: {
+                    command: tool.schema.string().optional().describe("Override coverage command (e.g. 'npm run test:coverage')."),
+                    file: tool.schema.string().optional().describe("Only check coverage for this file or directory."),
+                },
+                async execute(args, ctx) {
+                    const projCtx = storedProjectContext;
+                    let cmd = args.command;
+                    if (!cmd) {
+                        // Try to find coverage script
+                        try {
+                            const pkgRaw = await readFile(join(ctx.directory, "package.json"), "utf8");
+                            const pkg = JSON.parse(pkgRaw);
+                            const scripts = pkg.scripts;
+                            const covScript = scripts?.["test:coverage"] ?? scripts?.["coverage"] ?? scripts?.["test:cov"];
+                            if (covScript) {
+                                const pm = projCtx?.packageManager ?? "npm";
+                                const scriptName = Object.keys(scripts).find(k => scripts[k] === covScript);
+                                cmd = `${pm} run ${scriptName}`;
+                            }
+                        }
+                        catch { /* no package.json */ }
+                        if (!cmd) {
+                            // Try common tools
+                            cmd = "npx vitest run --coverage 2>/dev/null || npx c8 npm test 2>/dev/null || echo 'No coverage tool found'";
+                        }
+                    }
+                    if (args.file)
+                        cmd += ` '${sanitizeShellArg(args.file)}'`;
+                    try {
+                        const result = await runCommand(cmd, ctx.directory, 60_000);
+                        ctx.metadata({ title: `coverage: ${args.file ?? "all"}` });
+                        if (result.exitCode === 0) {
+                            return { output: truncateOutput(result.stdout, 2000), metadata: { exitCode: 0 } };
+                        }
+                        return { output: `Coverage failed (exit ${result.exitCode}).\n${truncateOutput(result.stderr || result.stdout, 1000)}`, metadata: { exitCode: result.exitCode } };
+                    }
+                    catch (err) {
+                        return `Coverage error: ${err instanceof Error ? err.message : String(err)}`;
+                    }
+                },
+            }),
+            "resolve-todo": tool({
+                description: "Extract TODO, FIXME, HACK, and XXX comments from source files. Shows file, line number, and comment text. Useful for finding incomplete work.",
+                args: {
+                    paths: tool.schema.string().optional().describe("File or directory paths to scan (space-separated). Defaults to 'src/'."),
+                    author: tool.schema.string().optional().describe("Filter by author name in comment (e.g. 'john')."),
+                },
+                async execute(args, ctx) {
+                    const targets = args.paths ?? "src/";
+                    const safeTargets = targets.split(" ").map(t => `'${sanitizeShellArg(t)}'`).join(" ");
+                    const pattern = args.author
+                        ? `\\b(?:TODO|FIXME|HACK|XXX)\\b.*${sanitizeShellArg(args.author)}`
+                        : `\\b(?:TODO|FIXME|HACK|XXX)\\b`;
+                    try {
+                        const result = await runCommand(`rg --no-heading --line-number --color never -i '${pattern}' ${safeTargets} 2>/dev/null | head -50`, ctx.directory, 10_000);
+                        if (result.exitCode === 1)
+                            return "No TODO/FIXME comments found. ✅";
+                        if (result.exitCode !== 0)
+                            return `Search error: ${truncateOutput(result.stderr, 300)}`;
+                        const lines = result.stdout.trim().split("\n");
+                        // Categorize
+                        const todos = lines.filter(l => /\bTODO\b/i.test(l)).length;
+                        const fixmes = lines.filter(l => /\bFIXME\b/i.test(l)).length;
+                        const hacks = lines.filter(l => /\bHACK\b/i.test(l)).length;
+                        const summary = `Found: ${todos} TODO, ${fixmes} FIXME, ${hacks} HACK`;
+                        ctx.metadata({ title: `todo: ${summary}` });
+                        return `${summary}\n${truncateOutput(result.stdout.trim(), 2000)}`;
+                    }
+                    catch (err) {
+                        return `Search failed: ${err instanceof Error ? err.message : String(err)}`;
+                    }
+                },
+            }),
+            "resolve-tree": tool({
+                description: "Show directory structure up to a given depth. Faster than running find or ls -R. Useful for understanding project layout.",
+                args: {
+                    path: tool.schema.string().optional().describe("Directory path to tree. Defaults to '.' (project root)."),
+                    depth: tool.schema.number().optional().describe("Maximum depth to traverse (default 3)."),
+                    exclude: tool.schema.string().optional().describe("Comma-separated exclude patterns (default: 'node_modules,.git,dist,build,.next')."),
+                },
+                async execute(args, ctx) {
+                    const dir = args.path ?? ".";
+                    const maxDepth = Math.min(args.depth ?? 3, 6);
+                    const excludes = (args.exclude ?? "node_modules,.git,dist,build,.next,.cache,target")
+                        .split(",")
+                        .map(e => `-I '${sanitizeShellArg(e.trim())}'`)
+                        .join(" ");
+                    try {
+                        // Try tree first, fall back to find
+                        const result = await runCommand(`tree -L ${maxDepth} ${excludes} '${sanitizeShellArg(dir)}' 2>/dev/null || find '${sanitizeShellArg(dir)}' -maxdepth ${maxDepth} -not -path '*/node_modules/*' -not -path '*/.git/*' -not -path '*/dist/*' -not -path '*/build/*' 2>/dev/null | head -100`, ctx.directory, 10_000);
+                        if (result.exitCode !== 0 && !result.stdout.trim()) {
+                            return `Directory not found: ${dir}`;
+                        }
+                        ctx.metadata({ title: `tree: ${dir} (depth ${maxDepth})` });
+                        return truncateOutput(result.stdout, 3000);
+                    }
+                    catch (err) {
+                        return `Tree failed: ${err instanceof Error ? err.message : String(err)}`;
+                    }
+                },
+            }),
+            "resolve-metrics": tool({
+                description: "Quick project health overview: file counts, dependency counts, TODO/FIXME counts, test status, and git status. Aggregates data from multiple sources into a single summary.",
+                args: {
+                    skip_test: tool.schema.boolean().optional().describe("Skip running tests (faster). Default: false."),
+                },
+                async execute(args, ctx) {
+                    const results = [];
+                    const projCtx = storedProjectContext;
+                    // 1. File counts by type
+                    try {
+                        const srcFiles = await runCommand("find src -type f 2>/dev/null | wc -l", ctx.directory, 5_000);
+                        const testFiles = await runCommand("find test tests -type f 2>/dev/null | wc -l", ctx.directory, 5_000);
+                        const totalFiles = await runCommand("find . -type f -not -path '*/node_modules/*' -not -path '*/.git/*' -not -path '*/dist/*' 2>/dev/null | wc -l", ctx.directory, 5_000);
+                        results.push(`Files: ${totalFiles.stdout.trim()} total, ${srcFiles.stdout.trim() || "0"} src, ${testFiles.stdout.trim() || "0"} test`);
+                    }
+                    catch { /* skip */ }
+                    // 2. Dependencies
+                    try {
+                        const pkgRaw = await readFile(join(ctx.directory, "package.json"), "utf8");
+                        const pkg = JSON.parse(pkgRaw);
+                        const deps = Object.keys(pkg.dependencies ?? {}).length;
+                        const devDeps = Object.keys(pkg.devDependencies ?? {}).length;
+                        results.push(`Dependencies: ${deps} prod, ${devDeps} dev`);
+                    }
+                    catch { /* skip */ }
+                    // 3. TODO/FIXME count
+                    try {
+                        const todoResult = await runCommand("rg -c '\\b(?:TODO|FIXME|HACK|XXX)\\b' src 2>/dev/null | wc -l", ctx.directory, 5_000);
+                        const todoCount = parseInt(todoResult.stdout.trim()) || 0;
+                        if (todoCount > 0)
+                            results.push(`TODO/FIXME: ${todoCount} files with action items`);
+                        else
+                            results.push("TODO/FIXME: clean ✅");
+                    }
+                    catch {
+                        results.push("TODO/FIXME: not checked");
+                    }
+                    // 4. TypeScript check (if applicable)
+                    if (projCtx?.hasTypeScript && projCtx.verifyCommands.length > 0) {
+                        const tscCmd = projCtx.verifyCommands.find(c => /tsc|typecheck|type.check/i.test(c));
+                        if (tscCmd) {
+                            try {
+                                const tsc = await runCommand(tscCmd, ctx.directory, 30_000);
+                                results.push(`TypeCheck: ${tsc.exitCode === 0 ? "pass ✅" : "fail ❌"}`);
+                            }
+                            catch {
+                                results.push("TypeCheck: error running check");
+                            }
+                        }
+                    }
+                    // 5. Test status
+                    if (!args.skip_test && projCtx?.verifyCommands.some(c => /test/i.test(c))) {
+                        const testCmd = projCtx.verifyCommands.find(c => /test/i.test(c));
+                        try {
+                            const test = await runCommand(testCmd, ctx.directory, 60_000);
+                            results.push(`Tests: ${test.exitCode === 0 ? "pass ✅" : "fail ❌"}`);
+                        }
+                        catch {
+                            results.push("Tests: error running tests");
+                        }
+                    }
+                    else if (args.skip_test) {
+                        results.push("Tests: skipped");
+                    }
+                    // 6. Git status
+                    try {
+                        const branch = await runCommand("git rev-parse --abbrev-ref HEAD 2>/dev/null", ctx.directory, 3_000);
+                        const dirty = await runCommand("git status --porcelain 2>/dev/null | wc -l", ctx.directory, 3_000);
+                        if (branch.exitCode === 0) {
+                            const dirtyCount = parseInt(dirty.stdout.trim()) || 0;
+                            results.push(`Git: ${branch.stdout.trim()}, ${dirtyCount} dirty files`);
+                        }
+                    }
+                    catch { /* skip */ }
+                    // 7. Project context info
+                    if (projCtx) {
+                        const info = [];
+                        if (projCtx.packageManager)
+                            info.push(`pm: ${projCtx.packageManager}`);
+                        if (projCtx.hasTypeScript)
+                            info.push("TS");
+                        if (projCtx.hasHarness)
+                            info.push("HARNESS.md");
+                        if (projCtx.hasAgents)
+                            info.push("AGENTS.md");
+                        if (info.length > 0)
+                            results.push(`Context: ${info.join(", ")}`);
+                    }
+                    ctx.metadata({ title: `metrics: ${results.length} items` });
+                    return results.join("\n");
+                },
+            }),
+            // ── Ralph Loop tools ──────────────────────────────────────────────────
+            "resolve-changelog": tool({
+                description: "Show recent git changes. Useful for understanding what changed in the current session and detecting if edits are going in circles (Ralph Loop detection).",
+                args: {
+                    count: tool.schema.number().optional().describe("Number of commits to show. Default: 10."),
+                    file: tool.schema.string().optional().describe("Show changes for a specific file only."),
+                    format: tool.schema.enum(["oneline", "stat", "full"]).optional().describe("Output format. Default: oneline."),
+                },
+                async execute(args, ctx) {
+                    const n = Math.min(args.count ?? 10, 50);
+                    const fmt = args.format ?? "oneline";
+                    try {
+                        let cmd;
+                        if (args.file) {
+                            const safeFile = sanitizeShellArg(args.file);
+                            cmd = fmt === "stat"
+                                ? `git log --stat -${n} -- ${safeFile}`
+                                : fmt === "full"
+                                    ? `git log -${n} -- ${safeFile}`
+                                    : `git log --oneline -${n} -- ${safeFile}`;
+                        }
+                        else {
+                            cmd = fmt === "stat"
+                                ? `git log --stat -${n}`
+                                : fmt === "full"
+                                    ? `git log -${n}`
+                                    : `git log --oneline -${n}`;
+                        }
+                        const result = await runCommand(cmd, ctx.directory, 10_000);
+                        if (result.exitCode !== 0)
+                            return `Git log failed: ${result.stderr.trim()}`;
+                        ctx.metadata({ title: `changelog: ${n} commits` });
+                        return truncateOutput(result.stdout, 4000);
+                    }
+                    catch (err) {
+                        return `Changelog failed: ${err instanceof Error ? err.message : String(err)}`;
+                    }
+                },
+            }),
+            "resolve-session": tool({
+                description: "Show current Ralph Loop session state: profile, tier, edit count, tool call count, failure warnings, loop warnings, and elapsed time. Use when you suspect you're going in circles.",
+                args: {},
+                async execute(_args, ctx) {
+                    const lines = [];
+                    const cfg = storedConfig;
+                    const projCtx = storedProjectContext;
+                    const elapsed = Math.round((Date.now() - sessionStartTime) / 1000);
+                    lines.push(`Session duration: ${elapsed}s`);
+                    lines.push(`Tool calls: ${totalToolCalls}`);
+                    lines.push(`Edits: ${totalEdits}`);
+                    if (cfg?.profile)
+                        lines.push(`Profile: ${cfg.profile}`);
+                    if (cfg?.tier)
+                        lines.push(`Tier: ${cfg.tier}`);
+                    if (projCtx?.hasTypeScript)
+                        lines.push("TypeScript: yes");
+                    if (projCtx?.packageManager)
+                        lines.push(`Package manager: ${projCtx.packageManager}`);
+                    if (projCtx?.verifyCommands.length)
+                        lines.push(`Verify commands: ${projCtx.verifyCommands.join(", ")}`);
+                    // Edit hotspots
+                    const hotspots = Array.from(editHotspots.entries())
+                        .filter(([, v]) => v.count >= 2)
+                        .sort((a, b) => b[1].count - a[1].count)
+                        .slice(0, 5);
+                    if (hotspots.length > 0) {
+                        lines.push("Edit hotspots:");
+                        for (const [file, data] of hotspots) {
+                            lines.push(`  ${file}: ${data.count} edits`);
+                        }
+                    }
+                    // Failure warnings
+                    if (failureWarnings.length > 0) {
+                        lines.push("Failure warnings:");
+                        for (const w of failureWarnings)
+                            lines.push(`  ⚠️ ${w}`);
+                    }
+                    // Loop warnings
+                    if (loopWarnings.length > 0) {
+                        lines.push("Loop warnings:");
+                        for (const w of loopWarnings)
+                            lines.push(`  🔄 ${w}`);
+                    }
+                    ctx.metadata({ title: `session: ${totalEdits} edits, ${totalToolCalls} tools, ${elapsed}s` });
+                    return lines.join("\n");
+                },
+            }),
+            "resolve-audit": tool({
+                description: "Run a quick security audit: detect accidentally committed secrets, vulnerable dependency patterns, and common security issues in source files.",
+                args: {
+                    paths: tool.schema.array(tool.schema.string()).optional().describe("Directories to scan. Default: ['src']."),
+                    check_deps: tool.schema.boolean().optional().describe("Also check npm audit. Default: false."),
+                },
+                async execute(args, ctx) {
+                    const dirs = args.paths ?? ["src"];
+                    const results = [];
+                    const safeDirs = dirs.map(d => sanitizeShellArg(d)).join(" ");
+                    // 1. Secret detection
+                    const secretPatterns = [
+                        { name: "Private keys", regex: "-----BEGIN (RSA |EC |DSA )?PRIVATE KEY-----" },
+                        { name: "API keys (generic)", regex: "(api[_-]?key|apikey)\\s*[:=]\\s*['\"][a-zA-Z0-9]{20,}" },
+                        { name: "AWS keys", regex: "AKIA[0-9A-Z]{16}" },
+                        { name: "Generic secrets", regex: "(secret|password|token|credential)\\s*[:=]\\s*['\"][^'\"]{8,}" },
+                    ];
+                    for (const { name, regex } of secretPatterns) {
+                        try {
+                            const result = await runCommand(`rg -l '${regex}' ${safeDirs} 2>/dev/null`, ctx.directory, 5_000);
+                            if (result.exitCode === 0 && result.stdout.trim()) {
+                                const files = result.stdout.trim().split("\n");
+                                results.push(`🔴 ${name}: found in ${files.length} file(s): ${files.slice(0, 5).join(", ")}`);
+                            }
+                        }
+                        catch { /* rg not found */ }
+                    }
+                    // 2. Vulnerable patterns
+                    const vulnPatterns = [
+                        { name: "eval() usage", regex: "\\beval\\s*\\(" },
+                        { name: "innerHTML usage", regex: "\\.innerHTML\\s*=" },
+                        { name: "exec() with string", regex: "\\bexec\\s*\\(.*\\$" },
+                        { name: "SQL string concat", regex: "(SELECT|INSERT|UPDATE|DELETE).*\\+" },
+                        { name: "HTTP (not HTTPS)", regex: "http://[^/]*[^s]\\b" },
+                    ];
+                    for (const { name, regex } of vulnPatterns) {
+                        try {
+                            const result = await runCommand(`rg -c '${regex}' ${safeDirs} 2>/dev/null`, ctx.directory, 5_000);
+                            if (result.exitCode === 0 && result.stdout.trim()) {
+                                const count = result.stdout.trim().split("\n").length;
+                                results.push(`🟡 ${name}: ${count} file(s)`);
+                            }
+                        }
+                        catch { /* skip */ }
+                    }
+                    // 3. npm audit
+                    if (args.check_deps) {
+                        try {
+                            const audit = await runCommand("npm audit --json 2>/dev/null", ctx.directory, 30_000);
+                            if (audit.exitCode !== 0 && audit.stdout.trim()) {
+                                const auditData = JSON.parse(audit.stdout);
+                                const vulns = auditData.metadata?.vulnerabilities;
+                                if (vulns) {
+                                    results.push(`📦 npm audit: ${vulns.high ?? 0} high, ${vulns.critical ?? 0} critical, ${vulns.moderate ?? 0} moderate`);
+                                }
+                            }
+                            else {
+                                results.push("📦 npm audit: no vulnerabilities ✅");
+                            }
+                        }
+                        catch {
+                            results.push("📦 npm audit: not available");
+                        }
+                    }
+                    if (results.length === 0) {
+                        results.push("No security issues detected ✅");
+                    }
+                    ctx.metadata({ title: `audit: ${results.length} findings` });
+                    return results.join("\n");
+                },
+            }),
+            "resolve-config-check": tool({
+                description: "Validate the current opencode-resolve configuration. Checks resolve.json validity, missing agents, conflicting settings, and suggests fixes.",
+                args: {},
+                async execute(_args, ctx) {
+                    const results = [];
+                    const cfg = storedConfig;
+                    if (!cfg) {
+                        return "No resolve config loaded. Plugin may not be initialized.";
+                    }
+                    // 1. Profile check
+                    if (cfg.profile) {
+                        if (VALID_PROFILES.has(cfg.profile)) {
+                            results.push(`✅ Profile: ${cfg.profile}`);
+                        }
+                        else {
+                            results.push(`🔴 Invalid profile: '${cfg.profile}'. Valid: ${[...VALID_PROFILES].join(", ")}`);
+                        }
+                    }
+                    else {
+                        results.push("ℹ️ No profile set (using defaults)");
+                    }
+                    // 2. Tier check
+                    if (cfg.tier) {
+                        if (VALID_TIERS.has(cfg.tier)) {
+                            results.push(`✅ Tier: ${cfg.tier}`);
+                        }
+                        else {
+                            results.push(`🔴 Invalid tier: '${cfg.tier}'. Valid: ${[...VALID_TIERS].join(", ")}`);
+                        }
+                    }
+                    // 3. Enabled agents check
+                    if (cfg.enabled) {
+                        for (const name of cfg.enabled) {
+                            if (VALID_AGENT_NAME_SET.has(name)) {
+                                results.push(`✅ Agent '${name}' enabled`);
+                            }
+                            else {
+                                results.push(`🔴 Unknown agent: '${name}'. Valid: ${VALID_AGENT_NAMES.join(", ")}`);
+                            }
+                        }
+                    }
+                    // 4. Model aliases check
+                    if (cfg.models) {
+                        for (const [key, value] of Object.entries(cfg.models)) {
+                            if (typeof value !== "string") {
+                                results.push(`🔴 Model alias '${key}' must be a string, got ${typeof value}`);
+                            }
+                            else {
+                                results.push(`✅ Model '${key}' → '${value}'`);
+                            }
+                        }
+                    }
+                    // 5. Agent overrides check
+                    if (cfg.agents) {
+                        for (const name of Object.keys(cfg.agents)) {
+                            if (!VALID_AGENT_NAME_SET.has(name)) {
+                                results.push(`🔴 Unknown agent override: '${name}'`);
+                            }
+                        }
+                    }
+                    // 6. Project context check
+                    const projCtx = storedProjectContext;
+                    if (projCtx) {
+                        if (projCtx.verifyCommands.length === 0) {
+                            results.push("⚠️ No verify commands detected — add typecheck/lint/test scripts to package.json");
+                        }
+                        else {
+                            results.push(`✅ Verify commands: ${projCtx.verifyCommands.join(", ")}`);
+                        }
+                        if (!projCtx.hasTypeScript) {
+                            results.push("ℹ️ Not a TypeScript project");
+                        }
+                    }
+                    // 7. Resolve.json file check
+                    try {
+                        const { readFileSync: rf } = await import("node:fs");
+                        const paths = [
+                            join(ctx.directory, ".opencode", "resolve.json"),
+                            join(ctx.directory, "opencode-resolve.json"),
+                        ];
+                        let found = false;
+                        for (const p of paths) {
+                            try {
+                                rf(p, "utf8");
+                                results.push(`✅ Config file: ${p}`);
+                                found = true;
+                                break;
+                            }
+                            catch { /* not found */ }
+                        }
+                        if (!found)
+                            results.push("ℹ️ No local resolve.json found (using defaults)");
+                    }
+                    catch { /* skip */ }
+                    ctx.metadata({ title: `config-check: ${results.length} items` });
+                    return results.join("\n");
+                },
+            }),
+            "resolve-state": tool({
+                description: "Read or write session state checkpoints to .opencode/resolve-state.json. Enables session resumption and cross-turn state persistence. Use 'save' to checkpoint current progress, 'load' to read last checkpoint.",
+                args: {
+                    action: tool.schema.union([tool.schema.literal("save"), tool.schema.literal("load")]).describe("'save' to write current state, 'load' to read last checkpoint."),
+                    note: tool.schema.string().optional().describe("Optional note to attach to the checkpoint (e.g. 'finished auth module, starting API routes')."),
+                },
+                async execute(args, ctx) {
+                    const stateDir = join(ctx.directory, ".opencode");
+                    const statePath = join(stateDir, "resolve-state.json");
+                    if (args.action === "load") {
+                        try {
+                            const data = await readFile(statePath, "utf8");
+                            const state = JSON.parse(data);
+                            return { output: `📋 Last checkpoint loaded:\n${JSON.stringify(state, null, 2)}`, metadata: state };
+                        }
+                        catch {
+                            return "No previous checkpoint found. Use 'save' to create one.";
+                        }
+                    }
+                    // save
+                    const state = {
+                        timestamp: new Date().toISOString(),
+                        sessionId: ctx.sessionID ?? "unknown",
+                        edits: totalEdits,
+                        toolCalls: totalToolCalls,
+                        failures: totalFailures,
+                        elapsedSeconds: Math.round((Date.now() - sessionStartTime) / 1000),
+                    };
+                    if (storedConfig?.profile)
+                        state.profile = storedConfig.profile;
+                    if (storedConfig?.tier)
+                        state.tier = storedConfig.tier;
+                    if (failureWarnings.length > 0)
+                        state.activeFailures = failureWarnings;
+                    if (loopWarnings.length > 0)
+                        state.loopWarnings = loopWarnings;
+                    if (args.note)
+                        state.note = args.note;
+                    if (storedProjectContext) {
+                        state.knowledgeFiles = storedProjectContext.knowledgeFiles;
+                        state.verifyCommands = storedProjectContext.verifyCommands;
+                    }
+                    // Track hotspots
+                    const hotspots = [];
+                    for (const [file, data] of editHotspots) {
+                        if (data.count >= 3)
+                            hotspots.push(`${file} (${data.count} edits)`);
+                    }
+                    if (hotspots.length > 0)
+                        state.hotspots = hotspots;
+                    try {
+                        mkdirSync(stateDir, { recursive: true });
+                        writeFileSync(statePath, JSON.stringify(state, null, 2));
+                        ctx.metadata({ title: `state: checkpoint saved` });
+                        return `✅ Checkpoint saved to .opencode/resolve-state.json\n${JSON.stringify(state, null, 2)}`;
+                    }
+                    catch (err) {
+                        return `⚠️ Failed to save checkpoint: ${err instanceof Error ? err.message : String(err)}`;
+                    }
+                },
+            }),
         },
     };
 };
@@ -845,6 +2183,13 @@ function truncateOutput(text, maxLen) {
     if (text.length <= maxLen)
         return text;
     return text.slice(0, maxLen) + `\n... (${text.length - maxLen} more bytes truncated)`;
+}
+/** Sanitize a string for safe use as a shell argument. Strips dangerous metacharacters. */
+function sanitizeShellArg(input) {
+    return input
+        .replace(/[;&|`$(){}[\]!#~<>\\]/g, "") // strip shell metacharacters
+        .replace(/'/g, "'\\''") // escape single quotes for single-quoted context
+        .slice(0, 500); // limit length
 }
 async function maybeAutoUpdate() {
     try {
@@ -1312,6 +2657,27 @@ const BANNED_COMMANDS = [
     /\bgit\s+add\s+-p\b/, // interactive git add
     /\bgit\s+rebase\s+-i\b/, // interactive rebase
     /\bgit\s+commit\b(?!\s+-m)/, // commit without -m
+    /\bscreen\b/, // screen multiplexer
+    /\btmux\b(?!.*[|&;])/, // tmux without subcommand pipe
+    /\bssh\b(?!\s.*-\w*[oN])/, // ssh without batch flags
+    /\bsftp\b/, // sftp interactive
+    /\btelnet\b/, // telnet interactive
+    /\bnc\b(\s*$)/, // netcat interactive
+    /\bsqlite3?\b(\s*$)/, // sqlite interactive
+    /\bpsql\b(\s*$)/, // psql interactive
+    /\bmysql\b(\s*$)/, // mysql interactive
+    // Ralph Loop: dangerous patterns that waste tokens or cause damage
+    /\bcurl\b.*\|\s*(ba)?sh\b/, // curl pipe to shell
+    /\bwget\b.*\|\s*(ba)?sh\b/, // wget pipe to shell
+    /\beval\s/, // eval is dangerous
+    /\bchmod\s+(-R\s+)?777\b/, // chmod 777
+    /\bchown\s+-R\s+/, // recursive chown
+    /\bsudo\s+(rm|chmod|chown|dd|mkfs)/, // sudo + destructive
+    /\bgit\s+push\s+--force/, // force push
+    /\bgit\s+reset\s+--hard/, // hard reset
+    /\brm\s+(-rf?|-fr?)\s+[^.]/, // rm -rf (not dotfiles)
+    /\bdd\s+if=/, // dd can destroy disks
+    /\b(mkfs|format)\b/, // filesystem format
 ];
 const SAFE_BASH_PREFIXES = [
     ["npm", ["test", "run", "start", "build", "lint", "typecheck", "check", "info", "list", "view", "outdated", "audit", "pack"]],
