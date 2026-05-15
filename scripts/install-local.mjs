@@ -2,6 +2,7 @@ import { constants } from "node:fs"
 import { access, mkdir, readFile, symlink, unlink, writeFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import { dirname, join, resolve } from "node:path"
+import { createInterface } from "node:readline/promises"
 import { fileURLToPath } from "node:url"
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..")
@@ -25,10 +26,57 @@ await symlink(pluginTarget, pluginLink)
 
 if (!(await exists(resolveConfigPath))) {
   await createAdaptiveResolveConfig()
+} else {
+  await handleExistingResolveConfig()
 }
 
 console.log(`Linked plugin: ${pluginLink} -> ${pluginTarget}`)
 console.log(`Resolve config: ${resolveConfigPath}`)
+
+async function handleExistingResolveConfig() {
+  const action = await chooseExistingResolveConfigAction()
+  if (action !== "fresh") {
+    console.log(`Existing resolve config preserved: ${resolveConfigPath}`)
+    return
+  }
+
+  await backupResolveConfig()
+  await createAdaptiveResolveConfig()
+}
+
+async function chooseExistingResolveConfigAction() {
+  const requested = (process.env.OPENCODE_RESOLVE_REINSTALL ?? "").trim().toLowerCase()
+  if (["fresh", "reset", "recreate", "new"].includes(requested)) return "fresh"
+  if (["update", "keep", "migrate", "preserve"].includes(requested)) return "update"
+  if (requested) {
+    console.warn(`Ignoring unknown OPENCODE_RESOLVE_REINSTALL=${JSON.stringify(requested)}; use "fresh" or "update".`)
+  }
+
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    console.log(`Existing resolve config found; preserving it. Set OPENCODE_RESOLVE_REINSTALL=fresh for a fresh reinstall.`)
+    return "update"
+  }
+
+  const rl = createInterface({ input: process.stdin, output: process.stdout })
+  try {
+    console.log("")
+    console.log(`Existing resolve config found: ${resolveConfigPath}`)
+    console.log("  1. update existing config — preserve your settings")
+    console.log("  2. fresh reinstall — back up resolve.json and create a new config")
+    const raw = await rl.question("Existing config [1=update, 2=fresh reinstall, default 1]: ")
+    return raw.trim() === "2" ? "fresh" : "update"
+  } finally {
+    rl.close()
+  }
+}
+
+async function backupResolveConfig() {
+  const raw = await readFile(resolveConfigPath, "utf8")
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-")
+  const backupPath = `${resolveConfigPath}.bak.${stamp}`
+  await writeFile(backupPath, raw)
+  console.log(`Backed up existing resolve config to ${backupPath}`)
+}
 
 async function createAdaptiveResolveConfig() {
   const raw = await readFile(exampleConfig, "utf8")

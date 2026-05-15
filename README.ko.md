@@ -160,7 +160,7 @@ npm install -g opencode-resolve
    - **비대화형 설치** → 모델 pinning을 추측하지 않습니다. `profile: "mix"`, `models: {}`를 쓰고 세 primary 경로(`resolver`, `codex`, `glm`)를 활성화하므로 이후 명시적으로 모델을 고르면 됩니다.
    - **GLM/ZAI 모델 감지** → 비밀값 없는 로컬 ZAI MCP 부트스트랩은 계속 추가합니다.
 
-   기존 `resolve.json` 파일은 **절대 덮어쓰지 않습니다** — 적응형 프리셋은 최초 생성 시에만 적용됩니다. 다시 생성하려면 `resolve.json`을 삭제하고 재설치하세요.
+   기존 `resolve.json` 파일은 **동의 없이 덮어쓰지 않습니다**. 재설치 시 인터랙티브 환경이면 기존 파일을 업데이트할지, 백업 후 fresh setup을 다시 돌릴지 묻습니다. 비대화형 자동화에서는 `OPENCODE_RESOLVE_REINSTALL=fresh` 또는 `OPENCODE_RESOLVE_REINSTALL=update`를 설정하세요.
 
 자동 등록을 건너뛰려면:
 
@@ -647,6 +647,7 @@ opencode-resolve는 전체 저장소를 프롬프트에 밀어 넣지 않고도 
 - 이미 설정한 키는 **절대** 수정하지 않음.
 - `enabled` 목록, `models` 맵, 또는 `agents` 재정의를 **절대** 다시 쓰지 않음.
 - `enabled`가 설정되어 있고 `"resolver"`를 포함하지 않으면, 추가를 제안하는 한 줄 팁을 출력. 파일은 그대로 유지.
+- 인터랙티브 재설치에서는 기존 파일을 업데이트할지, 백업 후 fresh setup을 다시 돌릴지 물음. 비대화형 자동화에서는 fresh 재설치에 `OPENCODE_RESOLVE_REINSTALL=fresh`, 보존 마이그레이션에 `OPENCODE_RESOLVE_REINSTALL=update` 사용.
 
 ### 적응형 최초 설치 프리셋
 
@@ -659,7 +660,7 @@ opencode-resolve는 전체 저장소를 프롬프트에 밀어 넣지 않고도 
 | 레거시 opt-in | `OPENCODE_RESOLVE_AUTO_PRESET=1`을 설정하면 비대화형 provider-adapted 프리셋 허용 |
 | GLM/ZAI 감지 | API 키를 복사하지 않고 ZAI MCP 부트스트랩 추가 |
 
-언제든지 프리셋을 변경하려면 `resolve.json`의 `models`를 직접 편집하거나, 파일을 삭제하고 재설치하세요.
+언제든지 프리셋을 변경하려면 `resolve.json`의 `models`를 직접 편집하거나, `OPENCODE_RESOLVE_REINSTALL=fresh`로 재설치하세요.
 
 마이그레이션을 완전히 건너뛰려면:
 

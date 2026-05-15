@@ -1,5 +1,5 @@
 import assert from "node:assert/strict"
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { spawnSync } from "node:child_process"
@@ -315,6 +315,118 @@ test("postinstall preserves existing resolve.json regardless of model changes", 
     assert.deepEqual(migrated.models, { custom: "anthropic/claude-sonnet-4" }, "user models preserved")
     assert.equal(migrated.autoApprove, false, "user autoApprove preserved")
     assert.equal(migrated.maxParallelSubagents, undefined, "no longer added by migration — opt-in only")
+  } finally {
+    await rm(configHome, { recursive: true, force: true })
+  }
+})
+
+test("postinstall asks before updating an existing resolve.json when prompts are forced", async () => {
+  const configHome = await mkdtemp(join(tmpdir(), "opencode-resolve-postinstall-"))
+
+  try {
+    const existing = {
+      models: { custom: "anthropic/claude-sonnet-4" },
+    }
+    await writeJson(join(configHome, "resolve.json"), existing)
+
+    const { stdout } = runPostinstall(
+      configHome,
+      {
+        OPENCODE_RESOLVE_FORCE_PROMPT: "1",
+        OPENCODE_RESOLVE_SKIP_COMPANIONS: "1",
+      },
+      "1\n",
+    )
+
+    const migrated = await readJson(join(configHome, "resolve.json"))
+    assert.match(stdout, /Existing resolve config found/)
+    assert.match(stdout, /Existing config \[1=update, 2=fresh reinstall/)
+    assert.deepEqual(migrated.models, existing.models, "user models preserved")
+    assert.equal(migrated.autoApprove, true, "missing additive default added")
+  } finally {
+    await rm(configHome, { recursive: true, force: true })
+  }
+})
+
+test("postinstall can fresh reinstall an existing resolve.json after backing it up", async () => {
+  const configHome = await mkdtemp(join(tmpdir(), "opencode-resolve-postinstall-"))
+
+  try {
+    await writeJson(join(configHome, "opencode.json"), {
+      provider: {
+        zai: {
+          models: {
+            "glm-4.7-flash": {},
+            "glm-5.1": {},
+          },
+        },
+        openai: {
+          models: {
+            "gpt-5.3-codex-spark": {},
+            "gpt-5.3-codex": {},
+            "gpt-5.5": {},
+          },
+        },
+      },
+    })
+    const existing = {
+      enabled: ["coder"],
+      models: { old: "custom/old-model" },
+      autoApprove: false,
+    }
+    await writeJson(join(configHome, "resolve.json"), existing)
+
+    const { stdout } = runPostinstall(
+      configHome,
+      {
+        OPENCODE_RESOLVE_FORCE_PROMPT: "1",
+        OPENCODE_RESOLVE_SKIP_COMPANIONS: "1",
+      },
+      [
+        "2", // fresh reinstall
+        "1", // mix
+        "y", // enable codex primary
+        "y", // enable glm primary
+        "1", "2", "3", // GPT/Codex bronze/silver/gold
+        "1", "2", "2", // GLM bronze/silver/gold
+      ].join("\n") + "\n",
+    )
+
+    const resolveConfig = await readJson(join(configHome, "resolve.json"))
+    const files = await readdir(configHome)
+    const backupName = files.find((name) => name.startsWith("resolve.json.bak."))
+    assert.ok(backupName, "existing resolve.json should be backed up")
+    assert.deepEqual(await readJson(join(configHome, backupName)), existing)
+    assert.match(stdout, /backed up existing resolve config/)
+    assert.equal(resolveConfig.profile, "mix")
+    assert.equal(resolveConfig.models.old, undefined)
+    assert.equal(resolveConfig.models["gpt-gold"], "openai/gpt-5.5")
+    assert.equal(resolveConfig.models["glm-bronze"], "zai/glm-4.7-flash")
+    assert.equal(resolveConfig.agents.codex.enabled, true)
+    assert.equal(resolveConfig.agents.glm.enabled, true)
+  } finally {
+    await rm(configHome, { recursive: true, force: true })
+  }
+})
+
+test("non-interactive postinstall preserves existing resolve.json and prints reinstall guidance", async () => {
+  const configHome = await mkdtemp(join(tmpdir(), "opencode-resolve-postinstall-"))
+
+  try {
+    const existing = {
+      enabled: ["coder"],
+      models: { custom: "anthropic/claude-sonnet-4" },
+    }
+    await writeJson(join(configHome, "resolve.json"), existing)
+
+    const { stdout } = runPostinstall(configHome, { OPENCODE_RESOLVE_SKIP_COMPANIONS: "1" })
+
+    const migrated = await readJson(join(configHome, "resolve.json"))
+    assert.match(stdout, /existing .*resolve\.json found; preserving it/)
+    assert.match(stdout, /OPENCODE_RESOLVE_REINSTALL=fresh/)
+    assert.deepEqual(migrated.enabled, existing.enabled)
+    assert.deepEqual(migrated.models, existing.models)
+    assert.equal(migrated.autoApprove, true)
   } finally {
     await rm(configHome, { recursive: true, force: true })
   }

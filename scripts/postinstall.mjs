@@ -89,6 +89,7 @@ async function readOwnVersion() {
 
 async function registerPlugin() {
   await mkdir(configDir, { recursive: true })
+  const scriptedAnswers = await readScriptedAnswersIfNeeded()
 
   const config = await readOpenCodeConfig()
   let configChanged = addPlugin(config)
@@ -109,14 +110,62 @@ async function registerPlugin() {
   }
 
   if (!(await exists(resolveConfigPath))) {
-    await createAdaptiveResolveConfig(config)
+    await createAdaptiveResolveConfig(config, scriptedAnswers)
+    return
+  }
+
+  await handleExistingResolveConfig(config, scriptedAnswers)
+}
+
+async function handleExistingResolveConfig(opencodeConfig, scriptedAnswers) {
+  const action = await chooseExistingResolveConfigAction(scriptedAnswers)
+  if (action === "fresh") {
+    await backupResolveConfig()
+    await createAdaptiveResolveConfig(opencodeConfig, scriptedAnswers)
     return
   }
 
   await migrateResolveConfig()
 }
 
-async function createAdaptiveResolveConfig(opencodeConfig) {
+async function chooseExistingResolveConfigAction(scriptedAnswers) {
+  const requested = (process.env.OPENCODE_RESOLVE_REINSTALL ?? "").trim().toLowerCase()
+  if (["fresh", "reset", "recreate", "new"].includes(requested)) return "fresh"
+  if (["update", "keep", "migrate", "preserve"].includes(requested)) return "update"
+  if (requested) {
+    console.warn(`[${packageName}] ignoring unknown OPENCODE_RESOLVE_REINSTALL=${JSON.stringify(requested)}; use "fresh" or "update".`)
+  }
+
+  const forcePrompt = process.env.OPENCODE_RESOLVE_FORCE_PROMPT === "1"
+  const canPrompt = Boolean((process.stdin.isTTY && process.stdout.isTTY) || forcePrompt)
+  if (!canPrompt) {
+    console.log(`[${packageName}] existing ${resolveConfigPath} found; preserving it and applying additive updates.`)
+    console.log(`[${packageName}] for a fresh reinstall, rerun in a TTY or set OPENCODE_RESOLVE_REINSTALL=fresh.`)
+    return "update"
+  }
+
+  const rl = createPromptInterface(scriptedAnswers)
+  try {
+    console.log("")
+    console.log(`[${packageName}] Existing resolve config found: ${resolveConfigPath}`)
+    console.log("  1. update existing config — preserve your settings and add missing defaults")
+    console.log("  2. fresh reinstall — back up resolve.json and run setup again")
+    const answer = await askChoice(rl, "Existing config [1=update, 2=fresh reinstall, default 1]: ", ["1", "2"], "1")
+    return answer === "2" ? "fresh" : "update"
+  } finally {
+    rl.close()
+  }
+}
+
+async function backupResolveConfig() {
+  const raw = await readFile(resolveConfigPath, "utf8")
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-")
+  const backupPath = `${resolveConfigPath}.bak.${stamp}`
+  await writeFile(backupPath, raw)
+  console.log(`[${packageName}] backed up existing resolve config to ${backupPath}`)
+}
+
+async function createAdaptiveResolveConfig(opencodeConfig, scriptedAnswers) {
   await assertReadable(exampleConfigPath)
   const raw = await readFile(exampleConfigPath, "utf8")
   const example = JSON.parse(raw)
@@ -128,9 +177,6 @@ async function createAdaptiveResolveConfig(opencodeConfig) {
   const canPrompt = Boolean(
     (process.stdin.isTTY && process.stdout.isTTY) || forcePrompt,
   )
-  const scriptedAnswers = forcePrompt && !process.stdin.isTTY
-    ? (await readAllStdin()).split(/\r?\n/)
-    : undefined
   const interactivePreset = canPrompt
     ? await buildInteractivePreset(currentModel, allModels, scriptedAnswers)
     : undefined
@@ -341,17 +387,7 @@ async function buildInteractivePreset(currentModel, allModels, scriptedAnswers) 
     if (isGLMModel(currentModel)) choices.glm = unique([currentModel, ...choices.glm])
   }
 
-  const rl = scriptedAnswers
-    ? {
-        async question(prompt) {
-          const answer = scriptedAnswers.length > 0 ? scriptedAnswers.shift() ?? "" : ""
-          process.stdout.write(prompt)
-          process.stdout.write(`${answer}\n`)
-          return answer
-        },
-        close() {},
-      }
-    : createInterface({ input: process.stdin, output: process.stdout })
+  const rl = createPromptInterface(scriptedAnswers)
   try {
     console.log("")
     console.log(`[${packageName}] Choose resolve profile:`)
@@ -399,6 +435,20 @@ async function buildInteractivePreset(currentModel, allModels, scriptedAnswers) 
   } finally {
     rl.close()
   }
+}
+
+function createPromptInterface(scriptedAnswers) {
+  return scriptedAnswers
+    ? {
+        async question(prompt) {
+          const answer = scriptedAnswers.length > 0 ? scriptedAnswers.shift() ?? "" : ""
+          process.stdout.write(prompt)
+          process.stdout.write(`${answer}\n`)
+          return answer
+        },
+        close() {},
+      }
+    : createInterface({ input: process.stdin, output: process.stdout })
 }
 
 async function askThreeTier(rl, label, models) {
@@ -533,6 +583,13 @@ async function readAllStdin() {
     raw += chunk
   }
   return raw
+}
+
+async function readScriptedAnswersIfNeeded() {
+  if (process.env.OPENCODE_RESOLVE_FORCE_PROMPT === "1" && !process.stdin.isTTY) {
+    return (await readAllStdin()).split(/\r?\n/)
+  }
+  return undefined
 }
 
 function getPresetLabel(currentModel) {

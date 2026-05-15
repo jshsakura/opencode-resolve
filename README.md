@@ -160,7 +160,7 @@ The `postinstall` script automatically:
    - **Non-interactive install** → does not guess model pinning. It writes `profile: "mix"`, leaves `models: {}`, and enables the three primary routes (`resolver`, `codex`, `glm`) so you can pin models explicitly afterward.
    - **GLM/ZAI model detected** → still adds the non-secret local ZAI MCP bootstrap.
 
-   Existing `resolve.json` files are **never overwritten** — the adaptive preset only applies to first-time creation. To regenerate, delete `resolve.json` and reinstall.
+   Existing `resolve.json` files are **never overwritten without consent**. On reinstall, interactive setup asks whether to update the existing file or back it up and run fresh setup. For non-interactive automation, set `OPENCODE_RESOLVE_REINSTALL=fresh` or `OPENCODE_RESOLVE_REINSTALL=update`.
 
 To skip automatic registration:
 
@@ -647,6 +647,7 @@ When you upgrade to a newer version of `opencode-resolve`, the `postinstall` scr
 - **Never** modifies keys you have already set.
 - **Never** rewrites your `enabled` list, `models` map, or `agents` overrides.
 - If `enabled` is set and does not include `"resolver"`, prints a one-line tip suggesting you add it. Your file is left untouched.
+- In an interactive reinstall, asks whether to update the existing file or back it up and run fresh setup. In non-interactive automation, use `OPENCODE_RESOLVE_REINSTALL=fresh` for a fresh reinstall or `OPENCODE_RESOLVE_REINSTALL=update` to preserve and migrate.
 
 ### Adaptive first-install preset
 
@@ -659,7 +660,7 @@ When `resolve.json` does **not** exist, postinstall inspects your OpenCode model
 | Legacy opt-in | Set `OPENCODE_RESOLVE_AUTO_PRESET=1` to allow non-interactive provider-adapted presets |
 | GLM/ZAI detected | Adds the ZAI MCP bootstrap without copying API keys |
 
-To change presets at any time, edit `models` in `resolve.json` directly or delete the file and reinstall.
+To change presets at any time, edit `models` in `resolve.json` directly or run reinstall with `OPENCODE_RESOLVE_REINSTALL=fresh`.
 
 Skip the migration entirely with:
 

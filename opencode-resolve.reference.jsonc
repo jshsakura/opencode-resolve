@@ -146,8 +146,11 @@
   //     models {}, and resolver/codex/glm primary routes enabled
   //   - OPENCODE_RESOLVE_AUTO_PRESET=1 → legacy non-interactive
   //     provider-adapted presets
-  // Existing resolve.json files are never overwritten. Delete resolve.json
-  // and reinstall to regenerate the preset.
+  // Existing resolve.json files are never overwritten without consent.
+  // Interactive reinstall asks whether to update or back up and run fresh
+  // setup. Non-interactive automation can set:
+  //   OPENCODE_RESOLVE_REINSTALL=fresh
+  //   OPENCODE_RESOLVE_REINSTALL=update
   //
   // Example — one efficient model for everything (recommended default):
   //   "models": {}
