@@ -2,6 +2,12 @@ import { SessionState, DIAGNOSTICS_TTL_MS, FAILURE_PATTERN_TTL_MS, FAILURE_THRES
 import { classifyBashCommand, isMissingFileError, formatError, maybeAutoUpdate, detectProjectContext } from "../utils.js";
 import { loadResolveConfig, applyResolveConfig, buildContextInjection } from "../config.js";
 
+function capTemperature(current: unknown, cap: number): number {
+  return typeof current === "number" && Number.isFinite(current)
+    ? Math.min(current, cap)
+    : cap
+}
+
 export function getHooks(directory: string, options: any, sessionState: SessionState) {
   return {
 event: async (input: any) => {
@@ -165,7 +171,7 @@ config: async (config: any) => {
 "chat.params": async (input: any, output: any) => {
       const profile = sessionState.storedConfig?.profile
       if (profile === "glm") {
-        output.temperature = Math.min(output.temperature, 0.4)
+        output.temperature = capTemperature(output.temperature, 0.4)
         if (output.maxOutputTokens === undefined || output.maxOutputTokens > 16384) {
           output.maxOutputTokens = 16384
         }
@@ -174,7 +180,7 @@ config: async (config: any) => {
           output.topP = 0.85
         }
       } else if (profile === "gpt") {
-        output.temperature = Math.min(output.temperature, 0.7)
+        output.temperature = capTemperature(output.temperature, 0.7)
         if (output.maxOutputTokens === undefined) {
           output.maxOutputTokens = 32768
         }
@@ -182,7 +188,7 @@ config: async (config: any) => {
       // Read-only agents: lower temperature always
       const readOnlyAgents = new Set(["reviewer", "deep-reviewer", "explorer", "planner", "researcher", "architect"])
       if (readOnlyAgents.has(input.agent)) {
-        output.temperature = Math.min(output.temperature, 0.3)
+        output.temperature = capTemperature(output.temperature, 0.3)
       }
       // Write agents: slightly higher temperature for creative problem-solving
       const writeAgents = new Set(["coder", "resolver", "glm", "gpt-coder"])

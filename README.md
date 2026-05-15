@@ -412,7 +412,7 @@ Internal specialist subagents (`coder`, `explorer`, `reviewer`, `deep-reviewer`,
 |---|---|
 | `enabled: ["coder", "resolver", "explorer", "reviewer", "deep-reviewer", "planner"]` | Fixed core path (resolver→coder) plus OpenCode-native internal specialist subagents injected by default |
 | `autoApprove: true` | Compatibility/readability flag; actual low-friction behavior comes from base permissions plus the `permission.ask` bash classifier |
-| no `maxParallelSubagents` by default | Keeps the resolver on soft fan-out guidance; GLM profile already defaults to serial coder dispatch |
+| no `maxParallelSubagents` by default | Keeps the resolver on soft fan-out guidance; GLM profile is token-efficient but does not impose a hard concurrency cap unless you set one |
 | `agents.coder.mode = "subagent"` | Coder stays on the fixed resolver→coder path instead of becoming a user-facing primary role |
 | `agents.{explorer,reviewer,deep-reviewer}.mode = "subagent"` | Internal specialists are subagent-only — never user-facing primary roles |
 | `context7: true` | Plugin auto-registers Context7 MCP — no manual MCP config needed |
@@ -551,7 +551,7 @@ Every accepted top-level option:
 | `commands` | `boolean` | `false` | When true, adds `resolve`, `resolve-code`, `resolve-review` commands. |
 | `autoApprove` | `boolean` | `true` | Compatibility/readability flag. Current behavior is controlled by built-in base permissions and the `permission.ask` bash classifier; the flag does not rewrite permissions. |
 | `autoUpdate` | `boolean` | `true` | Best-effort npm version check and OpenCode plugin cache refresh notice. Set false to disable. |
-| `maxParallelSubagents` | `positive integer` | _unset_ | Optional prompt-level cap on simultaneous coders. When unset, the resolver uses soft fan-out guidance and backs off on rate-limit errors. GLM profile defaults to one coder at a time. |
+| `maxParallelSubagents` | `positive integer` | _unset_ | Optional prompt-level cap on simultaneous coders. When unset, the resolver uses soft fan-out guidance and backs off on rate-limit errors. GLM profile does not impose a hard cap unless you set one. |
 | `models` | `object` | `{}` | Alias map. Keys are agent names or `fast`/`strong`/`mini`/`codex`/`quick`/`deep`/`glm`/`gpt`. Values are model ids or other aliases. Empty by default — all roles inherit the OpenCode default model. |
 | `agents` | `object` | `{}` | Per-agent overrides (see below). |
 | `config` | `string` | _none_ | Custom path to a config file (relative to the project or absolute). |
@@ -617,7 +617,7 @@ You may leave the flag in config for intent clarity:
 
 ## Parallel Subagent Limit
 
-`maxParallelSubagents` is optional. When omitted, the **resolver** uses soft fan-out guidance: dispatch coders for genuinely independent work and back off on rate-limit errors. Set it only when you want the resolver prompt to carry an explicit per-role concurrency cap. GLM profile defaults to one coder at a time.
+`maxParallelSubagents` is optional. When omitted, the **resolver** uses soft fan-out guidance: dispatch coders for genuinely independent work and back off on rate-limit errors. Set it only when you want the resolver prompt to carry an explicit per-role concurrency cap. GLM profile is token-efficient but uncapped by default.
 
 | Value | Behavior |
 |---|---|

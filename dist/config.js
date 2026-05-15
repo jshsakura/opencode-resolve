@@ -1,6 +1,6 @@
 import { join, basename, isAbsolute, resolve } from "node:path";
 import { homedir } from "node:os";
-import { DEFAULT_AGENT_CONFIG, buildGLMResolverPrompt, GLM_CODER_PROMPT, buildGPTResolverPrompt, GPT_CODER_PROMPT, buildResolverPrompt, VALID_AGENT_NAME_SET, DEFAULT_MODELS, DEFAULT_ENABLED, VALID_AGENT_NAMES, GLM_ENABLED, GPT_ENABLED, TIER_ENABLED, GLM_MAX_PARALLEL_SUBAGENTS, GLM_AGENT_OVERRIDES, GPT_AGENT_OVERRIDES, VALID_MODEL_ALIAS_SET, VALID_PROFILES, VALID_TIERS } from "./agents.js";
+import { DEFAULT_AGENT_CONFIG, buildGLMResolverPrompt, GLM_CODER_PROMPT, buildGPTResolverPrompt, GPT_CODER_PROMPT, buildResolverPrompt, VALID_AGENT_NAME_SET, DEFAULT_MODELS, DEFAULT_ENABLED, VALID_AGENT_NAMES, GLM_ENABLED, GPT_ENABLED, TIER_ENABLED, GLM_AGENT_OVERRIDES, GPT_AGENT_OVERRIDES, VALID_MODEL_ALIAS_SET, VALID_PROFILES, VALID_TIERS } from "./agents.js";
 import { readFirstJson } from "./utils.js";
 export function applyResolveConfig(config, resolveConfig, projectContext) {
     const profile = resolveConfig.profile;
@@ -11,7 +11,7 @@ export function applyResolveConfig(config, resolveConfig, projectContext) {
     const enabled = new Set(resolveConfig.enabled ?? tierEnabled ?? (profileEnabled ?? DEFAULT_ENABLED));
     const models = { ...DEFAULT_MODELS, ...resolveConfig.models };
     const defaultModel = typeof config.model === "string" ? config.model : undefined;
-    const maxParallelSubagents = resolveConfig.maxParallelSubagents ?? (isGLM ? GLM_MAX_PARALLEL_SUBAGENTS : undefined);
+    const maxParallelSubagents = resolveConfig.maxParallelSubagents;
     const contextInjection = buildContextInjection(projectContext);
     config.agent ??= {};
     for (const name of Object.keys(DEFAULT_AGENT_CONFIG)) {
@@ -32,7 +32,7 @@ export function applyResolveConfig(config, resolveConfig, projectContext) {
         if (agentOverride.prompt === undefined) {
             if (isGLM) {
                 if (name === "resolver")
-                    agentConfig.prompt = buildGLMResolverPrompt(undefined);
+                    agentConfig.prompt = buildGLMResolverPrompt(maxParallelSubagents);
                 else if (name === "coder")
                     agentConfig.prompt = GLM_CODER_PROMPT;
             }

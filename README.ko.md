@@ -412,7 +412,7 @@ opencode run "list available agents"
 |---|---|
 | `enabled: ["coder", "resolver", "explorer", "reviewer", "deep-reviewer", "planner"]` | 고정 핵심 경로(resolver→coder) + OpenCode 네이티브 내부 전문가 서브에이전트 기본 주입 |
 | `autoApprove: true` | 하위 호환/가독성 플래그. 실제 저마찰 동작은 기본 권한과 `permission.ask` bash 분류기가 담당 |
-| 기본적으로 `maxParallelSubagents` 미설정 | resolver는 soft fan-out 가이드를 유지; GLM profile은 이미 직렬 coder 디스패치를 기본으로 사용 |
+| 기본적으로 `maxParallelSubagents` 미설정 | resolver는 soft fan-out 가이드를 유지; GLM profile은 토큰 효율 프롬프트를 쓰지만 사용자가 설정하지 않는 한 hard concurrency cap을 걸지 않음 |
 | `agents.coder.mode = "subagent"` | Coder는 사용자 대면 기본 역할이 아니라 고정 resolver→coder 경로에 머무름 |
 | `agents.{explorer,reviewer,deep-reviewer}.mode = "subagent"` | 내부 전문가는 서브에이전트 전용 — 사용자 대면 기본 역할이 아님 |
 | `context7: true` | 플러그인이 Context7 MCP를 자동 등록 — 수동 MCP 설정 불필요 |
@@ -551,7 +551,7 @@ opencode-resolve는 전체 저장소를 프롬프트에 밀어 넣지 않고도 
 | `commands` | `boolean` | `false` | true인 경우, `resolve`, `resolve-code`, `resolve-review` 명령어 추가. |
 | `autoApprove` | `boolean` | `true` | 하위 호환/가독성 플래그. 현재 동작은 내장 기본 권한과 `permission.ask` bash 분류기가 제어하며, 이 플래그가 권한을 재작성하지 않음. |
 | `autoUpdate` | `boolean` | `true` | npm 버전 확인과 OpenCode 플러그인 캐시 갱신 알림을 best-effort로 수행. 비활성화하려면 false. |
-| `maxParallelSubagents` | `positive integer` | _미설정_ | 동시 coder 수에 대한 선택적 프롬프트 수준 상한. 미설정 시 resolver는 soft fan-out 가이드를 사용하고 rate-limit 에러에 backoff. GLM profile은 기본적으로 coder 1개씩 실행. |
+| `maxParallelSubagents` | `positive integer` | _미설정_ | 동시 coder 수에 대한 선택적 프롬프트 수준 상한. 미설정 시 resolver는 soft fan-out 가이드를 사용하고 rate-limit 에러에 backoff. GLM profile도 사용자가 설정하지 않는 한 hard cap을 걸지 않음. |
 | `models` | `object` | `{}` | 별칭 맵. 키는 에이전트 이름 또는 `fast`/`strong`/`mini`/`codex`/`quick`/`deep`/`glm`/`gpt`. 값은 모델 id 또는 다른 별칭. 기본적으로 비어있음 — 모든 역할이 OpenCode 기본 모델을 상속. |
 | `agents` | `object` | `{}` | 에이전트별 재정의 (아래 참조). |
 | `config` | `string` | _없음_ | 설정 파일의 사용자 정의 경로 (프로젝트 상대경로 또는 절대경로). |
@@ -617,7 +617,7 @@ opencode-resolve는 전체 저장소를 프롬프트에 밀어 넣지 않고도 
 
 ## 병렬 서브에이전트 제한
 
-`maxParallelSubagents`는 선택 사항입니다. 생략하면 **resolver**는 soft fan-out 가이드를 사용합니다: 진짜 독립적인 작업에는 coder를 분산하고, rate-limit 에러가 보이면 backoff합니다. resolver 프롬프트에 명시적인 역할별 동시 실행 상한을 넣고 싶을 때만 설정하세요. GLM profile은 기본적으로 한 번에 coder 하나씩 실행합니다.
+`maxParallelSubagents`는 선택 사항입니다. 생략하면 **resolver**는 soft fan-out 가이드를 사용합니다: 진짜 독립적인 작업에는 coder를 분산하고, rate-limit 에러가 보이면 backoff합니다. resolver 프롬프트에 명시적인 역할별 동시 실행 상한을 넣고 싶을 때만 설정하세요. GLM profile도 기본적으로 hard cap은 없습니다.
 
 | 값 | 동작 |
 |---|---|

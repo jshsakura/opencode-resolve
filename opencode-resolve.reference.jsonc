@@ -24,8 +24,9 @@
   //
   // "mix" — explicit mixed/default profile. Uses standard resolver prompts,
   //         DEFAULT_ENABLED, and whatever model aliases you configure.
-  // "glm" — GLM-only, optimized for ZAI coding-plan: serial coder dispatch,
-  //         reduced maxSteps, token-efficient prompts. No deep-reviewer by default.
+  // "glm" — GLM-only, optimized for ZAI coding-plan: reduced maxSteps,
+  //         token-efficient prompts, no hard concurrency cap by default.
+  //         No deep-reviewer by default.
   // "gpt" — GPT-only, high-performance: parallel coder dispatch, full agent
   //         roster, higher maxSteps.
   //
@@ -107,8 +108,8 @@
   // maxParallelSubagents (positive integer)
   // Optional prompt-level cap for how many subagents of the SAME ROLE the
   // resolver may dispatch concurrently. When omitted, the resolver uses soft
-  // fan-out guidance and backs off on rate-limit errors. GLM profile defaults
-  // to one coder at a time.
+  // fan-out guidance and backs off on rate-limit errors. GLM profile does not
+  // impose a hard cap unless you set one.
   //   1 = strict per-role serial
   //   2 = up to two coders in parallel
   //   N = up to N of each role
@@ -278,8 +279,8 @@
     // -----------------------------------------------------------------
     // glm — GLM-optimized orchestrator (selectable in agent picker)
     // Disabled by default. Enable to get a standalone GLM agent with
-    // coding-plan optimized prompts: serial coder dispatch, session
-    // limit handling, token-efficient execution.
+    // coding-plan optimized prompts: session limit handling,
+    // token-efficient execution, no hard concurrency cap unless configured.
     // Users pick this from OpenCode's agent picker as an alternative
     // to the default resolver.
     // -----------------------------------------------------------------

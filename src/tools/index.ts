@@ -2,7 +2,7 @@ import { tool } from "@opencode-ai/plugin";
 import { stat, readFile, access } from "node:fs/promises";
 import { resolve, join } from "node:path";
 import { writeFileSync, mkdirSync } from "node:fs";
-import { runCommand, sanitizeShellArg, truncateOutput } from "../utils.js";
+import { classifyBashCommand, runCommand, sanitizeShellArg, truncateOutput } from "../utils.js";
 import { SessionState, DIAGNOSTICS_TTL_MS } from "../state.js";
 import { VALID_PROFILES, VALID_TIERS, VALID_AGENT_NAME_SET, VALID_AGENT_NAMES } from "../agents.js";
 
@@ -14,6 +14,15 @@ function canWriteFromTool(ctx: { agent?: string }): boolean {
 
 function readOnlyToolWriteDenied(ctx: { agent?: string }, action: string): string {
   return `Permission denied: agent '${ctx.agent ?? "unknown"}' is read-only and cannot ${action}. Dispatch resolver/coder for workspace writes.`
+}
+
+function commandExecutionDenied(command: string): string | undefined {
+  const action = classifyBashCommand(command)
+  if (action === "allow") return undefined
+  if (action === "deny") {
+    return `Command denied by opencode-resolve safety policy: ${command}`
+  }
+  return `Command is not allowlisted for direct tool execution: ${command}. Run it through OpenCode bash so the normal permission flow can decide.`
 }
 
 export function getTools(sessionState: SessionState) {
@@ -29,6 +38,8 @@ export function getTools(sessionState: SessionState) {
             return "No verify commands detected for this project. Add typecheck/lint/test scripts to package.json."
           }
           const cmd = args.command ?? projCtx.verifyCommands[0]
+          const denied = commandExecutionDenied(cmd)
+          if (denied) return denied
           try {
             const result = await runCommand(cmd, ctx.directory, 30_000)
             ctx.metadata({ title: `verify: ${cmd}` })
@@ -180,6 +191,8 @@ export function getTools(sessionState: SessionState) {
             else if (testCmd.includes("jest")) testCmd += ` -t '${safePattern}'`
             else testCmd += ` --grep '${safePattern}'`
           }
+          const denied = commandExecutionDenied(testCmd)
+          if (denied) return denied
           try {
             const result = await runCommand(testCmd, ctx.directory, 60_000)
             ctx.metadata({ title: `test: ${args.file ?? "all"}${args.pattern ? ` /${args.pattern}/` : ""}` })
@@ -666,6 +679,8 @@ export function getTools(sessionState: SessionState) {
           }
           if (args.file) cmd += ` '${sanitizeShellArg(args.file)}'`
 
+          const denied = commandExecutionDenied(cmd)
+          if (denied) return denied
           try {
             const result = await runCommand(cmd, ctx.directory, 60_000)
             ctx.metadata({ title: `coverage: ${args.file ?? "all"}` })

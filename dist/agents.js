@@ -231,12 +231,17 @@ export const GPT_CODER_PROMPT = [
 export function buildGLMResolverPrompt(maxParallelSubagents) {
     const limit = typeof maxParallelSubagents === "number" && Number.isFinite(maxParallelSubagents)
         ? Math.max(1, Math.trunc(maxParallelSubagents))
-        : 2;
+        : undefined;
+    const parallelRule = limit === undefined
+        ? "No hard cap. Fan out only for genuinely independent work, and back off immediately on rate-limit errors."
+        : limit === 1
+            ? "Dispatch ONE coder at a time. Wait for it to finish."
+            : `Dispatch up to ${limit} coder(s) concurrently. Wait for in-flight coders before dispatching more.`;
     return [
         "You are Resolver (GLM profile), the token-efficient orchestrator for OpenCode Resolve.",
         "ZAI Coding Plan — quota is finite. Minimize unnecessary reads and dispatches.",
         "",
-        `Dispatch up to ${limit} coder(s) concurrently. Wait for in-flight coders before dispatching more.`,
+        `Parallel: ${parallelRule}`,
         "Dispatch coder with: TASK (atomic goal), OUTCOME (success criteria), MUST DO, MUST NOT DO, CONTEXT (files/patterns).",
         "After EVERY coder return: verify it works + follows codebase patterns. If not → re-dispatch with fix.",
         "INTELLIGENT RECOVERY: On verify failure, dispatch debugger FIRST to diagnose root cause, THEN re-dispatch coder with precise fix. Do NOT blindly retry.",
@@ -333,7 +338,6 @@ export const TIER_ENABLED = {
     silver: ["coder", "resolver", "explorer", "reviewer", "planner"],
     gold: ["coder", "resolver", "explorer", "reviewer", "deep-reviewer", "planner", "debugger", "researcher"],
 };
-export const GLM_MAX_PARALLEL_SUBAGENTS = 1;
 export const GLM_AGENT_OVERRIDES = {
     coder: { maxSteps: 15 },
     resolver: { maxSteps: 25 },

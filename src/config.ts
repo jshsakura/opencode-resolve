@@ -3,7 +3,7 @@ import { homedir } from "node:os";
 import { access, readFile } from "node:fs/promises";
 import { Config } from "@opencode-ai/plugin";
 import { ResolveConfig, ProjectContext, ResolveAgentName, ProfileName, TierName, AgentMode, UnknownRecord, ResolvePluginOptions, ResolveAgentConfig, ModelAlias, PermissionValue } from "./types.js";
-import { DEFAULT_AGENT_CONFIG, buildGLMResolverPrompt, GLM_CODER_PROMPT, buildGPTResolverPrompt, GPT_CODER_PROMPT, buildResolverPrompt, VALID_AGENT_NAME_SET, DEFAULT_MODELS, DEFAULT_ENABLED, VALID_AGENT_NAMES, GLM_ENABLED, GPT_ENABLED, TIER_ENABLED, GLM_MAX_PARALLEL_SUBAGENTS, GLM_AGENT_OVERRIDES, GPT_AGENT_OVERRIDES, VALID_MODEL_ALIAS_SET, VALID_PROFILES, VALID_TIERS } from "./agents.js";
+import { DEFAULT_AGENT_CONFIG, buildGLMResolverPrompt, GLM_CODER_PROMPT, buildGPTResolverPrompt, GPT_CODER_PROMPT, buildResolverPrompt, VALID_AGENT_NAME_SET, DEFAULT_MODELS, DEFAULT_ENABLED, VALID_AGENT_NAMES, GLM_ENABLED, GPT_ENABLED, TIER_ENABLED, GLM_AGENT_OVERRIDES, GPT_AGENT_OVERRIDES, VALID_MODEL_ALIAS_SET, VALID_PROFILES, VALID_TIERS } from "./agents.js";
 import { readFirstJson } from "./utils.js";
 
 export function applyResolveConfig(config: Config, resolveConfig: ResolveConfig, projectContext: ProjectContext) {
@@ -15,7 +15,7 @@ export function applyResolveConfig(config: Config, resolveConfig: ResolveConfig,
     const enabled = new Set(resolveConfig.enabled ?? tierEnabled ?? (profileEnabled ?? DEFAULT_ENABLED));
     const models = { ...DEFAULT_MODELS, ...resolveConfig.models };
     const defaultModel = typeof config.model === "string" ? config.model : undefined;
-    const maxParallelSubagents = resolveConfig.maxParallelSubagents ?? (isGLM ? GLM_MAX_PARALLEL_SUBAGENTS : undefined);
+    const maxParallelSubagents = resolveConfig.maxParallelSubagents;
     const contextInjection = buildContextInjection(projectContext);
     config.agent ??= {}
 
@@ -36,7 +36,7 @@ export function applyResolveConfig(config: Config, resolveConfig: ResolveConfig,
     }
     if (agentOverride.prompt === undefined) {
       if (isGLM) {
-        if (name === "resolver") agentConfig.prompt = buildGLMResolverPrompt(undefined)
+        if (name === "resolver") agentConfig.prompt = buildGLMResolverPrompt(maxParallelSubagents)
         else if (name === "coder") agentConfig.prompt = GLM_CODER_PROMPT
       } else if (isGPT) {
         if (name === "resolver") agentConfig.prompt = buildGPTResolverPrompt()

@@ -1,6 +1,11 @@
 import { DIAGNOSTICS_TTL_MS, FAILURE_PATTERN_TTL_MS, FAILURE_THRESHOLD, STRATEGY_PIVOT_THRESHOLD, EDIT_HOTSPOT_TTL_MS, EDIT_HOTSPOT_THRESHOLD } from "../state.js";
 import { classifyBashCommand, maybeAutoUpdate, detectProjectContext } from "../utils.js";
 import { loadResolveConfig, applyResolveConfig } from "../config.js";
+function capTemperature(current, cap) {
+    return typeof current === "number" && Number.isFinite(current)
+        ? Math.min(current, cap)
+        : cap;
+}
 export function getHooks(directory, options, sessionState) {
     return {
         event: async (input) => {
@@ -166,7 +171,7 @@ export function getHooks(directory, options, sessionState) {
         "chat.params": async (input, output) => {
             const profile = sessionState.storedConfig?.profile;
             if (profile === "glm") {
-                output.temperature = Math.min(output.temperature, 0.4);
+                output.temperature = capTemperature(output.temperature, 0.4);
                 if (output.maxOutputTokens === undefined || output.maxOutputTokens > 16384) {
                     output.maxOutputTokens = 16384;
                 }
@@ -176,7 +181,7 @@ export function getHooks(directory, options, sessionState) {
                 }
             }
             else if (profile === "gpt") {
-                output.temperature = Math.min(output.temperature, 0.7);
+                output.temperature = capTemperature(output.temperature, 0.7);
                 if (output.maxOutputTokens === undefined) {
                     output.maxOutputTokens = 32768;
                 }
@@ -184,7 +189,7 @@ export function getHooks(directory, options, sessionState) {
             // Read-only agents: lower temperature always
             const readOnlyAgents = new Set(["reviewer", "deep-reviewer", "explorer", "planner", "researcher", "architect"]);
             if (readOnlyAgents.has(input.agent)) {
-                output.temperature = Math.min(output.temperature, 0.3);
+                output.temperature = capTemperature(output.temperature, 0.3);
             }
             // Write agents: slightly higher temperature for creative problem-solving
             const writeAgents = new Set(["coder", "resolver", "glm", "gpt-coder"]);

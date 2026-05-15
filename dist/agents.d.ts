@@ -16,7 +16,6 @@ export declare const VALID_TIERS: Set<string>;
 export declare const GLM_ENABLED: ResolveAgentName[];
 export declare const GPT_ENABLED: ResolveAgentName[];
 export declare const TIER_ENABLED: Record<TierName, ResolveAgentName[]>;
-export declare const GLM_MAX_PARALLEL_SUBAGENTS = 1;
 export declare const GLM_AGENT_OVERRIDES: Partial<Record<ResolveAgentName, {
     maxSteps?: number;
     description?: string;

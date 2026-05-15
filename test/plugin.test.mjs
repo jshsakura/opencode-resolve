@@ -560,10 +560,22 @@ test("GLM profile applies GLM-specific prompts, maxSteps, and enabled list", asy
   assert.equal(config.agent.resolver.maxSteps, 25)
   assert.match(config.agent.resolver.prompt, /GLM profile/)
   assert.match(config.agent.resolver.prompt, /quota is finite/)
+  assert.match(config.agent.resolver.prompt, /No hard cap/)
+  assert.doesNotMatch(config.agent.resolver.prompt, /Dispatch up to 2 coder/)
   assert.equal(config.agent.coder.maxSteps, 15)
   assert.match(config.agent.coder.prompt, /GLM profile/)
   // deep-reviewer not in GLM enabled list
   assert.equal(config.agent["deep-reviewer"], undefined)
+})
+
+test("GLM profile honors explicit maxParallelSubagents without a default cap", async () => {
+  const { config } = await runPlugin(
+    { model: "zai-coding-plan/glm-5.1" },
+    undefined,
+    { profile: "glm", maxParallelSubagents: 1, enabled: ["coder", "resolver"] },
+  )
+
+  assert.match(config.agent.resolver.prompt, /Dispatch ONE coder at a time/)
 })
 
 test("GPT profile applies GPT-specific prompts and higher maxSteps", async () => {
@@ -1353,6 +1365,33 @@ test("resolve-verify tool has execute function and description", async () => {
   assert.ok(t.args.command, "should have command arg schema")
 })
 
+test("custom command tools reject denied or non-allowlisted direct commands", async () => {
+  const project = await createProject({
+    "opencode.json": {},
+    "opencode-resolve.json": {},
+    "package.json": { scripts: { test: "node --test", typecheck: "tsc --noEmit" } },
+  })
+  try {
+    const hooks = await OpencodeResolve(
+      { directory: project.path, client: {}, project: {}, worktree: project.path, serverUrl: new URL("http://localhost"), $: {}, experimental_workspace: { register() {} } },
+      {},
+    )
+    await hooks.config({ model: "provider/model", agent: {} })
+    const ctx = { sessionID: "s1", messageID: "m1", agent: "resolver", directory: project.path, worktree: project.path, abort: new AbortController().signal, metadata() {}, ask: () => ({}) }
+
+    const verifyDenied = await hooks.tool["resolve-verify"].execute({ command: "rm -rf /tmp/opencode-resolve-danger" }, ctx)
+    assert.match(String(verifyDenied), /Command denied/)
+
+    const testDenied = await hooks.tool["resolve-test"].execute({ runner: "go test" }, ctx)
+    assert.match(String(testDenied), /not allowlisted/)
+
+    const coverageDenied = await hooks.tool["resolve-coverage"].execute({ command: "git clean -fd" }, ctx)
+    assert.match(String(coverageDenied), /Command denied/)
+  } finally {
+    await project.cleanup()
+  }
+})
+
 test("resolve-diagnostics tool has execute function and description", async () => {
   const hooks = await getHooks()
   const t = hooks.tool["resolve-diagnostics"]
@@ -1690,6 +1729,32 @@ test("chat.params sets default temperature for write agents", async () => {
   const output = { temperature: undefined, maxOutputTokens: undefined, topP: undefined, topK: undefined }
   await hooks["chat.params"]({ agent: "coder" }, output)
   assert.equal(output.temperature, 0.5, "coder should get default temp 0.5")
+})
+
+test("chat.params never emits NaN when input temperature is missing", async () => {
+  const glmProject = await createProject({
+    "opencode.json": {},
+    "opencode-resolve.json": { profile: "glm" },
+  })
+  try {
+    const glmHooks = await OpencodeResolve(
+      { directory: glmProject.path, client: {}, project: {}, worktree: glmProject.path, serverUrl: new URL("http://localhost"), $: {}, experimental_workspace: { register() {} } },
+      {},
+    )
+    await glmHooks.config({ model: "zai/glm-4", agent: {} })
+    const glmOutput = { temperature: undefined, maxOutputTokens: undefined, topP: undefined, topK: undefined }
+    await glmHooks["chat.params"]({ agent: "resolver" }, glmOutput)
+    assert.equal(glmOutput.temperature, 0.4)
+    assert.ok(!Number.isNaN(glmOutput.temperature))
+  } finally {
+    await glmProject.cleanup()
+  }
+
+  const hooks = await getHooks()
+  const reviewerOutput = { temperature: undefined, maxOutputTokens: undefined, topP: undefined, topK: undefined }
+  await hooks["chat.params"]({ agent: "reviewer" }, reviewerOutput)
+  assert.equal(reviewerOutput.temperature, 0.3)
+  assert.ok(!Number.isNaN(reviewerOutput.temperature))
 })
 
 // ── tool.execute.before warns on write ─────────────────────────────────────
