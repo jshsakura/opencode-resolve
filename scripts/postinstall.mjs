@@ -91,30 +91,55 @@ async function registerPlugin() {
   await mkdir(configDir, { recursive: true })
   const scriptedAnswers = await readScriptedAnswersIfNeeded()
 
-  const config = await readOpenCodeConfig()
-  let configChanged = addPlugin(config)
-
-  // Inject ZAI MCP servers when GLM is detected
-  const allModels = detectAllModels(config)
+  const probe = await readOpenCodeConfig()
+  const allModels = detectAllModels(probe)
   const hasGLM = allModels.some((m) => isGLMModel(m))
-  if (hasGLM) {
-    const mcpChanged = await injectZAIMCPs(config)
-    configChanged = configChanged || mcpChanged
-  }
+  const pluginNeeded = !isPluginRegisteredIn(probe)
+  const missingMCPNames = hasGLM
+    ? Object.keys(ZAI_MCP_SERVERS).filter((name) => probe.mcp?.[name] === undefined)
+    : []
 
-  if (configChanged) {
-    await writeFile(opencodeConfigPath, `${JSON.stringify(config, null, 2)}\n`)
+  if (pluginNeeded || missingMCPNames.length > 0) {
+    const fresh = await readOpenCodeConfig()
+    if (pluginNeeded) applyPluginPatch(fresh)
+    if (missingMCPNames.length > 0) applyMCPPatches(fresh, missingMCPNames)
+    await writeFile(opencodeConfigPath, `${JSON.stringify(fresh, null, 2)}\n`)
     console.log(`[${packageName}] updated ${opencodeConfigPath}`)
   } else {
     console.log(`[${packageName}] already registered in ${opencodeConfigPath}`)
   }
 
   if (!(await exists(resolveConfigPath))) {
-    await createAdaptiveResolveConfig(config, scriptedAnswers)
+    await createAdaptiveResolveConfig(probe, scriptedAnswers)
     return
   }
 
-  await handleExistingResolveConfig(config, scriptedAnswers)
+  await handleExistingResolveConfig(probe, scriptedAnswers)
+}
+
+function isPluginRegisteredIn(config) {
+  return Array.isArray(config.plugin) && config.plugin.some(isRegisteredPluginEntry)
+}
+
+function applyPluginPatch(config) {
+  config.plugin ??= []
+  if (!Array.isArray(config.plugin)) {
+    throw new Error(`${opencodeConfigPath}.plugin must be an array`)
+  }
+  if (!config.plugin.some(isRegisteredPluginEntry)) {
+    config.plugin.push(packageName)
+  }
+}
+
+function applyMCPPatches(config, names) {
+  config.mcp ??= {}
+  for (const name of names) {
+    if (config.mcp[name] === undefined) {
+      config.mcp[name] = ZAI_MCP_SERVERS[name]
+    }
+  }
+  console.log(`[${packageName}] injected ZAI MCP server config: ${names.join(", ")}`)
+  console.log(`[${packageName}] note: API keys are not copied into opencode.json; export Z_AI_API_KEY if the MCP server requires it.`)
 }
 
 async function handleExistingResolveConfig(opencodeConfig, scriptedAnswers) {
@@ -724,38 +749,7 @@ async function readOpenCodeConfig() {
   return parsed
 }
 
-function addPlugin(config) {
-  config.plugin ??= []
-  if (!Array.isArray(config.plugin)) {
-    throw new Error(`${opencodeConfigPath}.plugin must be an array`)
-  }
 
-  if (config.plugin.some(isRegisteredPluginEntry)) return false
-  config.plugin.push(packageName)
-  return true
-}
-
-async function injectZAIMCPs(config) {
-  config.mcp ??= {}
-  if (!isObject(config.mcp)) return false
-
-  const added = []
-  for (const [name, mcpConfig] of Object.entries(ZAI_MCP_SERVERS)) {
-    if (config.mcp[name] === undefined) {
-      config.mcp[name] = mcpConfig
-      added.push(name)
-    }
-  }
-
-  if (added.length > 0) {
-    console.log(`[${packageName}] injected ZAI MCP server config: ${added.join(", ")}`)
-    console.log(`[${packageName}] note: API keys are not copied into opencode.json; export Z_AI_API_KEY if the MCP server requires it.`)
-    return true
-  }
-
-  console.log(`[${packageName}] ZAI MCP server already present — skipping`)
-  return false
-}
 
 function isRegisteredPluginEntry(entry) {
   if (typeof entry === "string") return isResolvePluginName(entry)
@@ -879,13 +873,25 @@ async function installCompanion(pkg) {
 }
 
 async function addCompanionToOpenCodeConfig(pluginEntry) {
-  const config = await readOpenCodeConfig()
-  config.plugin ??= []
-  if (!Array.isArray(config.plugin)) {
-    throw new Error(`${opencodeConfigPath}.plugin must be an array`)
-  }
   const baseName = stripVersionSuffix(pluginEntry)
-  const alreadyPresent = config.plugin.some((entry) => {
+  const probe = await readOpenCodeConfig()
+  const alreadyPresent = isCompanionPresent(probe, baseName)
+  if (alreadyPresent) return
+
+  const fresh = await readOpenCodeConfig()
+  if (!isCompanionPresent(fresh, baseName)) {
+    fresh.plugin ??= []
+    if (!Array.isArray(fresh.plugin)) {
+      throw new Error(`${opencodeConfigPath}.plugin must be an array`)
+    }
+    fresh.plugin.push(pluginEntry)
+    await writeFile(opencodeConfigPath, `${JSON.stringify(fresh, null, 2)}\n`)
+  }
+}
+
+function isCompanionPresent(config, baseName) {
+  if (!Array.isArray(config.plugin)) return false
+  return config.plugin.some((entry) => {
     const raw = typeof entry === "string"
       ? entry
       : Array.isArray(entry) && typeof entry[0] === "string"
@@ -893,7 +899,4 @@ async function addCompanionToOpenCodeConfig(pluginEntry) {
         : null
     return raw !== null && stripVersionSuffix(raw) === baseName
   })
-  if (alreadyPresent) return
-  config.plugin.push(pluginEntry)
-  await writeFile(opencodeConfigPath, `${JSON.stringify(config, null, 2)}\n`)
 }
