@@ -156,8 +156,8 @@ npm install -g opencode-resolve
 
 1. `opencode-resolve`를 `~/.config/opencode/opencode.json`의 `plugin` 배열에 추가 (이미 없는 경우).
 2. 파일이 존재하지 않는 경우, 현재 모델 프로바이더에 맞게 적응된 `~/.config/opencode/resolve.json`을 생성:
-   - **인터랙티브 터미널** → 항상 `mix` / `gpt` / `glm`을 묻고, `bronze` / `silver` / `gold` 3티어 모델을 고르게 합니다. `mix`에서는 전용 `codex`, `glm` primary 에이전트를 켤지도 묻습니다.
-   - **비대화형 설치** → 모델 pinning을 추측하지 않습니다. `profile: "mix"`, `models: {}`를 쓰고 세 primary 경로(`resolver`, `codex`, `glm`)를 활성화하므로 이후 명시적으로 모델을 고르면 됩니다.
+   - **인터랙티브 터미널** → 항상 `mix` / `gpt` / `glm`을 묻고, `bronze` / `silver` / `gold` 3티어 모델을 고르게 합니다. `mix`에서는 전용 `gpt`, `glm` primary 에이전트를 켤지도 묻습니다.
+   - **비대화형 설치** → opencode.json에서 프로바이더를 자동 감지하여 모델 적응 프리셋을 작성합니다. `resolver`, `gpt`, `glm` primary 경로를 활성화합니다.
    - **GLM/ZAI 모델 감지** → 비밀값 없는 로컬 ZAI MCP 부트스트랩은 계속 추가합니다.
 
    기존 `resolve.json` 파일은 **동의 없이 덮어쓰지 않습니다**. 재설치 시 인터랙티브 환경이면 기존 파일을 업데이트할지, 백업 후 fresh setup을 다시 돌릴지 묻습니다. 비대화형 자동화에서는 `OPENCODE_RESOLVE_REINSTALL=fresh` 또는 `OPENCODE_RESOLVE_REINSTALL=update`를 설정하세요.
@@ -679,8 +679,8 @@ opencode-resolve는 전체 저장소를 프롬프트에 밀어 넣지 않고도 
 
 | 감지된 프로바이더 | 프리셋 |
 |---|---|
-| 인터랙티브 터미널 | 항상 `mix` / `gpt` / `glm`을 묻고 3티어 모델을 고르게 하며, `mix`에서는 `codex`와 `glm` primary 에이전트 활성화도 묻습니다 |
-| 비대화형 설치 | 모델 pinning을 추측하지 않음; `profile: "mix"`, `models: {}`를 쓰고 `resolver`, `codex`, `glm` primary 경로를 활성화 |
+| 인터랙티브 터미널 | 항상 `mix` / `gpt` / `glm`을 묻고 3티어 모델을 고르게 하며, `mix`에서는 `gpt`와 `glm` primary 에이전트 활성화도 묻습니다 |
+| 비대화형 설치 | opencode.json에서 프로바이더를 자동 감지하여 모델 적응 프리셋 작성. `resolver`, `gpt`, `glm` primary 경로 활성화 |
 | 레거시 opt-in | `OPENCODE_RESOLVE_AUTO_PRESET=1`을 설정하면 비대화형 provider-adapted 프리셋 허용 |
 | GLM/ZAI 감지 | API 키를 복사하지 않고 ZAI MCP 부트스트랩 추가 |
 
@@ -772,7 +772,7 @@ OPENCODE_RESOLVE_SKIP_POSTINSTALL=1 npm install -g opencode-resolve
 | `fast` | 빠른/저렴한 모델의 프로바이더 중립적 별칭 |
 | `strong` | 강력한/비싼 모델의 프로바이더 중립적 별칭 |
 | `mini` | 미니/효율적 모델의 프로바이더 중립적 별칭 |
-| `codex` | 코덱스 스타일 코딩 모델의 프로바이더 중립적 별칭 |
+| `codex` | 코덱스 스타일 코딩 모델의 프로바이더 중립적 별칭 (레거시) |
 | `bronze` / `silver` / `gold` | scout / coder / reasoner 3티어 별칭 |
 | `gpt-bronze` / `gpt-silver` / `gpt-gold` | mixed 설정의 GPT/Codex 전용 3티어 별칭 |
 | `glm-bronze` / `glm-silver` / `glm-gold` | mixed 설정의 GLM 전용 3티어 별칭 |
@@ -790,7 +790,8 @@ OPENCODE_RESOLVE_SKIP_POSTINSTALL=1 npm install -g opencode-resolve
 | 에이전트 | 기본 | 모드 | Edit | Bash | WebFetch | 용도 |
 |---|:---:|---|---|---|---|---|
 | `resolver` | 예 (핵심) | `all` | allow | ask (분류기 라우팅) | allow | 컨텍스트 효율적 오케스트레이터. 작업을 검증된 체크포인트로 분해, coder 디스패치, 각각 검증, 반복 회복 실패 시 차단 사항 보고. |
-| `codex` | 아니오 | `all` | allow | ask (분류기 라우팅) | allow | `resolver`와 같은 검증 resolve-loop 스타일의 Codex 최적화 primary. 최초 설치 GPT/mix 프리셋 또는 명시 설정으로 활성화. |
+| `codex` | 아니오 | `all` | allow | ask (분류기 라우팅) | allow | `resolver`와 같은 검증 resolve-loop 스타일의 Codex 최적화 primary. 레거시 — 새 GPT 설정에서는 `gpt` 권장. |
+| `gpt` | 아니오 | `all` | allow | ask (분류기 라우팅) | allow | `resolver`와 같은 검증 resolve-loop 스타일의 GPT 최적화 primary. 최초 설치 GPT/mix 프리셋 또는 명시 설정으로 활성화. |
 | `glm` | 아니오 | `all` | allow | ask (분류기 라우팅) | allow | `resolver`와 같은 검증 resolve-loop 스타일의 GLM 최적화 primary. 최초 설치 GLM/mix 프리셋 또는 명시 설정으로 활성화. |
 | `coder` | 예 (핵심) | `subagent` | allow | ask (분류기 라우팅) | allow | 집중된 구현자. 가장 작은 올바른 패치. 필요한 파일만 읽음. |
 | `explorer` | 예 (서브에이전트) | `subagent` | **deny** | **deny** | allow | 내부 빠른 코드베이스 스카우트. Resolver가 범위가 불명확할 때만 디스패치; 좁은 범위는 로컬 read/grep/glob 선호. |

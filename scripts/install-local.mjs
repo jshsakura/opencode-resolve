@@ -100,7 +100,7 @@ async function createAdaptiveResolveConfig() {
     resolveConfig.models = {}
     resolveConfig.agents = {
       ...resolveConfig.agents,
-      codex: { ...(resolveConfig.agents?.codex ?? {}), enabled: true },
+      gpt: { ...(resolveConfig.agents?.gpt ?? {}), enabled: true },
       glm: { ...(resolveConfig.agents?.glm ?? {}), enabled: true },
     }
   }

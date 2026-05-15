@@ -17,6 +17,9 @@
     "codex": {
       "enabled": false
     },
+    "gpt": {
+      "enabled": false
+    },
     "explorer": {
       "enabled": true,
       "mode": "subagent"

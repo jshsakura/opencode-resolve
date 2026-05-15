@@ -25,9 +25,9 @@ test("postinstall creates OpenCode config and resolve config", async () => {
     assert.equal(resolveConfig.maxParallelSubagents, undefined)
     // No opencode model => models stays empty (inherited preset)
     assert.deepEqual(resolveConfig.models, {})
-    assert.equal(resolveConfig.agents.codex.enabled, true)
-    assert.equal(resolveConfig.agents.glm.enabled, true)
-    assert.match(stdout, /prompt-required/)
+    assert.equal(resolveConfig.agents.gpt.enabled, false)
+    assert.equal(resolveConfig.agents.glm.enabled, false)
+    assert.match(stdout, /no GPT\/GLM models detected/)
   } finally {
     await rm(configHome, { recursive: true, force: true })
   }
@@ -129,7 +129,7 @@ test("postinstall creates GPT-only preset when opencode model is openai/gpt-*", 
     assert.equal(resolveConfig.models.reviewer, "gold")
     assert.equal(resolveConfig.models["deep-reviewer"], "gold")
     assert.equal(resolveConfig.models.explorer, "bronze")
-    assert.equal(resolveConfig.agents.codex.enabled, true)
+    assert.equal(resolveConfig.agents.gpt.enabled, true)
     // GPT profile and tier set automatically
     assert.equal(resolveConfig.profile, "gpt")
     assert.equal(resolveConfig.tier, "gold")
@@ -171,7 +171,7 @@ test("postinstall creates explicit mixed preset when GLM and GPT models are both
     assert.equal(resolveConfig.models.reviewer, "gold")
     assert.equal(resolveConfig.models["deep-reviewer"], "gold")
     assert.equal(resolveConfig.models.planner, "gold")
-    assert.equal(resolveConfig.agents.codex.enabled, true)
+    assert.equal(resolveConfig.agents.gpt.enabled, true)
     assert.equal(resolveConfig.agents.glm.enabled, true)
   } finally {
     await rm(configHome, { recursive: true, force: true })
@@ -197,7 +197,7 @@ test("postinstall creates GLM-only preset when opencode model is glm", async () 
     assert.equal(resolveConfig.models.gold, "zai-coding-plan/glm-5.1")
     assert.equal(resolveConfig.models.fast, "bronze")
     assert.equal(resolveConfig.models.strong, "gold")
-    assert.equal(resolveConfig.models.coder, "silver")
+    assert.equal(resolveConfig.models.coder, "gold")
     assert.equal(resolveConfig.models.resolver, "gold")
     assert.equal(resolveConfig.models.reviewer, "gold")
     assert.equal(resolveConfig.models["deep-reviewer"], "gold")
@@ -269,7 +269,7 @@ test("postinstall qualifies provider model keys before building mixed preset", a
     assert.equal(resolveConfig.models["gpt-gold"], "openai/gpt-5.5")
     assert.equal(resolveConfig.models.coder, "silver")
     assert.equal(resolveConfig.models.resolver, "gold")
-    assert.equal(resolveConfig.agents.codex.enabled, true)
+    assert.equal(resolveConfig.agents.gpt.enabled, true)
     assert.equal(resolveConfig.agents.glm.enabled, true)
   } finally {
     await rm(configHome, { recursive: true, force: true })
@@ -385,9 +385,9 @@ test("postinstall can fresh reinstall an existing resolve.json after backing it 
       [
         "2", // fresh reinstall
         "1", // mix
-        "y", // enable codex primary
+        "y", // enable gpt primary
         "y", // enable glm primary
-        "1", "2", "3", // GPT/Codex bronze/silver/gold
+        "1", "2", "3", // GPT bronze/silver/gold
         "1", "2", "2", // GLM bronze/silver/gold
       ].join("\n") + "\n",
     )
@@ -402,7 +402,7 @@ test("postinstall can fresh reinstall an existing resolve.json after backing it 
     assert.equal(resolveConfig.models.old, undefined)
     assert.equal(resolveConfig.models["gpt-gold"], "openai/gpt-5.5")
     assert.equal(resolveConfig.models["glm-bronze"], "zai/glm-4.7-flash")
-    assert.equal(resolveConfig.agents.codex.enabled, true)
+    assert.equal(resolveConfig.agents.gpt.enabled, true)
     assert.equal(resolveConfig.agents.glm.enabled, true)
   } finally {
     await rm(configHome, { recursive: true, force: true })
@@ -452,7 +452,7 @@ test("postinstall detects model from agent config when top-level model absent", 
     assert.equal(resolveConfig.models.silver, "openai/gpt-5-mini")
     assert.equal(resolveConfig.models.gold, "openai/gpt-5-mini")
     assert.equal(resolveConfig.models.coder, "silver")
-    assert.equal(resolveConfig.agents.codex.enabled, true)
+    assert.equal(resolveConfig.agents.gpt.enabled, true)
   } finally {
     await rm(configHome, { recursive: true, force: true })
   }
@@ -485,19 +485,19 @@ test("postinstall can force the interactive mix three-tier prompt", async () => 
       { OPENCODE_RESOLVE_FORCE_PROMPT: "1" },
       [
         "1", // mix
-        "y", // enable codex primary
+        "y", // enable gpt primary
         "y", // enable glm primary
-        "1", "2", "3", // GPT/Codex bronze/silver/gold
+        "1", "2", "3", // GPT bronze/silver/gold
         "1", "2", "2", // GLM bronze/silver/gold
       ].join("\n") + "\n",
     )
 
     const resolveConfig = await readJson(join(configHome, "resolve.json"))
-    assert.match(stdout, /Enable dedicated Codex primary agent/)
-    assert.match(stdout, /Pick Codex\/GPT bronze\/scout/)
+    assert.match(stdout, /Enable dedicated GPT primary agent/)
+    assert.match(stdout, /Pick GPT bronze\/scout/)
     assert.match(stdout, /Pick GLM gold\/reasoner/)
     assert.equal(resolveConfig.profile, "mix")
-    assert.equal(resolveConfig.agents.codex.enabled, true)
+    assert.equal(resolveConfig.agents.gpt.enabled, true)
     assert.equal(resolveConfig.agents.glm.enabled, true)
     assert.equal(resolveConfig.models["gpt-bronze"], "openai/gpt-5.3-codex-spark")
     assert.equal(resolveConfig.models["gpt-silver"], "openai/gpt-5.3-codex")
@@ -526,7 +526,7 @@ test("postinstall can force the interactive GPT three-tier prompt", async () => 
     assert.match(stdout, /GPT\/Codex model choices/)
     assert.equal(resolveConfig.profile, "gpt")
     assert.equal(resolveConfig.tier, "gold")
-    assert.equal(resolveConfig.agents.codex.enabled, true)
+    assert.equal(resolveConfig.agents.gpt.enabled, true)
     assert.equal(resolveConfig.models.coder, "silver")
     assert.equal(resolveConfig.models.planner, "gold")
   } finally {
@@ -541,15 +541,16 @@ test("postinstall can force the interactive GLM three-tier prompt", async () => 
     const { stdout } = runPostinstall(
       configHome,
       { OPENCODE_RESOLVE_FORCE_PROMPT: "1" },
-      ["3", "", "", ""].join("\n") + "\n",
+      ["3", "n", "", "", ""].join("\n") + "\n",
     )
 
     const resolveConfig = await readJson(join(configHome, "resolve.json"))
     assert.match(stdout, /GLM model choices/)
+    assert.match(stdout, /coding-plan/)
     assert.equal(resolveConfig.profile, "glm")
     assert.equal(resolveConfig.tier, "gold")
     assert.equal(resolveConfig.agents.glm.enabled, true)
-    assert.equal(resolveConfig.models.coder, "silver")
+    assert.equal(resolveConfig.models.coder, "gold")
     assert.equal(resolveConfig.models.planner, "gold")
   } finally {
     await rm(configHome, { recursive: true, force: true })

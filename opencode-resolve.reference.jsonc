@@ -118,9 +118,9 @@
 
   // -----------------------------------------------------------------------
   // models (object)
-  // Alias map. Keys are either an agent name (coder, reviewer, resolver,
-  // codex, glm, architect, gpt-coder, debugger, researcher, explorer,
-  // deep-reviewer, planner)
+// Alias map. Keys are either an agent name (coder, reviewer, resolver,
+// codex, gpt, glm, architect, gpt-coder, debugger, researcher, explorer,
+// deep-reviewer, planner)
   // OR one of the well-known aliases (`glm`, `gpt`, `quick`, `deep`,
   // `fast`, `strong`, `mini`, `codex`, `bronze`, `silver`, `gold`,
   // `gpt-bronze`, `gpt-silver`, `gpt-gold`, `glm-bronze`, `glm-silver`,
@@ -168,12 +168,12 @@
   //   third-party providers never blocks agent execution.
   //   "models": {
   //     "glm": "zai-coding-plan/glm-5.1",
-  //     "bronze": "zai-coding-plan/glm-5.1",
-  //     "silver": "zai-coding-plan/glm-5.1",
+  //     "bronze": "zai-coding-plan/glm-4.7-flash",
+  //     "silver": "zai-coding-plan/glm-5",
   //     "gold": "zai-coding-plan/glm-5.1",
   //     "fast": "bronze",
   //     "strong": "gold",
-  //     "coder": "silver",
+  //     "coder": "gold",
   //     "resolver": "gold",
   //     "reviewer": "gold",
   //     "deep-reviewer": "gold",
@@ -223,8 +223,21 @@
 
     // codex — Codex-optimized primary resolver (selectable in agent picker)
     // Same verified resolve-loop style as resolver, with a Codex-specific
-    // system prompt. Enabled by GPT/mix first-install presets when selected.
+    // system prompt. Legacy — kept for backward compatibility. New GPT
+    // installs should prefer the "gpt" agent instead.
     "codex": {
+      "enabled": false,
+      "mode": "all",
+      "maxSteps": 35
+    },
+
+    // -----------------------------------------------------------------
+    // gpt — GPT-optimized primary resolver (selectable in agent picker)
+    // GPT-specific verified resolve-loop with parallel coder dispatch,
+    // full agent roster, and higher maxSteps. Enabled automatically when
+    // GPT profile is selected during install. Uses buildGPTResolverPrompt().
+    // -----------------------------------------------------------------
+    "gpt": {
       "enabled": false,
       "mode": "all",
       "maxSteps": 35

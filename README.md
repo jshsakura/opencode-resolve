@@ -156,8 +156,8 @@ The `postinstall` script automatically:
 
 1. Adds `opencode-resolve` to `~/.config/opencode/opencode.json` `plugin` array (if not already present).
 2. Creates `~/.config/opencode/resolve.json` adapted to your current model provider when the file does not exist:
-   - **Interactive terminal** → always asks for `mix` / `gpt` / `glm`, then lets you pick three-tier `bronze` / `silver` / `gold` models. In `mix`, it also asks whether to enable dedicated `codex` and `glm` primary agents.
-   - **Non-interactive install** → does not guess model pinning. It writes `profile: "mix"`, leaves `models: {}`, and enables the three primary routes (`resolver`, `codex`, `glm`) so you can pin models explicitly afterward.
+   - **Interactive terminal** → always asks for `mix` / `gpt` / `glm`, then lets you pick three-tier `bronze` / `silver` / `gold` models. In `mix`, it also asks whether to enable dedicated `gpt` and `glm` primary agents.
+   - **Non-interactive install** → auto-detects providers from opencode.json and writes a model-adapted preset. Enables `resolver`, `gpt`, and `glm` as primary routes.
    - **GLM/ZAI model detected** → still adds the non-secret local ZAI MCP bootstrap.
 
    Existing `resolve.json` files are **never overwritten without consent**. On reinstall, interactive setup asks whether to update the existing file or back it up and run fresh setup. For non-interactive automation, set `OPENCODE_RESOLVE_REINSTALL=fresh` or `OPENCODE_RESOLVE_REINSTALL=update`.
@@ -679,8 +679,8 @@ When `resolve.json` does **not** exist, postinstall inspects your OpenCode model
 
 | Detected provider | Preset |
 |---|---|
-| Interactive terminal | Always prompts for `mix` / `gpt` / `glm`, asks for three-tier model picks, and in `mix` asks whether to enable `codex` and `glm` primary agents |
-| Non-interactive install | Does not guess model pinning; writes `profile: "mix"`, `models: {}`, and enables `resolver`, `codex`, and `glm` as primary routes |
+| Interactive terminal | Always prompts for `mix` / `gpt` / `glm`, asks for three-tier model picks, and in `mix` asks whether to enable `gpt` and `glm` primary agents |
+| Non-interactive install | Auto-detects providers from opencode.json and writes a model-adapted preset with `resolver`, `gpt`, and `glm` enabled |
 | Legacy opt-in | Set `OPENCODE_RESOLVE_AUTO_PRESET=1` to allow non-interactive provider-adapted presets |
 | GLM/ZAI detected | Adds the ZAI MCP bootstrap without copying API keys |
 
@@ -772,9 +772,9 @@ In this setup, `plan` uses `openai/gpt-5.3-codex`; native `build`, resolve `code
 | `fast` | Provider-neutral alias for a fast/cheap model |
 | `strong` | Provider-neutral alias for a strong/expensive model |
 | `mini` | Provider-neutral alias for a mini/efficient model |
-| `codex` | Provider-neutral alias for a codex-style coding model |
+| `codex` | Provider-neutral alias for a codex-style coding model (legacy) |
 | `bronze` / `silver` / `gold` | Three-tier scout / coder / reasoner aliases |
-| `gpt-bronze` / `gpt-silver` / `gpt-gold` | GPT/Codex-specific three-tier aliases for mixed setups |
+| `gpt-bronze` / `gpt-silver` / `gpt-gold` | GPT-specific three-tier aliases for mixed setups |
 | `glm-bronze` / `glm-silver` / `glm-gold` | GLM-specific three-tier aliases for mixed setups |
 | `quick` | Legacy alias (equivalent to `fast`) |
 | `deep` | Legacy alias (equivalent to `strong`) |
@@ -790,7 +790,8 @@ Aliases only resolve when defined in `models`. Agent names (`coder`, `resolver`,
 | Agent | Default | Mode | Edit | Bash | WebFetch | Purpose |
 |---|:---:|---|---|---|---|---|
 | `resolver` | Yes (core) | `all` | allow | ask (classifier-routed) | allow | Context-efficient orchestrator. Decomposes work into verified checkpoints, dispatches coder, verifies each, and reports blockers when repeated recovery fails. |
-| `codex` | No | `all` | allow | ask (classifier-routed) | allow | Codex-optimized primary resolver with the same verified resolve-loop style as `resolver`. Enabled by first-install GPT/mix presets or explicitly. |
+| `codex` | No | `all` | allow | ask (classifier-routed) | allow | Codex-optimized primary resolver. Legacy — prefer `gpt` for new GPT setups. |
+| `gpt` | No | `all` | allow | ask (classifier-routed) | allow | GPT-optimized primary resolver with the same verified resolve-loop style as `resolver`. Enabled by first-install GPT/mix presets or explicitly. |
 | `glm` | No | `all` | allow | ask (classifier-routed) | allow | GLM-optimized primary resolver with the same verified resolve-loop style as `resolver`. Enabled by first-install GLM/mix presets or explicitly. |
 | `coder` | Yes (core) | `subagent` | allow | ask (classifier-routed) | allow | Focused implementer. Smallest correct patch. Reads only needed files. |
 | `explorer` | Yes (subagent) | `subagent` | **deny** | **deny** | allow | Internal fast codebase scout. Resolver dispatches when scope is genuinely unknown; prefers local read/grep/glob for narrow scope. |

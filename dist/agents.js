@@ -5,6 +5,7 @@ export const VALID_AGENT_NAMES = [
     "reviewer",
     "resolver",
     "codex",
+    "gpt",
     "glm",
     "architect",
     "gpt-coder",
@@ -79,6 +80,18 @@ export const DEFAULT_AGENT_CONFIG = {
         maxSteps: 35,
         description: "Codex-optimized primary resolver for agentic coding work. Use when a Codex-style OpenAI coding model is pinned and you want a dedicated user-facing route separate from the neutral resolver.",
         prompt: buildCodexResolverPrompt(),
+        permission: {
+            edit: "allow",
+            bash: "ask",
+            webfetch: "allow",
+        },
+    },
+    gpt: {
+        mode: "all",
+        color: "#FFB347",
+        maxSteps: 35,
+        description: "GPT-optimized primary resolver for agentic coding work. Use when a GPT/OpenAI coding model is pinned and you want a dedicated user-facing route separate from the neutral resolver.",
+        prompt: buildGPTResolverPrompt(),
         permission: {
             edit: "allow",
             bash: "ask",
@@ -368,11 +381,11 @@ export const VALID_MODEL_ALIAS_SET = new Set(VALID_MODEL_ALIASES);
 export const VALID_PROFILES = new Set(["mix", "glm", "gpt"]);
 export const VALID_TIERS = new Set(["bronze", "silver", "gold"]);
 export const GLM_ENABLED = ["coder", "resolver", "glm", "explorer", "reviewer", "planner"];
-export const GPT_ENABLED = ["coder", "resolver", "codex", "explorer", "reviewer", "deep-reviewer", "planner"];
+export const GPT_ENABLED = ["coder", "resolver", "gpt", "explorer", "reviewer", "deep-reviewer", "planner"];
 export const TIER_ENABLED = {
     bronze: ["coder", "resolver"],
     silver: ["coder", "resolver", "explorer", "reviewer", "planner"],
-    gold: ["coder", "resolver", "codex", "glm", "explorer", "reviewer", "deep-reviewer", "planner", "debugger", "researcher"],
+    gold: ["coder", "resolver", "codex", "gpt", "glm", "explorer", "reviewer", "deep-reviewer", "planner", "debugger", "researcher"],
 };
 export const GLM_AGENT_OVERRIDES = {
     coder: { maxSteps: 15 },
@@ -384,7 +397,7 @@ export const GLM_AGENT_OVERRIDES = {
 export const GPT_AGENT_OVERRIDES = {
     coder: { maxSteps: 25 },
     resolver: { maxSteps: 40 },
-    codex: { maxSteps: 40 },
+    gpt: { maxSteps: 40 },
     explorer: { maxSteps: 8 },
     reviewer: { maxSteps: 10 },
     "deep-reviewer": { maxSteps: 15 },

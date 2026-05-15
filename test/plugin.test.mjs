@@ -621,6 +621,27 @@ test("codex agent is registered when enabled", async () => {
   assert.match(config.agent.codex.prompt, /Codex Resolver/)
 })
 
+test("gpt agent is registered when enabled", async () => {
+  const { config } = await runPlugin(
+    { model: "openai/gpt-5.5" },
+    undefined,
+    { agents: { gpt: { enabled: true } } },
+  )
+
+  assert.equal(config.agent.gpt.mode, "all")
+  assert.equal(config.agent.gpt.maxSteps, 35)
+  assert.match(config.agent.gpt.description, /GPT/)
+  assert.match(config.agent.gpt.prompt, /GPT profile/)
+})
+
+test("gpt agent is disabled by default", async () => {
+  const { config } = await runPlugin({
+    model: "provider/default",
+  })
+
+  assert.equal(config.agent.gpt, undefined)
+})
+
 test("glm agent is disabled by default", async () => {
   const { config } = await runPlugin({
     model: "provider/default",

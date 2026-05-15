@@ -53,9 +53,13 @@ const OPENAI_MODEL_HINTS = [
 
 const GLM_MODEL_HINTS = [
   "zai-coding-plan/glm-5.1",
+  "zai-coding-plan/glm-5",
+  "zai-coding-plan/glm-4.7-flash",
+  "zai-coding-plan/glm-4.5-flash",
   "zai/glm-5.1",
   "zai/glm-5",
   "zai/glm-4.7-flash",
+  "zai/glm-4.7",
   "zai/glm-4.5-flash",
   "zai/glm-4.5",
   "zai/glm-4.5-air",
@@ -221,29 +225,11 @@ async function createAdaptiveResolveConfig(opencodeConfig, scriptedAnswers) {
     return
   }
 
-  if (process.env.OPENCODE_RESOLVE_AUTO_PRESET !== "1") {
-    resolveConfig.profile = "mix"
-    delete resolveConfig.tier
-    resolveConfig.models = {}
-    resolveConfig.agents = {
-      ...resolveConfig.agents,
-      codex: { ...(resolveConfig.agents?.codex ?? {}), enabled: true },
-      glm: { ...(resolveConfig.agents?.glm ?? {}), enabled: true },
-    }
-    await writeFile(resolveConfigPath, `${JSON.stringify(resolveConfig, null, 2)}\n`)
-    console.log(`[${packageName}] created ${resolveConfigPath} (preset: prompt-required)`)
-    console.log(`[${packageName}] model pinning was not guessed because no interactive prompt was available.`)
-    console.log(`[${packageName}] rerun setup in a TTY or edit ${resolveConfigPath} to choose GPT/GLM three-tier models.`)
-    return
-  }
-
-  // Profile selection based on detected providers
   const hasGLM = allModels.some((m) => isGLMModel(m))
   const hasGPT = allModels.some((m) => isGPTModel(m))
   const preset = buildModelPreset(currentModel, allModels)
 
   if (hasGLM && !hasGPT) {
-    // GLM only → GLM profile, silver tier (token-efficient, no deep-reviewer)
     resolveConfig.profile = "glm"
     resolveConfig.tier = "silver"
     resolveConfig.agents = {
@@ -251,20 +237,18 @@ async function createAdaptiveResolveConfig(opencodeConfig, scriptedAnswers) {
       glm: { ...(resolveConfig.agents?.glm ?? {}), enabled: true },
     }
   } else if (hasGPT && !hasGLM) {
-    // GPT only → GPT profile, gold tier (full power)
     resolveConfig.profile = "gpt"
     resolveConfig.tier = "gold"
     resolveConfig.agents = {
       ...resolveConfig.agents,
-      codex: { ...(resolveConfig.agents?.codex ?? {}), enabled: true },
+      gpt: { ...(resolveConfig.agents?.gpt ?? {}), enabled: true },
     }
   } else {
-    // Mixed or unknown provider → explicit mix profile. No tier: use DEFAULT_ENABLED.
     resolveConfig.profile = "mix"
     if (hasGLM && hasGPT) {
       resolveConfig.agents = {
         ...resolveConfig.agents,
-        codex: { ...(resolveConfig.agents?.codex ?? {}), enabled: true },
+        gpt: { ...(resolveConfig.agents?.gpt ?? {}), enabled: true },
         glm: { ...(resolveConfig.agents?.glm ?? {}), enabled: true },
       }
     }
@@ -272,6 +256,9 @@ async function createAdaptiveResolveConfig(opencodeConfig, scriptedAnswers) {
 
   if (preset && Object.keys(preset).length > 0) {
     resolveConfig.models = preset
+  } else {
+    console.log(`[${packageName}] no GPT/GLM models detected in opencode.json — agents inherit the top-level model`)
+    console.log(`[${packageName}] to configure model pinning, rerun setup in a TTY or edit ${resolveConfigPath}`)
   }
 
   await writeFile(resolveConfigPath, `${JSON.stringify(resolveConfig, null, 2)}\n`)
@@ -352,7 +339,11 @@ function buildModelPreset(currentModel, allModels = []) {
 
   // GLM / ZAI — GLM-only preset (no GPT dependency, avoids token-exhaustion errors)
   if (lower.includes("glm") || lower.includes("zai")) {
-    return buildGLMOnlyPreset(currentModel)
+    return buildGLMOnlyPreset(currentModel, glmModels)
+  }
+
+  if (lower.includes("openai/") || lower.includes("gpt")) {
+    return buildGPTOnlyPreset(currentModel, gptModels)
   }
 
   // OpenAI / GPT single-provider preset
@@ -364,8 +355,9 @@ function buildModelPreset(currentModel, allModels = []) {
   return {}
 }
 
-function buildGLMOnlyPreset(model) {
-  const tiers = chooseThreeTier(collectModelChoices([model], isGLMModel, GLM_MODEL_HINTS, false), "glm", false)
+function buildGLMOnlyPreset(model, glmModels) {
+  const models = glmModels && glmModels.length > 0 ? glmModels : [model]
+  const tiers = chooseThreeTier(models, "glm", false)
   return {
     glm: tiers.gold,
     bronze: tiers.bronze,
@@ -374,7 +366,7 @@ function buildGLMOnlyPreset(model) {
     fast: "bronze",
     strong: "gold",
     mini: "bronze",
-    coder: "silver",
+    coder: "gold",
     resolver: "gold",
     reviewer: "gold",
     "deep-reviewer": "gold",
@@ -383,8 +375,9 @@ function buildGLMOnlyPreset(model) {
   }
 }
 
-function buildGPTOnlyPreset(model) {
-  const tiers = chooseThreeTier(collectModelChoices([model], isGPTModel, OPENAI_MODEL_HINTS, false), "gpt", false)
+function buildGPTOnlyPreset(model, gptModels) {
+  const models = gptModels && gptModels.length > 0 ? gptModels : [model]
+  const tiers = chooseThreeTier(models, "gpt", false)
   return {
     gpt: tiers.gold,
     bronze: tiers.bronze,
@@ -429,12 +422,17 @@ async function buildInteractivePreset(currentModel, allModels, scriptedAnswers) 
         profile: "gpt",
         tier: "gold",
         models: buildGPTThreeTierModels(tiers),
-        agents: { codex: { enabled: true } },
+        agents: { gpt: { enabled: true } },
       }
     }
 
     if (profile === "glm") {
-      const tiers = await askThreeTier(rl, "GLM", choices.glm)
+      const useCodingPlan = await askYesNo(rl, "Use coding-plan (zai-coding-plan) instead of standard (zai)? [y/N]: ", false)
+      const glmChoices = useCodingPlan
+        ? choices.glm.map((m) => m.replace(/^zai\//, "zai-coding-plan/"))
+        : choices.glm.map((m) => m.replace(/^zai-coding-plan\//, "zai/"))
+      const deduped = unique([...glmChoices.filter((m) => isGLMModel(m)), ...GLM_MODEL_HINTS])
+      const tiers = await askThreeTier(rl, "GLM", deduped)
       return {
         label: "glm-three-tier",
         profile: "glm",
@@ -444,16 +442,16 @@ async function buildInteractivePreset(currentModel, allModels, scriptedAnswers) 
       }
     }
 
-    const useCodex = await askYesNo(rl, "Enable dedicated Codex primary agent too? [Y/n]: ", true)
+    const useGPT = await askYesNo(rl, "Enable dedicated GPT primary agent too? [Y/n]: ", true)
     const useGLM = await askYesNo(rl, "Enable dedicated GLM primary agent too? [Y/n]: ", true)
-    const gptTiers = await askThreeTier(rl, "Codex/GPT", choices.gpt)
+    const gptTiers = await askThreeTier(rl, "GPT", choices.gpt)
     const glmTiers = await askThreeTier(rl, "GLM", choices.glm)
     return {
       label: "mix-three-tier",
       profile: "mix",
       models: buildMixedThreeTierModels(gptTiers, glmTiers),
       agents: {
-        codex: { enabled: useCodex },
+        gpt: { enabled: useGPT },
         glm: { enabled: useGLM },
       },
     }
@@ -564,7 +562,7 @@ function buildGLMThreeTierModels(tiers) {
     strong: "gold",
     mini: "bronze",
     explorer: "bronze",
-    coder: "silver",
+    coder: "gold",
     resolver: "gold",
     reviewer: "gold",
     "deep-reviewer": "gold",
@@ -586,7 +584,7 @@ function chooseThreeTier(models, family, includeFallbackHints = true) {
   const choices = unique(includeFallbackHints ? [...models, ...fallback] : models)
   return {
     bronze: preferModel(choices, family === "glm" ? ["flash", "air", "mini"] : ["spark", "mini", "4o-mini"], choices[0]),
-    silver: preferModel(choices, family === "glm" ? ["5.1", "4.5"] : ["codex", "5.3", "5.2"], choices[1] ?? choices[0]),
+    silver: preferModel(choices, family === "glm" ? ["4.7", "4.5", "5"] : ["codex", "5.3", "5.2"], choices[1] ?? choices[0]),
     gold: preferModel(choices, family === "glm" ? ["5.1", "5", "4.5"] : ["5.5", "5.4", "gpt-5.3-codex"], choices[2] ?? choices[1] ?? choices[0]),
   }
 }
