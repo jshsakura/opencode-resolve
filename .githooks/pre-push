@@ -1,0 +1,8 @@
+#!/usr/bin/env sh
+set -eu
+
+remote_name="${1:-origin}"
+remote_url="${2:-}"
+
+echo "[opencode-resolve] pre-push to ${remote_name} ${remote_url}: full release gate"
+npm run prepush

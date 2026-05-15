@@ -30,9 +30,13 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "coverage": "npm run build && node --experimental-test-coverage --test-coverage-lines=79 --test-coverage-branches=69 --test-coverage-functions=85 --test test/*.mjs",
+    "hooks:install": "node scripts/install-git-hooks.mjs",
     "install:local": "npm run build && node scripts/install-local.mjs",
     "postinstall": "node scripts/postinstall.mjs",
     "prepack": "npm test",
+    "precommit": "npm run typecheck && npm test && npm run coverage",
+    "prepush": "npm run precommit && npm pack --dry-run",
     "test": "npm run build && node --test test/*.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },

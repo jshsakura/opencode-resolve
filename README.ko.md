@@ -875,11 +875,19 @@ opencode plugin opencode-resolve --global --force
 
 ```sh
 npm install
+npm run hooks:install
 npm test
 npm run install:local
 ```
 
 `install:local`은 플러그인을 빌드하고, OpenCode 전역 플러그인 디렉토리에 링크하며, `~/.config/opencode/resolve.json`이 없으면 생성합니다.
+
+`hooks:install`은 이 checkout의 `core.hooksPath`를 `.githooks`로 설정합니다. 추적되는 훅은 의도적으로 빡세게 동작합니다:
+
+| 훅 | 게이트 |
+|---|---|
+| `pre-commit` | `npm run typecheck`, `npm test`, `npm run coverage` |
+| `pre-push` | 전체 `pre-commit` 게이트와 `npm pack --dry-run`을 통과해야 원격에 반영 |
 
 수동 로컬 설치:
 
@@ -900,6 +908,7 @@ ln -sf "$PWD/dist/index.js" ~/.config/opencode/plugins/opencode-resolve.js
 ```sh
 npm run typecheck
 npm test
+npm run coverage
 npm run build
 ```
 
@@ -910,6 +919,7 @@ npm run build
 ```sh
 npm run typecheck
 npm test
+npm run coverage
 npm audit --audit-level=moderate
 npm publish --dry-run
 ```

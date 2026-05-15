@@ -875,11 +875,19 @@ From this repository:
 
 ```sh
 npm install
+npm run hooks:install
 npm test
 npm run install:local
 ```
 
 `install:local` builds the plugin, links it into the OpenCode global plugin directory, and creates `~/.config/opencode/resolve.json` if it does not exist.
+
+`hooks:install` sets this checkout's `core.hooksPath` to `.githooks`. The tracked hooks are intentionally strict:
+
+| Hook | Gate |
+|---|---|
+| `pre-commit` | `npm run typecheck`, `npm test`, `npm run coverage` |
+| `pre-push` | full `pre-commit` gate plus `npm pack --dry-run` before anything reaches the remote |
 
 Manual local install:
 
@@ -900,6 +908,7 @@ Run the normal checks:
 ```sh
 npm run typecheck
 npm test
+npm run coverage
 npm run build
 ```
 
@@ -910,6 +919,7 @@ Before publishing:
 ```sh
 npm run typecheck
 npm test
+npm run coverage
 npm audit --audit-level=moderate
 npm publish --dry-run
 ```
