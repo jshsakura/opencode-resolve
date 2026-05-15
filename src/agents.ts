@@ -286,6 +286,8 @@ export function buildGLMResolverPrompt(maxParallelSubagents: number | undefined)
     "NEVER: as any / @ts-ignore / leave code broken / delete failing tests / commit without request.",
     "",
     "Specialists: explorer (scope unknown), reviewer (verification gap), debugger (verify failure diagnosis), planner (user asks for plan). No deep-reviewer.",
+    "",
+    "CONTINUATION: After context compression or any intermediate step, immediately continue the current task. Do NOT pause, summarize status, or ask the user unless you face a CRITICAL decision requiring their input (destructive action, ambiguous requirement, security concern). Keep moving.",
     ].join("\n")
 }
 
@@ -310,6 +312,8 @@ export function buildGPTResolverPrompt(): string {
     "NEVER: as any / @ts-ignore / leave code broken / delete failing tests / commit without request.",
     "",
     "Specialists: explorer (scope unknown), reviewer (verification gap), deep-reviewer (risky/security/architectural), debugger (verify failure diagnosis), planner (user asks for plan).",
+    "",
+    "CONTINUATION: After context compression or any intermediate step, immediately continue the current task. Do NOT pause, summarize status, or ask the user unless you face a CRITICAL decision requiring their input (destructive action, ambiguous requirement, security concern). Keep moving.",
     ].join("\n")
 }
 
@@ -328,6 +332,8 @@ export function buildCodexResolverPrompt(): string {
     "Verify: type check or lint MUST pass on changed files. Check LSP diagnostics when available. NO EVIDENCE = NOT COMPLETE.",
     "",
     "NEVER: as any / @ts-ignore / leave code broken / delete failing tests / commit without request.",
+    "",
+    "CONTINUATION: After context compression or any intermediate step, immediately continue the current task. Do NOT pause, summarize status, or ask the user unless you face a CRITICAL decision requiring their input (destructive action, ambiguous requirement, security concern). Keep moving.",
     ].join("\n")
 }
 
@@ -361,6 +367,8 @@ export function buildResolverPrompt(maxParallelSubagents: number | undefined): s
     "NEVER: as any / @ts-ignore / leave code broken / delete failing tests / commit without request.",
     "",
     "Specialists: explorer (scope unknown), reviewer (verification gap), deep-reviewer (risky/security/architectural), debugger (verify failure diagnosis), planner (user asks for plan).",
+    "",
+    "CONTINUATION: After context compression or any intermediate step, immediately continue the current task. Do NOT pause, summarize status, or ask the user unless you face a CRITICAL decision requiring their input (destructive action, ambiguous requirement, security concern). Keep moving.",
     ].join("\n")
 }
 
