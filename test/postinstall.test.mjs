@@ -11,7 +11,7 @@ test("postinstall creates OpenCode config and resolve config", async () => {
   const configHome = await mkdtemp(join(tmpdir(), "opencode-resolve-postinstall-"))
 
   try {
-    runPostinstall(configHome)
+    const { stdout } = runPostinstall(configHome)
 
     const opencodeConfig = await readJson(join(configHome, "opencode.json"))
     const resolveConfig = await readJson(join(configHome, "resolve.json"))
@@ -25,6 +25,9 @@ test("postinstall creates OpenCode config and resolve config", async () => {
     assert.equal(resolveConfig.maxParallelSubagents, undefined)
     // No opencode model => models stays empty (inherited preset)
     assert.deepEqual(resolveConfig.models, {})
+    assert.equal(resolveConfig.agents.codex.enabled, true)
+    assert.equal(resolveConfig.agents.glm.enabled, true)
+    assert.match(stdout, /prompt-required/)
   } finally {
     await rm(configHome, { recursive: true, force: true })
   }
@@ -38,7 +41,7 @@ test("postinstall adds plugin without duplicating existing entries", async () =>
       plugin: ["@tarquinen/opencode-dcp@3.0.4", ["opencode-resolve", { commands: true }]],
     })
 
-    runPostinstall(configHome)
+    runPostinstall(configHome, { OPENCODE_RESOLVE_AUTO_PRESET: "1" })
 
     const opencodeConfig = await readJson(join(configHome, "opencode.json"))
     assert.deepEqual(opencodeConfig.plugin, ["@tarquinen/opencode-dcp@3.0.4", ["opencode-resolve", { commands: true }]])
@@ -58,7 +61,7 @@ test("postinstall migrates an existing resolve.json by adding only missing top-l
     }
     await writeJson(join(configHome, "resolve.json"), existing)
 
-    runPostinstall(configHome)
+    runPostinstall(configHome, { OPENCODE_RESOLVE_AUTO_PRESET: "1" })
 
     const migrated = await readJson(join(configHome, "resolve.json"))
     assert.deepEqual(migrated.enabled, ["coder", "reviewer"], "user enabled list preserved")
@@ -81,7 +84,7 @@ test("postinstall is a no-op on an already-up-to-date resolve.json", async () =>
     }
     await writeJson(join(configHome, "resolve.json"), existing)
 
-    runPostinstall(configHome)
+    runPostinstall(configHome, { OPENCODE_RESOLVE_AUTO_PRESET: "1" })
 
     const migrated = await readJson(join(configHome, "resolve.json"))
     assert.deepEqual(migrated, existing)
@@ -110,18 +113,23 @@ test("postinstall creates GPT-only preset when opencode model is openai/gpt-*", 
       model: "openai/gpt-4o",
     })
 
-    runPostinstall(configHome)
+    runPostinstall(configHome, { OPENCODE_RESOLVE_AUTO_PRESET: "1" })
 
     const resolveConfig = await readJson(join(configHome, "resolve.json"))
 
     assert.equal(resolveConfig.models.gpt, "openai/gpt-4o")
-    assert.equal(resolveConfig.models.fast, "gpt")
-    assert.equal(resolveConfig.models.strong, "gpt")
-    assert.equal(resolveConfig.models.coder, "gpt")
-    assert.equal(resolveConfig.models.resolver, "gpt")
-    assert.equal(resolveConfig.models.reviewer, "gpt")
-    assert.equal(resolveConfig.models["deep-reviewer"], "gpt")
-    assert.equal(resolveConfig.models.explorer, "gpt")
+    assert.equal(resolveConfig.models.bronze, "openai/gpt-4o")
+    assert.equal(resolveConfig.models.silver, "openai/gpt-4o")
+    assert.equal(resolveConfig.models.gold, "openai/gpt-4o")
+    assert.equal(resolveConfig.models.fast, "bronze")
+    assert.equal(resolveConfig.models.strong, "gold")
+    assert.equal(resolveConfig.models.codex, "gold")
+    assert.equal(resolveConfig.models.coder, "silver")
+    assert.equal(resolveConfig.models.resolver, "gold")
+    assert.equal(resolveConfig.models.reviewer, "gold")
+    assert.equal(resolveConfig.models["deep-reviewer"], "gold")
+    assert.equal(resolveConfig.models.explorer, "bronze")
+    assert.equal(resolveConfig.agents.codex.enabled, true)
     // GPT profile and tier set automatically
     assert.equal(resolveConfig.profile, "gpt")
     assert.equal(resolveConfig.tier, "gold")
@@ -143,7 +151,7 @@ test("postinstall creates explicit mixed preset when GLM and GPT models are both
       },
     })
 
-    runPostinstall(configHome)
+    runPostinstall(configHome, { OPENCODE_RESOLVE_AUTO_PRESET: "1" })
 
     const resolveConfig = await readJson(join(configHome, "resolve.json"))
 
@@ -151,12 +159,20 @@ test("postinstall creates explicit mixed preset when GLM and GPT models are both
     assert.equal(resolveConfig.tier, undefined)
     assert.equal(resolveConfig.models.glm, "zai-coding-plan/glm-5.1")
     assert.equal(resolveConfig.models.gpt, "openai/gpt-5.5")
+    assert.equal(resolveConfig.models["glm-bronze"], "zai-coding-plan/glm-5.1")
+    assert.equal(resolveConfig.models["glm-silver"], "zai-coding-plan/glm-5.1")
+    assert.equal(resolveConfig.models["glm-gold"], "zai-coding-plan/glm-5.1")
+    assert.equal(resolveConfig.models["gpt-bronze"], "openai/gpt-5.5")
+    assert.equal(resolveConfig.models["gpt-silver"], "openai/gpt-5.5")
+    assert.equal(resolveConfig.models["gpt-gold"], "openai/gpt-5.5")
     assert.equal(resolveConfig.models.explorer, "bronze")
     assert.equal(resolveConfig.models.coder, "silver")
     assert.equal(resolveConfig.models.resolver, "gold")
     assert.equal(resolveConfig.models.reviewer, "gold")
     assert.equal(resolveConfig.models["deep-reviewer"], "gold")
     assert.equal(resolveConfig.models.planner, "gold")
+    assert.equal(resolveConfig.agents.codex.enabled, true)
+    assert.equal(resolveConfig.agents.glm.enabled, true)
   } finally {
     await rm(configHome, { recursive: true, force: true })
   }
@@ -170,25 +186,29 @@ test("postinstall creates GLM-only preset when opencode model is glm", async () 
       model: "zai-coding-plan/glm-5.1",
     })
 
-    runPostinstall(configHome)
+    runPostinstall(configHome, { OPENCODE_RESOLVE_AUTO_PRESET: "1" })
 
     const resolveConfig = await readJson(join(configHome, "resolve.json"))
 
     assert.equal(resolveConfig.models.glm, "zai-coding-plan/glm-5.1")
-    // GLM-only: no GPT dependency — all agents use GLM
-    assert.equal(resolveConfig.models.fast, "glm")
-    assert.equal(resolveConfig.models.strong, "glm")
-    assert.equal(resolveConfig.models.coder, "glm")
-    assert.equal(resolveConfig.models.resolver, "glm")
-    assert.equal(resolveConfig.models.reviewer, "glm")
-    assert.equal(resolveConfig.models["deep-reviewer"], "glm")
-    assert.equal(resolveConfig.models.explorer, "fast")
-    assert.equal(resolveConfig.models.planner, "glm")
+    // GLM-only: no GPT dependency — GLM fills all three tiers
+    assert.equal(resolveConfig.models.bronze, "zai-coding-plan/glm-5.1")
+    assert.equal(resolveConfig.models.silver, "zai-coding-plan/glm-5.1")
+    assert.equal(resolveConfig.models.gold, "zai-coding-plan/glm-5.1")
+    assert.equal(resolveConfig.models.fast, "bronze")
+    assert.equal(resolveConfig.models.strong, "gold")
+    assert.equal(resolveConfig.models.coder, "silver")
+    assert.equal(resolveConfig.models.resolver, "gold")
+    assert.equal(resolveConfig.models.reviewer, "gold")
+    assert.equal(resolveConfig.models["deep-reviewer"], "gold")
+    assert.equal(resolveConfig.models.explorer, "bronze")
+    assert.equal(resolveConfig.models.planner, "gold")
     // No GPT key at all
     assert.equal(resolveConfig.models.gpt, undefined)
     // GLM profile and tier set automatically
     assert.equal(resolveConfig.profile, "glm")
     assert.equal(resolveConfig.tier, "silver")
+    assert.equal(resolveConfig.agents.glm.enabled, true)
   } finally {
     await rm(configHome, { recursive: true, force: true })
   }
@@ -202,15 +222,19 @@ test("postinstall creates GLM-only preset for zai model variant", async () => {
       model: "zai/glm-4",
     })
 
-    runPostinstall(configHome)
+    runPostinstall(configHome, { OPENCODE_RESOLVE_AUTO_PRESET: "1" })
 
     const resolveConfig = await readJson(join(configHome, "resolve.json"))
     assert.equal(resolveConfig.models.glm, "zai/glm-4")
-    // GLM-only: all agents point to the user's configured GLM model, no GPT key
-    assert.equal(resolveConfig.models.resolver, "glm")
+    // GLM-only: all three tiers use the user's configured GLM model, no GPT key
+    assert.equal(resolveConfig.models.bronze, "zai/glm-4")
+    assert.equal(resolveConfig.models.silver, "zai/glm-4")
+    assert.equal(resolveConfig.models.gold, "zai/glm-4")
+    assert.equal(resolveConfig.models.resolver, "gold")
     assert.equal(resolveConfig.models.gpt, undefined)
     assert.equal(resolveConfig.profile, "glm")
     assert.equal(resolveConfig.tier, "silver")
+    assert.equal(resolveConfig.agents.glm.enabled, true)
   } finally {
     await rm(configHome, { recursive: true, force: true })
   }
@@ -235,14 +259,18 @@ test("postinstall qualifies provider model keys before building mixed preset", a
       },
     })
 
-    runPostinstall(configHome)
+    runPostinstall(configHome, { OPENCODE_RESOLVE_AUTO_PRESET: "1" })
 
     const resolveConfig = await readJson(join(configHome, "resolve.json"))
     assert.equal(resolveConfig.profile, "mix")
     assert.equal(resolveConfig.models.glm, "zai/glm-4.7-flash")
     assert.equal(resolveConfig.models.gpt, "openai/gpt-5.5")
+    assert.equal(resolveConfig.models["glm-bronze"], "zai/glm-4.7-flash")
+    assert.equal(resolveConfig.models["gpt-gold"], "openai/gpt-5.5")
     assert.equal(resolveConfig.models.coder, "silver")
     assert.equal(resolveConfig.models.resolver, "gold")
+    assert.equal(resolveConfig.agents.codex.enabled, true)
+    assert.equal(resolveConfig.agents.glm.enabled, true)
   } finally {
     await rm(configHome, { recursive: true, force: true })
   }
@@ -256,7 +284,7 @@ test("postinstall keeps models empty for unknown provider", async () => {
       model: "anthropic/claude-sonnet-4",
     })
 
-    runPostinstall(configHome)
+    runPostinstall(configHome, { OPENCODE_RESOLVE_AUTO_PRESET: "1" })
 
     const resolveConfig = await readJson(join(configHome, "resolve.json"))
     assert.deepEqual(resolveConfig.models, {})
@@ -280,7 +308,7 @@ test("postinstall preserves existing resolve.json regardless of model changes", 
     }
     await writeJson(join(configHome, "resolve.json"), existing)
 
-    runPostinstall(configHome)
+    runPostinstall(configHome, { OPENCODE_RESOLVE_AUTO_PRESET: "1" })
 
     const migrated = await readJson(join(configHome, "resolve.json"))
     assert.deepEqual(migrated.enabled, ["coder"], "user enabled list preserved")
@@ -304,11 +332,113 @@ test("postinstall detects model from agent config when top-level model absent", 
       },
     })
 
-    runPostinstall(configHome)
+    runPostinstall(configHome, { OPENCODE_RESOLVE_AUTO_PRESET: "1" })
 
     const resolveConfig = await readJson(join(configHome, "resolve.json"))
     assert.equal(resolveConfig.models.gpt, "openai/gpt-5-mini")
-    assert.equal(resolveConfig.models.coder, "gpt")
+    assert.equal(resolveConfig.models.bronze, "openai/gpt-5-mini")
+    assert.equal(resolveConfig.models.silver, "openai/gpt-5-mini")
+    assert.equal(resolveConfig.models.gold, "openai/gpt-5-mini")
+    assert.equal(resolveConfig.models.coder, "silver")
+    assert.equal(resolveConfig.agents.codex.enabled, true)
+  } finally {
+    await rm(configHome, { recursive: true, force: true })
+  }
+})
+
+test("postinstall can force the interactive mix three-tier prompt", async () => {
+  const configHome = await mkdtemp(join(tmpdir(), "opencode-resolve-postinstall-"))
+
+  try {
+    await writeJson(join(configHome, "opencode.json"), {
+      provider: {
+        zai: {
+          models: {
+            "glm-4.7-flash": {},
+            "glm-5.1": {},
+          },
+        },
+        openai: {
+          models: {
+            "gpt-5.3-codex-spark": {},
+            "gpt-5.3-codex": {},
+            "gpt-5.5": {},
+          },
+        },
+      },
+    })
+
+    const { stdout } = runPostinstall(
+      configHome,
+      { OPENCODE_RESOLVE_FORCE_PROMPT: "1" },
+      [
+        "1", // mix
+        "y", // enable codex primary
+        "y", // enable glm primary
+        "1", "2", "3", // GPT/Codex bronze/silver/gold
+        "1", "2", "2", // GLM bronze/silver/gold
+      ].join("\n") + "\n",
+    )
+
+    const resolveConfig = await readJson(join(configHome, "resolve.json"))
+    assert.match(stdout, /Enable dedicated Codex primary agent/)
+    assert.match(stdout, /Pick Codex\/GPT bronze\/scout/)
+    assert.match(stdout, /Pick GLM gold\/reasoner/)
+    assert.equal(resolveConfig.profile, "mix")
+    assert.equal(resolveConfig.agents.codex.enabled, true)
+    assert.equal(resolveConfig.agents.glm.enabled, true)
+    assert.equal(resolveConfig.models["gpt-bronze"], "openai/gpt-5.3-codex-spark")
+    assert.equal(resolveConfig.models["gpt-silver"], "openai/gpt-5.3-codex")
+    assert.equal(resolveConfig.models["gpt-gold"], "openai/gpt-5.5")
+    assert.equal(resolveConfig.models["glm-bronze"], "zai/glm-4.7-flash")
+    assert.equal(resolveConfig.models["glm-silver"], "zai/glm-5.1")
+    assert.equal(resolveConfig.models["glm-gold"], "zai/glm-5.1")
+    assert.equal(resolveConfig.models.coder, "silver")
+    assert.equal(resolveConfig.models.planner, "gold")
+  } finally {
+    await rm(configHome, { recursive: true, force: true })
+  }
+})
+
+test("postinstall can force the interactive GPT three-tier prompt", async () => {
+  const configHome = await mkdtemp(join(tmpdir(), "opencode-resolve-postinstall-"))
+
+  try {
+    const { stdout } = runPostinstall(
+      configHome,
+      { OPENCODE_RESOLVE_FORCE_PROMPT: "1" },
+      ["2", "", "", ""].join("\n") + "\n",
+    )
+
+    const resolveConfig = await readJson(join(configHome, "resolve.json"))
+    assert.match(stdout, /GPT\/Codex model choices/)
+    assert.equal(resolveConfig.profile, "gpt")
+    assert.equal(resolveConfig.tier, "gold")
+    assert.equal(resolveConfig.agents.codex.enabled, true)
+    assert.equal(resolveConfig.models.coder, "silver")
+    assert.equal(resolveConfig.models.planner, "gold")
+  } finally {
+    await rm(configHome, { recursive: true, force: true })
+  }
+})
+
+test("postinstall can force the interactive GLM three-tier prompt", async () => {
+  const configHome = await mkdtemp(join(tmpdir(), "opencode-resolve-postinstall-"))
+
+  try {
+    const { stdout } = runPostinstall(
+      configHome,
+      { OPENCODE_RESOLVE_FORCE_PROMPT: "1" },
+      ["3", "", "", ""].join("\n") + "\n",
+    )
+
+    const resolveConfig = await readJson(join(configHome, "resolve.json"))
+    assert.match(stdout, /GLM model choices/)
+    assert.equal(resolveConfig.profile, "glm")
+    assert.equal(resolveConfig.tier, "gold")
+    assert.equal(resolveConfig.agents.glm.enabled, true)
+    assert.equal(resolveConfig.models.coder, "silver")
+    assert.equal(resolveConfig.models.planner, "gold")
   } finally {
     await rm(configHome, { recursive: true, force: true })
   }
@@ -468,9 +598,10 @@ test("postinstall does not copy ZAI API key from env into config", async () => {
   }
 })
 
-function runPostinstall(configHome, env = {}) {
+function runPostinstall(configHome, env = {}, input = undefined) {
   const result = spawnSync(process.execPath, [script.pathname], {
     encoding: "utf8",
+    input,
     env: {
       ...process.env,
       OPENCODE_CONFIG_HOME: configHome,

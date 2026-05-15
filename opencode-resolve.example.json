@@ -14,6 +14,9 @@
     "resolver": {
       "enabled": true
     },
+    "codex": {
+      "enabled": false
+    },
     "explorer": {
       "enabled": true,
       "mode": "subagent"

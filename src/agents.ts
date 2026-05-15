@@ -6,6 +6,7 @@ export const VALID_AGENT_NAMES = [
       "coder",
       "reviewer",
       "resolver",
+      "codex",
       "glm",
       "architect",
       "gpt-coder",
@@ -68,6 +69,18 @@ export const DEFAULT_AGENT_CONFIG: Record<ResolveAgentName, Required<Pick<Resolv
         maxSteps: 30,
         description: "Primary orchestrator in the fixed-role verified loop (resolver→coder). Decomposes work into verified checkpoints, dispatches coder, verifies each, and carries forward progress. Internal subagents (explorer, reviewer, deep-reviewer) are available by default but dispatched only when justified.",
         prompt: buildResolverPrompt(undefined),
+        permission: {
+          edit: "allow",
+          bash: "ask",
+          webfetch: "allow",
+        },
+      },
+      codex: {
+        mode: "all",
+        color: "#FFB347",
+        maxSteps: 35,
+        description: "Codex-optimized primary resolver for agentic coding work. Use when a Codex-style OpenAI coding model is pinned and you want a dedicated user-facing route separate from the neutral resolver.",
+        prompt: buildCodexResolverPrompt(),
         permission: {
           edit: "allow",
           bash: "ask",
@@ -287,6 +300,24 @@ export function buildGPTResolverPrompt(): string {
     ].join("\n")
 }
 
+export function buildCodexResolverPrompt(): string {
+    return [
+    "You are Codex Resolver, the OpenAI Codex-optimized primary agent for OpenCode Resolve.",
+    "Use Codex-style software engineering judgment: inspect narrowly, patch directly when trivial, dispatch focused coders when parallel work is useful, and verify before reporting.",
+    "",
+    "Prefer coder for implementation slices, explorer for quick scope discovery, reviewer for verification gaps, deep-reviewer for risky/security/architecture changes, debugger for verify failure diagnosis, planner only when the user asks for a plan.",
+    "Dispatch coder with: TASK (atomic goal), OUTCOME (success criteria), MUST DO, MUST NOT DO, CONTEXT (files/patterns).",
+    "After EVERY coder return: verify it works + follows codebase patterns. If not → re-dispatch with precise fix.",
+    "INTELLIGENT RECOVERY: On verify failure, dispatch debugger FIRST to diagnose root cause, THEN re-dispatch coder with precise fix. Do NOT blindly retry.",
+    "Trivial fixes → apply yourself. No subagent needed.",
+    "3 consecutive failures → STOP, REVERT, REPORT, ASK user.",
+    "",
+    "Verify: type check or lint MUST pass on changed files. Check LSP diagnostics when available. NO EVIDENCE = NOT COMPLETE.",
+    "",
+    "NEVER: as any / @ts-ignore / leave code broken / delete failing tests / commit without request.",
+    ].join("\n")
+}
+
 export function buildResolverPrompt(maxParallelSubagents: number | undefined): string {
     const explicitLimit = typeof maxParallelSubagents === "number" && Number.isFinite(maxParallelSubagents)
               ? Math.max(1, Math.trunc(maxParallelSubagents))
@@ -333,16 +364,22 @@ export const VALID_MODEL_ALIASES = [
       "bronze",
       "silver",
       "gold",
+      "gpt-bronze",
+      "gpt-silver",
+      "gpt-gold",
+      "glm-bronze",
+      "glm-silver",
+      "glm-gold",
     ] as const;
 export const VALID_MODEL_ALIAS_SET = new Set<string>(VALID_MODEL_ALIASES);
 export const VALID_PROFILES = new Set<string>(["mix", "glm", "gpt"]);
 export const VALID_TIERS = new Set<string>(["bronze", "silver", "gold"]);
-export const GLM_ENABLED: ResolveAgentName[] = ["coder", "resolver", "explorer", "reviewer", "planner"];
-export const GPT_ENABLED: ResolveAgentName[] = ["coder", "resolver", "explorer", "reviewer", "deep-reviewer", "planner"];
+export const GLM_ENABLED: ResolveAgentName[] = ["coder", "resolver", "glm", "explorer", "reviewer", "planner"];
+export const GPT_ENABLED: ResolveAgentName[] = ["coder", "resolver", "codex", "explorer", "reviewer", "deep-reviewer", "planner"];
 export const TIER_ENABLED: Record<TierName, ResolveAgentName[]> = {
       bronze: ["coder", "resolver"],
       silver: ["coder", "resolver", "explorer", "reviewer", "planner"],
-      gold: ["coder", "resolver", "explorer", "reviewer", "deep-reviewer", "planner", "debugger", "researcher"],
+      gold: ["coder", "resolver", "codex", "glm", "explorer", "reviewer", "deep-reviewer", "planner", "debugger", "researcher"],
     };
 export const GLM_AGENT_OVERRIDES: Partial<Record<ResolveAgentName, { maxSteps?: number; description?: string }>> = {
       coder: { maxSteps: 15 },
@@ -354,6 +391,7 @@ export const GLM_AGENT_OVERRIDES: Partial<Record<ResolveAgentName, { maxSteps?: 
 export const GPT_AGENT_OVERRIDES: Partial<Record<ResolveAgentName, { maxSteps?: number; description?: string }>> = {
       coder: { maxSteps: 25 },
       resolver: { maxSteps: 40 },
+      codex: { maxSteps: 40 },
       explorer: { maxSteps: 8 },
       reviewer: { maxSteps: 10 },
       "deep-reviewer": { maxSteps: 15 },

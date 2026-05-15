@@ -2,6 +2,7 @@ export type PermissionValue = "ask" | "allow" | "deny";
 export type ResolveAgentName = | "coder"
       | "reviewer"
       | "resolver"
+      | "codex"
       | "glm"
       | "architect"
       | "gpt-coder"
@@ -21,7 +22,13 @@ export type ModelAlias = | ResolveAgentName
       | "codex"
       | "bronze"
       | "silver"
-      | "gold";
+      | "gold"
+      | "gpt-bronze"
+      | "gpt-silver"
+      | "gpt-gold"
+      | "glm-bronze"
+      | "glm-silver"
+      | "glm-gold";
 export type AgentMode = "subagent" | "primary" | "all";
 export type ResolveAgentConfig = {
       enabled?: boolean

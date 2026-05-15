@@ -42,10 +42,20 @@ async function createAdaptiveResolveConfig() {
     // opencode.json not found or unreadable — use empty config
   }
 
-  const currentModel = detectOpenCodeModel(opencodeConfig)
-  const preset = buildModelPreset(currentModel)
-
   const resolveConfig = { ...example }
+  let preset = {}
+  if (process.env.OPENCODE_RESOLVE_AUTO_PRESET === "1") {
+    const currentModel = detectOpenCodeModel(opencodeConfig)
+    preset = buildModelPreset(currentModel)
+  } else {
+    resolveConfig.profile = "mix"
+    resolveConfig.models = {}
+    resolveConfig.agents = {
+      ...resolveConfig.agents,
+      codex: { ...(resolveConfig.agents?.codex ?? {}), enabled: true },
+      glm: { ...(resolveConfig.agents?.glm ?? {}), enabled: true },
+    }
+  }
   if (preset && Object.keys(preset).length > 0) {
     resolveConfig.models = preset
   }
@@ -53,7 +63,9 @@ async function createAdaptiveResolveConfig() {
   await mkdir(configDir, { recursive: true })
   await writeFile(resolveConfigPath, `${JSON.stringify(resolveConfig, null, 2)}\n`)
 
-  const label = getPresetLabel(currentModel)
+  const label = process.env.OPENCODE_RESOLVE_AUTO_PRESET === "1"
+    ? getPresetLabel(detectOpenCodeModel(opencodeConfig))
+    : "prompt-required"
   console.log(`Created ${resolveConfigPath} (preset: ${label})`)
 }
 

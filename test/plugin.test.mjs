@@ -33,6 +33,7 @@ test("injects default coder, resolver, and internal specialist subagents using t
   assert.equal(config.agent.planner.mode, "subagent")
   assert.equal(config.agent.planner.model, "provider/default-model")
   // Disabled agents remain undefined
+  assert.equal(config.agent.codex, undefined)
   assert.equal(config.agent.architect, undefined)
   assert.equal(config.agent["gpt-coder"], undefined)
   assert.equal(config.agent.debugger, undefined)
@@ -605,6 +606,19 @@ test("glm agent is registered when enabled", async () => {
   assert.equal(config.agent.glm.maxSteps, 30)
   assert.match(config.agent.glm.description, /GLM/)
   assert.match(config.agent.glm.prompt, /GLM profile/)
+})
+
+test("codex agent is registered when enabled", async () => {
+  const { config } = await runPlugin(
+    { model: "openai/gpt-5.5" },
+    undefined,
+    { agents: { codex: { enabled: true } } },
+  )
+
+  assert.equal(config.agent.codex.mode, "all")
+  assert.equal(config.agent.codex.maxSteps, 35)
+  assert.match(config.agent.codex.description, /Codex/)
+  assert.match(config.agent.codex.prompt, /Codex Resolver/)
 })
 
 test("glm agent is disabled by default", async () => {

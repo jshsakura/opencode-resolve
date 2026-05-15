@@ -41,6 +41,26 @@ const COMPANION_PLUGINS = [
   },
 ]
 
+const OPENAI_MODEL_HINTS = [
+  "openai/gpt-5.5",
+  "openai/gpt-5.4",
+  "openai/gpt-5.3-codex",
+  "openai/gpt-5.3-codex-spark",
+  "openai/gpt-5.2",
+  "openai/gpt-5-mini",
+  "openai/gpt-4o-mini",
+]
+
+const GLM_MODEL_HINTS = [
+  "zai-coding-plan/glm-5.1",
+  "zai/glm-5.1",
+  "zai/glm-5",
+  "zai/glm-4.7-flash",
+  "zai/glm-4.5-flash",
+  "zai/glm-4.5",
+  "zai/glm-4.5-air",
+]
+
 if (process.env.OPENCODE_RESOLVE_SKIP_POSTINSTALL === "1") {
   process.exit(0)
 }
@@ -104,6 +124,47 @@ async function createAdaptiveResolveConfig(opencodeConfig) {
   const currentModel = detectOpenCodeModel(opencodeConfig)
   const allModels = detectAllModels(opencodeConfig)
   const resolveConfig = { ...example }
+  const forcePrompt = process.env.OPENCODE_RESOLVE_FORCE_PROMPT === "1"
+  const canPrompt = Boolean(
+    (process.stdin.isTTY && process.stdout.isTTY) || forcePrompt,
+  )
+  const scriptedAnswers = forcePrompt && !process.stdin.isTTY
+    ? (await readAllStdin()).split(/\r?\n/)
+    : undefined
+  const interactivePreset = canPrompt
+    ? await buildInteractivePreset(currentModel, allModels, scriptedAnswers)
+    : undefined
+
+  if (interactivePreset) {
+    resolveConfig.profile = interactivePreset.profile
+    if (interactivePreset.tier) resolveConfig.tier = interactivePreset.tier
+    else delete resolveConfig.tier
+    if (interactivePreset.enabled) resolveConfig.enabled = interactivePreset.enabled
+    resolveConfig.models = interactivePreset.models
+    resolveConfig.agents = {
+      ...resolveConfig.agents,
+      ...(interactivePreset.agents ?? {}),
+    }
+    await writeFile(resolveConfigPath, `${JSON.stringify(resolveConfig, null, 2)}\n`)
+    console.log(`[${packageName}] created ${resolveConfigPath} (preset: ${interactivePreset.label})`)
+    return
+  }
+
+  if (process.env.OPENCODE_RESOLVE_AUTO_PRESET !== "1") {
+    resolveConfig.profile = "mix"
+    delete resolveConfig.tier
+    resolveConfig.models = {}
+    resolveConfig.agents = {
+      ...resolveConfig.agents,
+      codex: { ...(resolveConfig.agents?.codex ?? {}), enabled: true },
+      glm: { ...(resolveConfig.agents?.glm ?? {}), enabled: true },
+    }
+    await writeFile(resolveConfigPath, `${JSON.stringify(resolveConfig, null, 2)}\n`)
+    console.log(`[${packageName}] created ${resolveConfigPath} (preset: prompt-required)`)
+    console.log(`[${packageName}] model pinning was not guessed because no interactive prompt was available.`)
+    console.log(`[${packageName}] rerun setup in a TTY or edit ${resolveConfigPath} to choose GPT/GLM three-tier models.`)
+    return
+  }
 
   // Profile selection based on detected providers
   const hasGLM = allModels.some((m) => isGLMModel(m))
@@ -114,13 +175,28 @@ async function createAdaptiveResolveConfig(opencodeConfig) {
     // GLM only → GLM profile, silver tier (token-efficient, no deep-reviewer)
     resolveConfig.profile = "glm"
     resolveConfig.tier = "silver"
+    resolveConfig.agents = {
+      ...resolveConfig.agents,
+      glm: { ...(resolveConfig.agents?.glm ?? {}), enabled: true },
+    }
   } else if (hasGPT && !hasGLM) {
     // GPT only → GPT profile, gold tier (full power)
     resolveConfig.profile = "gpt"
     resolveConfig.tier = "gold"
+    resolveConfig.agents = {
+      ...resolveConfig.agents,
+      codex: { ...(resolveConfig.agents?.codex ?? {}), enabled: true },
+    }
   } else {
     // Mixed or unknown provider → explicit mix profile. No tier: use DEFAULT_ENABLED.
     resolveConfig.profile = "mix"
+    if (hasGLM && hasGPT) {
+      resolveConfig.agents = {
+        ...resolveConfig.agents,
+        codex: { ...(resolveConfig.agents?.codex ?? {}), enabled: true },
+        glm: { ...(resolveConfig.agents?.glm ?? {}), enabled: true },
+      }
+    }
   }
 
   if (preset && Object.keys(preset).length > 0) {
@@ -161,21 +237,33 @@ function detectOpenCodeModel(config) {
 }
 
 function buildModelPreset(currentModel, allModels = []) {
-  const glmModel = allModels.find((m) => isGLMModel(m))
-  const gptModel = allModels.find((m) => isGPTModel(m))
+  const detectedGLMModels = allModels.filter(isGLMModel)
+  const detectedGPTModels = allModels.filter(isGPTModel)
+  const glmModels = detectedGLMModels.length > 0 ? collectModelChoices(detectedGLMModels, isGLMModel, GLM_MODEL_HINTS, false) : []
+  const gptModels = detectedGPTModels.length > 0 ? collectModelChoices(detectedGPTModels, isGPTModel, OPENAI_MODEL_HINTS, false) : []
+  const glmModel = glmModels[0]
+  const gptModel = gptModels[0]
 
   if (glmModel && gptModel) {
+    const glmTiers = chooseThreeTier(glmModels, "glm", false)
+    const gptTiers = chooseThreeTier(gptModels, "gpt", false)
     return {
       mix: "gpt",
-      glm: glmModel,
-      gpt: gptModel,
-      bronze: "glm",
-      silver: "glm",
-      gold: "gpt",
-      fast: "glm",
-      strong: "gpt",
-      mini: "glm",
-      codex: "gpt",
+      gpt: gptTiers.gold,
+      bronze: glmTiers.bronze,
+      silver: glmTiers.silver,
+      gold: gptTiers.gold,
+      "glm-bronze": glmTiers.bronze,
+      "glm-silver": glmTiers.silver,
+      "glm-gold": glmTiers.gold,
+      "gpt-bronze": gptTiers.bronze,
+      "gpt-silver": gptTiers.silver,
+      "gpt-gold": gptTiers.gold,
+      fast: "bronze",
+      strong: "gold",
+      mini: "bronze",
+      codex: "gpt-gold",
+      glm: glmTiers.gold,
       explorer: "bronze",
       coder: "silver",
       resolver: "gold",
@@ -186,8 +274,6 @@ function buildModelPreset(currentModel, allModels = []) {
   }
 
   if (!currentModel) {
-    if (glmModel) return buildGLMOnlyPreset(glmModel)
-    if (gptModel) return buildGPTOnlyPreset(gptModel)
     return {}
   }
 
@@ -208,32 +294,245 @@ function buildModelPreset(currentModel, allModels = []) {
 }
 
 function buildGLMOnlyPreset(model) {
+  const tiers = chooseThreeTier(collectModelChoices([model], isGLMModel, GLM_MODEL_HINTS, false), "glm", false)
   return {
-    glm: model,
-    fast: "glm",
-    strong: "glm",
-    coder: "glm",
-    resolver: "glm",
-    reviewer: "glm",
-    "deep-reviewer": "glm",
-    explorer: "fast",
-    planner: "glm",
+    glm: tiers.gold,
+    bronze: tiers.bronze,
+    silver: tiers.silver,
+    gold: tiers.gold,
+    fast: "bronze",
+    strong: "gold",
+    mini: "bronze",
+    coder: "silver",
+    resolver: "gold",
+    reviewer: "gold",
+    "deep-reviewer": "gold",
+    explorer: "bronze",
+    planner: "gold",
   }
 }
 
 function buildGPTOnlyPreset(model) {
+  const tiers = chooseThreeTier(collectModelChoices([model], isGPTModel, OPENAI_MODEL_HINTS, false), "gpt", false)
   return {
-    gpt: model,
-    fast: "gpt",
-    strong: "gpt",
-    mini: "gpt",
-    codex: "gpt",
-    coder: "gpt",
-    resolver: "gpt",
-    explorer: "gpt",
-    reviewer: "gpt",
-    "deep-reviewer": "gpt",
+    gpt: tiers.gold,
+    bronze: tiers.bronze,
+    silver: tiers.silver,
+    gold: tiers.gold,
+    fast: "bronze",
+    strong: "gold",
+    mini: "bronze",
+    codex: "gold",
+    coder: "silver",
+    resolver: "gold",
+    explorer: "bronze",
+    reviewer: "gold",
+    "deep-reviewer": "gold",
   }
+}
+
+async function buildInteractivePreset(currentModel, allModels, scriptedAnswers) {
+  const choices = {
+    gpt: collectModelChoices(allModels, isGPTModel, OPENAI_MODEL_HINTS),
+    glm: collectModelChoices(allModels, isGLMModel, GLM_MODEL_HINTS),
+  }
+  if (currentModel) {
+    if (isGPTModel(currentModel)) choices.gpt = unique([currentModel, ...choices.gpt])
+    if (isGLMModel(currentModel)) choices.glm = unique([currentModel, ...choices.glm])
+  }
+
+  const rl = scriptedAnswers
+    ? {
+        async question(prompt) {
+          const answer = scriptedAnswers.length > 0 ? scriptedAnswers.shift() ?? "" : ""
+          process.stdout.write(prompt)
+          process.stdout.write(`${answer}\n`)
+          return answer
+        },
+        close() {},
+      }
+    : createInterface({ input: process.stdin, output: process.stdout })
+  try {
+    console.log("")
+    console.log(`[${packageName}] Choose resolve profile:`)
+    console.log("  1. mix — neutral resolver plus optional Codex and GLM primary agents")
+    console.log("  2. gpt — GPT/Codex-only, three-tier")
+    console.log("  3. glm — GLM-only, three-tier")
+    const profileAnswer = await askChoice(rl, "Profile [1=mix, 2=gpt, 3=glm, default 1]: ", ["1", "2", "3"], "1")
+    const profile = profileAnswer === "2" ? "gpt" : profileAnswer === "3" ? "glm" : "mix"
+
+    if (profile === "gpt") {
+      const tiers = await askThreeTier(rl, "GPT/Codex", choices.gpt)
+      return {
+        label: "gpt-three-tier",
+        profile: "gpt",
+        tier: "gold",
+        models: buildGPTThreeTierModels(tiers),
+        agents: { codex: { enabled: true } },
+      }
+    }
+
+    if (profile === "glm") {
+      const tiers = await askThreeTier(rl, "GLM", choices.glm)
+      return {
+        label: "glm-three-tier",
+        profile: "glm",
+        tier: "gold",
+        models: buildGLMThreeTierModels(tiers),
+        agents: { glm: { enabled: true } },
+      }
+    }
+
+    const useCodex = await askYesNo(rl, "Enable dedicated Codex primary agent too? [Y/n]: ", true)
+    const useGLM = await askYesNo(rl, "Enable dedicated GLM primary agent too? [Y/n]: ", true)
+    const gptTiers = await askThreeTier(rl, "Codex/GPT", choices.gpt)
+    const glmTiers = await askThreeTier(rl, "GLM", choices.glm)
+    return {
+      label: "mix-three-tier",
+      profile: "mix",
+      models: buildMixedThreeTierModels(gptTiers, glmTiers),
+      agents: {
+        codex: { enabled: useCodex },
+        glm: { enabled: useGLM },
+      },
+    }
+  } finally {
+    rl.close()
+  }
+}
+
+async function askThreeTier(rl, label, models) {
+  const choices = models.length > 0 ? models : (label.toLowerCase().includes("glm") ? GLM_MODEL_HINTS : OPENAI_MODEL_HINTS)
+  console.log("")
+  console.log(`[${packageName}] ${label} model choices:`)
+  choices.forEach((model, index) => console.log(`  ${index + 1}. ${model}`))
+  const defaults = chooseThreeTier(choices, label.toLowerCase().includes("glm") ? "glm" : "gpt")
+  const bronze = await askModel(rl, choices, `Pick ${label} bronze/scout [default ${defaults.bronze}]: `, defaults.bronze)
+  const silver = await askModel(rl, choices, `Pick ${label} silver/coder [default ${defaults.silver}]: `, defaults.silver)
+  const gold = await askModel(rl, choices, `Pick ${label} gold/reasoner [default ${defaults.gold}]: `, defaults.gold)
+  return { bronze, silver, gold }
+}
+
+async function askModel(rl, choices, question, defaultValue) {
+  const answer = (await rl.question(question)).trim()
+  if (!answer) return defaultValue
+  const index = Number.parseInt(answer, 10)
+  if (Number.isInteger(index) && index >= 1 && index <= choices.length) return choices[index - 1]
+  return answer
+}
+
+async function askChoice(rl, question, valid, defaultValue) {
+  const answer = (await rl.question(question)).trim().toLowerCase()
+  if (!answer) return defaultValue
+  return valid.includes(answer) ? answer : defaultValue
+}
+
+async function askYesNo(rl, question, defaultValue) {
+  const answer = (await rl.question(question)).trim().toLowerCase()
+  if (!answer) return defaultValue
+  return answer === "y" || answer === "yes"
+}
+
+function buildMixedThreeTierModels(gptTiers, glmTiers) {
+  return {
+    mix: "gpt-gold",
+    gpt: "gpt-gold",
+    glm: "glm-gold",
+    bronze: "glm-bronze",
+    silver: "glm-silver",
+    gold: "gpt-gold",
+    "gpt-bronze": gptTiers.bronze,
+    "gpt-silver": gptTiers.silver,
+    "gpt-gold": gptTiers.gold,
+    "glm-bronze": glmTiers.bronze,
+    "glm-silver": glmTiers.silver,
+    "glm-gold": glmTiers.gold,
+    fast: "bronze",
+    strong: "gold",
+    mini: "bronze",
+    codex: "gpt-gold",
+    explorer: "bronze",
+    coder: "silver",
+    resolver: "gold",
+    reviewer: "gold",
+    "deep-reviewer": "gold",
+    planner: "gold",
+  }
+}
+
+function buildGPTThreeTierModels(tiers) {
+  return {
+    gpt: "gold",
+    bronze: tiers.bronze,
+    silver: tiers.silver,
+    gold: tiers.gold,
+    fast: "bronze",
+    strong: "gold",
+    mini: "bronze",
+    codex: "gold",
+    explorer: "bronze",
+    coder: "silver",
+    resolver: "gold",
+    reviewer: "gold",
+    "deep-reviewer": "gold",
+    planner: "gold",
+  }
+}
+
+function buildGLMThreeTierModels(tiers) {
+  return {
+    glm: "gold",
+    bronze: tiers.bronze,
+    silver: tiers.silver,
+    gold: tiers.gold,
+    fast: "bronze",
+    strong: "gold",
+    mini: "bronze",
+    explorer: "bronze",
+    coder: "silver",
+    resolver: "gold",
+    reviewer: "gold",
+    "deep-reviewer": "gold",
+    planner: "gold",
+  }
+}
+
+function collectModelChoices(allModels, predicate, hints, includeFallbackHints = true) {
+  const detected = allModels.filter(predicate)
+  const providerIds = new Set(detected.map((model) => model.split("/")[0]).filter(Boolean))
+  const matchingHints = includeFallbackHints
+    ? hints.filter((model) => providerIds.size === 0 || providerIds.has(model.split("/")[0]) || detected.length < 3)
+    : []
+  return unique([...detected, ...matchingHints])
+}
+
+function chooseThreeTier(models, family, includeFallbackHints = true) {
+  const fallback = family === "glm" ? GLM_MODEL_HINTS : OPENAI_MODEL_HINTS
+  const choices = unique(includeFallbackHints ? [...models, ...fallback] : models)
+  return {
+    bronze: preferModel(choices, family === "glm" ? ["flash", "air", "mini"] : ["spark", "mini", "4o-mini"], choices[0]),
+    silver: preferModel(choices, family === "glm" ? ["5.1", "4.5"] : ["codex", "5.3", "5.2"], choices[1] ?? choices[0]),
+    gold: preferModel(choices, family === "glm" ? ["5.1", "5", "4.5"] : ["5.5", "5.4", "gpt-5.3-codex"], choices[2] ?? choices[1] ?? choices[0]),
+  }
+}
+
+function preferModel(models, needles, fallback) {
+  return models.find((model) => {
+    const lower = model.toLowerCase()
+    return needles.some((needle) => lower.includes(needle))
+  }) ?? fallback
+}
+
+function unique(values) {
+  return [...new Set(values.filter((value) => typeof value === "string" && value.length > 0))]
+}
+
+async function readAllStdin() {
+  let raw = ""
+  for await (const chunk of process.stdin) {
+    raw += chunk
+  }
+  return raw
 }
 
 function getPresetLabel(currentModel) {

@@ -191,7 +191,7 @@ config: async (config: any) => {
         output.temperature = capTemperature(output.temperature, 0.3)
       }
       // Write agents: slightly higher temperature for creative problem-solving
-      const writeAgents = new Set(["coder", "resolver", "glm", "gpt-coder"])
+      const writeAgents = new Set(["coder", "resolver", "codex", "glm", "gpt-coder"])
       if (writeAgents.has(input.agent) && output.temperature === undefined) {
         output.temperature = 0.5
       }

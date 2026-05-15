@@ -47,7 +47,7 @@ export function applyResolveConfig(config, resolveConfig, projectContext) {
                     agentConfig.prompt = buildResolverPrompt(maxParallelSubagents);
             }
             // Inject project context into all resolver-type agents
-            if ((name === "resolver" || name === "glm") && contextInjection) {
+            if ((name === "resolver" || name === "codex" || name === "glm") && contextInjection) {
                 agentConfig.prompt = agentConfig.prompt + "\n\n" + contextInjection;
             }
             // Inject verify commands into coder prompts
@@ -153,7 +153,13 @@ export function mergeAgents(left, right) {
 export function resolveModel(model, models) {
     if (!model)
         return undefined;
-    return models[model] ?? model;
+    let current = model;
+    const seen = new Set();
+    while (models[current] !== undefined && !seen.has(current)) {
+        seen.add(current);
+        current = models[current] ?? current;
+    }
+    return current;
 }
 export function buildPermission(basePermission, userPermission) {
     const merged = {

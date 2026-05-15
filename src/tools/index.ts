@@ -6,7 +6,7 @@ import { classifyBashCommand, runCommand, sanitizeShellArg, truncateOutput } fro
 import { SessionState, DIAGNOSTICS_TTL_MS } from "../state.js";
 import { VALID_PROFILES, VALID_TIERS, VALID_AGENT_NAME_SET, VALID_AGENT_NAMES } from "../agents.js";
 
-const WRITE_CAPABLE_AGENTS = new Set(["resolver", "coder", "glm", "gpt-coder", "debugger"]);
+const WRITE_CAPABLE_AGENTS = new Set(["resolver", "codex", "coder", "glm", "gpt-coder", "debugger"]);
 
 function canWriteFromTool(ctx: { agent?: string }): boolean {
   return typeof ctx.agent !== "string" || WRITE_CAPABLE_AGENTS.has(ctx.agent)

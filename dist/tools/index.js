@@ -5,7 +5,7 @@ import { writeFileSync, mkdirSync } from "node:fs";
 import { classifyBashCommand, runCommand, sanitizeShellArg, truncateOutput } from "../utils.js";
 import { DIAGNOSTICS_TTL_MS } from "../state.js";
 import { VALID_PROFILES, VALID_TIERS, VALID_AGENT_NAME_SET, VALID_AGENT_NAMES } from "../agents.js";
-const WRITE_CAPABLE_AGENTS = new Set(["resolver", "coder", "glm", "gpt-coder", "debugger"]);
+const WRITE_CAPABLE_AGENTS = new Set(["resolver", "codex", "coder", "glm", "gpt-coder", "debugger"]);
 function canWriteFromTool(ctx) {
     return typeof ctx.agent !== "string" || WRITE_CAPABLE_AGENTS.has(ctx.agent);
 }

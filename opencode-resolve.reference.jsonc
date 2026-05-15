@@ -119,9 +119,12 @@
   // -----------------------------------------------------------------------
   // models (object)
   // Alias map. Keys are either an agent name (coder, reviewer, resolver,
-  // architect, gpt-coder, debugger, researcher, explorer, deep-reviewer)
+  // codex, glm, architect, gpt-coder, debugger, researcher, explorer,
+  // deep-reviewer, planner)
   // OR one of the well-known aliases (`glm`, `gpt`, `quick`, `deep`,
-  // `fast`, `strong`, `mini`, `codex`).
+  // `fast`, `strong`, `mini`, `codex`, `bronze`, `silver`, `gold`,
+  // `gpt-bronze`, `gpt-silver`, `gpt-gold`, `glm-bronze`, `glm-silver`,
+  // `glm-gold`).
   // Values are model identifiers OR another alias.
   //
   // Resolution order for a given agent:
@@ -137,9 +140,12 @@
   // When resolve.json is created for the first time by postinstall, the
   // plugin inspects your OpenCode model config and writes an adaptive
   // preset:
-  //   - GLM/ZAI detected → GLM-only aliases (no GPT dependency)
-  //   - OpenAI/GPT detected → single-provider GPT aliases using your model
-  //   - Other or no model → empty (model-neutral inheritance)
+  //   - interactive terminal → always prompts for mix/gpt/glm, three-tier models,
+  //     and optional dedicated codex/glm primary agents
+  //   - non-interactive install → no guessed model pinning; profile mix,
+  //     models {}, and resolver/codex/glm primary routes enabled
+  //   - OPENCODE_RESOLVE_AUTO_PRESET=1 → legacy non-interactive
+  //     provider-adapted presets
   // Existing resolve.json files are never overwritten. Delete resolve.json
   // and reinstall to regenerate the preset.
   //
@@ -154,19 +160,22 @@
   //     "resolver": "strong"
   //   }
   //
-  // Example — GLM-only preset (auto-generated for GLM/ZAI users):
-  //   All agents use GLM — no GPT dependency, so token exhaustion on
+  // Example — GLM-only three-tier preset (auto-generated for GLM/ZAI users):
+  //   GLM fills all tiers — no GPT dependency, so token exhaustion on
   //   third-party providers never blocks agent execution.
   //   "models": {
   //     "glm": "zai-coding-plan/glm-5.1",
-  //     "fast": "glm",
-  //     "strong": "glm",
-  //     "coder": "glm",
-  //     "resolver": "glm",
-  //     "reviewer": "glm",
-  //     "deep-reviewer": "glm",
-  //     "explorer": "fast",
-  //     "planner": "glm"
+  //     "bronze": "zai-coding-plan/glm-5.1",
+  //     "silver": "zai-coding-plan/glm-5.1",
+  //     "gold": "zai-coding-plan/glm-5.1",
+  //     "fast": "bronze",
+  //     "strong": "gold",
+  //     "coder": "silver",
+  //     "resolver": "gold",
+  //     "reviewer": "gold",
+  //     "deep-reviewer": "gold",
+  //     "explorer": "bronze",
+  //     "planner": "gold"
   //   }
   //
   // Legacy aliases (glm, gpt, quick, deep) remain supported for backward
@@ -207,6 +216,15 @@
         "bash": "allow",
         "webfetch": "allow"
       }
+    },
+
+    // codex — Codex-optimized primary resolver (selectable in agent picker)
+    // Same verified resolve-loop style as resolver, with a Codex-specific
+    // system prompt. Enabled by GPT/mix first-install presets when selected.
+    "codex": {
+      "enabled": false,
+      "mode": "all",
+      "maxSteps": 35
     },
 
     // Internal specialist subagents — enabled by default as subagents only.

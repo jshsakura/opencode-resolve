@@ -156,9 +156,9 @@ The `postinstall` script automatically:
 
 1. Adds `opencode-resolve` to `~/.config/opencode/opencode.json` `plugin` array (if not already present).
 2. Creates `~/.config/opencode/resolve.json` adapted to your current model provider when the file does not exist:
-   - **GLM/ZAI model detected** → GLM-only alias preset (no GPT dependency) and a non-secret local ZAI MCP bootstrap.
-   - **OpenAI/GPT model detected** → single-provider GPT preset using your current model for all roles.
-   - **Other or no model** → model-neutral `models: {}` (all roles inherit OpenCode default).
+   - **Interactive terminal** → always asks for `mix` / `gpt` / `glm`, then lets you pick three-tier `bronze` / `silver` / `gold` models. In `mix`, it also asks whether to enable dedicated `codex` and `glm` primary agents.
+   - **Non-interactive install** → does not guess model pinning. It writes `profile: "mix"`, leaves `models: {}`, and enables the three primary routes (`resolver`, `codex`, `glm`) so you can pin models explicitly afterward.
+   - **GLM/ZAI model detected** → still adds the non-secret local ZAI MCP bootstrap.
 
    Existing `resolve.json` files are **never overwritten** — the adaptive preset only applies to first-time creation. To regenerate, delete `resolve.json` and reinstall.
 
@@ -552,7 +552,7 @@ Every accepted top-level option:
 | `autoApprove` | `boolean` | `true` | Compatibility/readability flag. Current behavior is controlled by built-in base permissions and the `permission.ask` bash classifier; the flag does not rewrite permissions. |
 | `autoUpdate` | `boolean` | `true` | Best-effort npm version check and OpenCode plugin cache refresh notice. Set false to disable. |
 | `maxParallelSubagents` | `positive integer` | _unset_ | Optional prompt-level cap on simultaneous coders. When unset, the resolver uses soft fan-out guidance and backs off on rate-limit errors. GLM profile does not impose a hard cap unless you set one. |
-| `models` | `object` | `{}` | Alias map. Keys are agent names or `fast`/`strong`/`mini`/`codex`/`quick`/`deep`/`glm`/`gpt`. Values are model ids or other aliases. Empty by default — all roles inherit the OpenCode default model. |
+| `models` | `object` | `{}` | Alias map. Keys are agent names or provider-neutral aliases including `bronze`/`silver`/`gold`, `gpt-*`, `glm-*`, `fast`, `strong`, `mini`, `codex`, `quick`, `deep`, `glm`, `gpt`. Values are model ids or other aliases. |
 | `agents` | `object` | `{}` | Per-agent overrides (see below). |
 | `config` | `string` | _none_ | Custom path to a config file (relative to the project or absolute). |
 
@@ -654,10 +654,10 @@ When `resolve.json` does **not** exist, postinstall inspects your OpenCode model
 
 | Detected provider | Preset |
 |---|---|
-| GLM/ZAI + OpenAI/GPT | Mixed: `profile: "mix"`, GLM for scout/coder aliases, GPT for resolver/reviewer/planner aliases |
-| GLM / ZAI | GLM-only: all resolve agents use GLM aliases, avoiding GPT dependency |
-| OpenAI / GPT | Single-provider: all roles use your current OpenAI model |
-| Other or none | `profile: "mix"` with model-neutral `models: {}` (all roles inherit OpenCode default) |
+| Interactive terminal | Always prompts for `mix` / `gpt` / `glm`, asks for three-tier model picks, and in `mix` asks whether to enable `codex` and `glm` primary agents |
+| Non-interactive install | Does not guess model pinning; writes `profile: "mix"`, `models: {}`, and enables `resolver`, `codex`, and `glm` as primary routes |
+| Legacy opt-in | Set `OPENCODE_RESOLVE_AUTO_PRESET=1` to allow non-interactive provider-adapted presets |
+| GLM/ZAI detected | Adds the ZAI MCP bootstrap without copying API keys |
 
 To change presets at any time, edit `models` in `resolve.json` directly or delete the file and reinstall.
 
@@ -748,6 +748,9 @@ In this setup, `plan` uses `openai/gpt-5.3-codex`; native `build`, resolve `code
 | `strong` | Provider-neutral alias for a strong/expensive model |
 | `mini` | Provider-neutral alias for a mini/efficient model |
 | `codex` | Provider-neutral alias for a codex-style coding model |
+| `bronze` / `silver` / `gold` | Three-tier scout / coder / reasoner aliases |
+| `gpt-bronze` / `gpt-silver` / `gpt-gold` | GPT/Codex-specific three-tier aliases for mixed setups |
+| `glm-bronze` / `glm-silver` / `glm-gold` | GLM-specific three-tier aliases for mixed setups |
 | `quick` | Legacy alias (equivalent to `fast`) |
 | `deep` | Legacy alias (equivalent to `strong`) |
 | `glm` | Legacy alias (backward compatibility) |
@@ -762,6 +765,8 @@ Aliases only resolve when defined in `models`. Agent names (`coder`, `resolver`,
 | Agent | Default | Mode | Edit | Bash | WebFetch | Purpose |
 |---|:---:|---|---|---|---|---|
 | `resolver` | Yes (core) | `all` | allow | ask (classifier-routed) | allow | Context-efficient orchestrator. Decomposes work into verified checkpoints, dispatches coder, verifies each, and reports blockers when repeated recovery fails. |
+| `codex` | No | `all` | allow | ask (classifier-routed) | allow | Codex-optimized primary resolver with the same verified resolve-loop style as `resolver`. Enabled by first-install GPT/mix presets or explicitly. |
+| `glm` | No | `all` | allow | ask (classifier-routed) | allow | GLM-optimized primary resolver with the same verified resolve-loop style as `resolver`. Enabled by first-install GLM/mix presets or explicitly. |
 | `coder` | Yes (core) | `subagent` | allow | ask (classifier-routed) | allow | Focused implementer. Smallest correct patch. Reads only needed files. |
 | `explorer` | Yes (subagent) | `subagent` | **deny** | **deny** | allow | Internal fast codebase scout. Resolver dispatches when scope is genuinely unknown; prefers local read/grep/glob for narrow scope. |
 | `reviewer` | Yes (subagent) | `subagent` | **deny** | **deny** | allow | Internal verification-gap auditor. Resolver dispatches for post-change verification gaps on non-trivial changes. |
@@ -784,7 +789,7 @@ Supported modes:
 
 Supported permission values: `ask`, `allow`, `deny`.
 
-Supported model alias keys: `fast`, `strong`, `mini`, `codex`, `quick`, `deep`, `glm`, `gpt`, and every supported agent name. Aliases only resolve when defined in `models`.
+Supported model alias keys: `fast`, `strong`, `mini`, `codex`, `quick`, `deep`, `glm`, `gpt`, `bronze`, `silver`, `gold`, `gpt-bronze`, `gpt-silver`, `gpt-gold`, `glm-bronze`, `glm-silver`, `glm-gold`, and every supported agent name. Aliases only resolve when defined in `models`.
 
 `preserveNative` is accepted for readability, but native `plan` and `build` are always preserved. The plugin never rewrites built-in OpenCode agents.
 

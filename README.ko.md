@@ -156,9 +156,9 @@ npm install -g opencode-resolve
 
 1. `opencode-resolve`를 `~/.config/opencode/opencode.json`의 `plugin` 배열에 추가 (이미 없는 경우).
 2. 파일이 존재하지 않는 경우, 현재 모델 프로바이더에 맞게 적응된 `~/.config/opencode/resolve.json`을 생성:
-   - **GLM/ZAI 모델 감지** → GLM-only 별칭 프리셋(GPT 의존 없음) 및 비밀값 없는 로컬 ZAI MCP 부트스트랩.
-   - **OpenAI/GPT 모델 감지** → 모든 역할에 현재 모델을 사용하는 단일 프로바이더 GPT 프리셋.
-   - **다른 프로바이더 또는 모델 없음** → 모델 중립적 `models: {}` (모든 역할이 OpenCode 기본 모델 상속).
+   - **인터랙티브 터미널** → 항상 `mix` / `gpt` / `glm`을 묻고, `bronze` / `silver` / `gold` 3티어 모델을 고르게 합니다. `mix`에서는 전용 `codex`, `glm` primary 에이전트를 켤지도 묻습니다.
+   - **비대화형 설치** → 모델 pinning을 추측하지 않습니다. `profile: "mix"`, `models: {}`를 쓰고 세 primary 경로(`resolver`, `codex`, `glm`)를 활성화하므로 이후 명시적으로 모델을 고르면 됩니다.
+   - **GLM/ZAI 모델 감지** → 비밀값 없는 로컬 ZAI MCP 부트스트랩은 계속 추가합니다.
 
    기존 `resolve.json` 파일은 **절대 덮어쓰지 않습니다** — 적응형 프리셋은 최초 생성 시에만 적용됩니다. 다시 생성하려면 `resolve.json`을 삭제하고 재설치하세요.
 
@@ -552,7 +552,7 @@ opencode-resolve는 전체 저장소를 프롬프트에 밀어 넣지 않고도 
 | `autoApprove` | `boolean` | `true` | 하위 호환/가독성 플래그. 현재 동작은 내장 기본 권한과 `permission.ask` bash 분류기가 제어하며, 이 플래그가 권한을 재작성하지 않음. |
 | `autoUpdate` | `boolean` | `true` | npm 버전 확인과 OpenCode 플러그인 캐시 갱신 알림을 best-effort로 수행. 비활성화하려면 false. |
 | `maxParallelSubagents` | `positive integer` | _미설정_ | 동시 coder 수에 대한 선택적 프롬프트 수준 상한. 미설정 시 resolver는 soft fan-out 가이드를 사용하고 rate-limit 에러에 backoff. GLM profile도 사용자가 설정하지 않는 한 hard cap을 걸지 않음. |
-| `models` | `object` | `{}` | 별칭 맵. 키는 에이전트 이름 또는 `fast`/`strong`/`mini`/`codex`/`quick`/`deep`/`glm`/`gpt`. 값은 모델 id 또는 다른 별칭. 기본적으로 비어있음 — 모든 역할이 OpenCode 기본 모델을 상속. |
+| `models` | `object` | `{}` | 별칭 맵. 키는 에이전트 이름 또는 `bronze`/`silver`/`gold`, `gpt-*`, `glm-*`, `fast`, `strong`, `mini`, `codex`, `quick`, `deep`, `glm`, `gpt` 같은 별칭. 값은 모델 id 또는 다른 별칭. |
 | `agents` | `object` | `{}` | 에이전트별 재정의 (아래 참조). |
 | `config` | `string` | _없음_ | 설정 파일의 사용자 정의 경로 (프로젝트 상대경로 또는 절대경로). |
 
@@ -654,10 +654,10 @@ opencode-resolve는 전체 저장소를 프롬프트에 밀어 넣지 않고도 
 
 | 감지된 프로바이더 | 프리셋 |
 |---|---|
-| GLM/ZAI + OpenAI/GPT | Mixed: `profile: "mix"`, scout/coder 별칭은 GLM, resolver/reviewer/planner 별칭은 GPT |
-| GLM / ZAI | GLM-only: 모든 resolve 에이전트가 GLM 별칭 사용, GPT 의존 없음 |
-| OpenAI / GPT | 단일 프로바이더: 모든 역할이 현재 OpenAI 모델 사용 |
-| 다른 프로바이더 또는 없음 | `profile: "mix"`와 모델 중립적 `models: {}` (모든 역할이 OpenCode 기본 모델 상속) |
+| 인터랙티브 터미널 | 항상 `mix` / `gpt` / `glm`을 묻고 3티어 모델을 고르게 하며, `mix`에서는 `codex`와 `glm` primary 에이전트 활성화도 묻습니다 |
+| 비대화형 설치 | 모델 pinning을 추측하지 않음; `profile: "mix"`, `models: {}`를 쓰고 `resolver`, `codex`, `glm` primary 경로를 활성화 |
+| 레거시 opt-in | `OPENCODE_RESOLVE_AUTO_PRESET=1`을 설정하면 비대화형 provider-adapted 프리셋 허용 |
+| GLM/ZAI 감지 | API 키를 복사하지 않고 ZAI MCP 부트스트랩 추가 |
 
 언제든지 프리셋을 변경하려면 `resolve.json`의 `models`를 직접 편집하거나, 파일을 삭제하고 재설치하세요.
 
@@ -748,6 +748,9 @@ OPENCODE_RESOLVE_SKIP_POSTINSTALL=1 npm install -g opencode-resolve
 | `strong` | 강력한/비싼 모델의 프로바이더 중립적 별칭 |
 | `mini` | 미니/효율적 모델의 프로바이더 중립적 별칭 |
 | `codex` | 코덱스 스타일 코딩 모델의 프로바이더 중립적 별칭 |
+| `bronze` / `silver` / `gold` | scout / coder / reasoner 3티어 별칭 |
+| `gpt-bronze` / `gpt-silver` / `gpt-gold` | mixed 설정의 GPT/Codex 전용 3티어 별칭 |
+| `glm-bronze` / `glm-silver` / `glm-gold` | mixed 설정의 GLM 전용 3티어 별칭 |
 | `quick` | 레거시 별칭 (`fast`와 동등) |
 | `deep` | 레거시 별칭 (`strong`과 동등) |
 | `glm` | 레거시 별칭 (하위 호환성) |
@@ -762,6 +765,8 @@ OPENCODE_RESOLVE_SKIP_POSTINSTALL=1 npm install -g opencode-resolve
 | 에이전트 | 기본 | 모드 | Edit | Bash | WebFetch | 용도 |
 |---|:---:|---|---|---|---|---|
 | `resolver` | 예 (핵심) | `all` | allow | ask (분류기 라우팅) | allow | 컨텍스트 효율적 오케스트레이터. 작업을 검증된 체크포인트로 분해, coder 디스패치, 각각 검증, 반복 회복 실패 시 차단 사항 보고. |
+| `codex` | 아니오 | `all` | allow | ask (분류기 라우팅) | allow | `resolver`와 같은 검증 resolve-loop 스타일의 Codex 최적화 primary. 최초 설치 GPT/mix 프리셋 또는 명시 설정으로 활성화. |
+| `glm` | 아니오 | `all` | allow | ask (분류기 라우팅) | allow | `resolver`와 같은 검증 resolve-loop 스타일의 GLM 최적화 primary. 최초 설치 GLM/mix 프리셋 또는 명시 설정으로 활성화. |
 | `coder` | 예 (핵심) | `subagent` | allow | ask (분류기 라우팅) | allow | 집중된 구현자. 가장 작은 올바른 패치. 필요한 파일만 읽음. |
 | `explorer` | 예 (서브에이전트) | `subagent` | **deny** | **deny** | allow | 내부 빠른 코드베이스 스카우트. Resolver가 범위가 불명확할 때만 디스패치; 좁은 범위는 로컬 read/grep/glob 선호. |
 | `reviewer` | 예 (서브에이전트) | `subagent` | **deny** | **deny** | allow | 내부 검증 갭 감사자. 비사소한 변경에 검증 갭이 있을 때 디스패치. |
@@ -784,7 +789,7 @@ OPENCODE_RESOLVE_SKIP_POSTINSTALL=1 npm install -g opencode-resolve
 
 지원되는 권한 값: `ask`, `allow`, `deny`.
 
-지원되는 모델 별칭 키: `fast`, `strong`, `mini`, `codex`, `quick`, `deep`, `glm`, `gpt`, 그리고 지원되는 모든 에이전트 이름. 별칭은 `models`에 정의된 경우에만 해석됩니다.
+지원되는 모델 별칭 키: `fast`, `strong`, `mini`, `codex`, `quick`, `deep`, `glm`, `gpt`, `bronze`, `silver`, `gold`, `gpt-bronze`, `gpt-silver`, `gpt-gold`, `glm-bronze`, `glm-silver`, `glm-gold`, 그리고 지원되는 모든 에이전트 이름. 별칭은 `models`에 정의된 경우에만 해석됩니다.
 
 `preserveNative`은 가독성을 위해 허용되지만, 네이티브 `plan`과 `build`는 항상 보존됩니다. 플러그인은 빌트인 OpenCode 에이전트를 절대 다시 쓰지 않습니다.
 
