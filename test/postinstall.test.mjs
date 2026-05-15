@@ -20,6 +20,7 @@ test("postinstall creates OpenCode config and resolve config", async () => {
     // enabled not set in example — resolved at runtime by tier or DEFAULT_ENABLED
     assert.equal(resolveConfig.enabled, undefined)
     assert.equal(resolveConfig.autoApprove, true)
+    assert.equal(resolveConfig.profile, "mix")
     // maxParallelSubagents intentionally omitted from default — power-user opt-in only
     assert.equal(resolveConfig.maxParallelSubagents, undefined)
     // No opencode model => models stays empty (inherited preset)
@@ -129,6 +130,38 @@ test("postinstall creates GPT-only preset when opencode model is openai/gpt-*", 
   }
 })
 
+test("postinstall creates explicit mixed preset when GLM and GPT models are both configured", async () => {
+  const configHome = await mkdtemp(join(tmpdir(), "opencode-resolve-postinstall-"))
+
+  try {
+    await writeJson(join(configHome, "opencode.json"), {
+      model: "zai-coding-plan/glm-5.1",
+      agent: {
+        plan: {
+          model: "openai/gpt-5.5",
+        },
+      },
+    })
+
+    runPostinstall(configHome)
+
+    const resolveConfig = await readJson(join(configHome, "resolve.json"))
+
+    assert.equal(resolveConfig.profile, "mix")
+    assert.equal(resolveConfig.tier, undefined)
+    assert.equal(resolveConfig.models.glm, "zai-coding-plan/glm-5.1")
+    assert.equal(resolveConfig.models.gpt, "openai/gpt-5.5")
+    assert.equal(resolveConfig.models.explorer, "bronze")
+    assert.equal(resolveConfig.models.coder, "silver")
+    assert.equal(resolveConfig.models.resolver, "gold")
+    assert.equal(resolveConfig.models.reviewer, "gold")
+    assert.equal(resolveConfig.models["deep-reviewer"], "gold")
+    assert.equal(resolveConfig.models.planner, "gold")
+  } finally {
+    await rm(configHome, { recursive: true, force: true })
+  }
+})
+
 test("postinstall creates GLM-only preset when opencode model is glm", async () => {
   const configHome = await mkdtemp(join(tmpdir(), "opencode-resolve-postinstall-"))
 
@@ -172,12 +205,44 @@ test("postinstall creates GLM-only preset for zai model variant", async () => {
     runPostinstall(configHome)
 
     const resolveConfig = await readJson(join(configHome, "resolve.json"))
-    assert.equal(resolveConfig.models.glm, "zai-coding-plan/glm-5.1")
-    // GLM-only: all agents point to glm, no GPT key
+    assert.equal(resolveConfig.models.glm, "zai/glm-4")
+    // GLM-only: all agents point to the user's configured GLM model, no GPT key
     assert.equal(resolveConfig.models.resolver, "glm")
     assert.equal(resolveConfig.models.gpt, undefined)
     assert.equal(resolveConfig.profile, "glm")
     assert.equal(resolveConfig.tier, "silver")
+  } finally {
+    await rm(configHome, { recursive: true, force: true })
+  }
+})
+
+test("postinstall qualifies provider model keys before building mixed preset", async () => {
+  const configHome = await mkdtemp(join(tmpdir(), "opencode-resolve-postinstall-"))
+
+  try {
+    await writeJson(join(configHome, "opencode.json"), {
+      provider: {
+        zai: {
+          models: {
+            "glm-4.7-flash": {},
+          },
+        },
+        openai: {
+          models: {
+            "gpt-5.5": {},
+          },
+        },
+      },
+    })
+
+    runPostinstall(configHome)
+
+    const resolveConfig = await readJson(join(configHome, "resolve.json"))
+    assert.equal(resolveConfig.profile, "mix")
+    assert.equal(resolveConfig.models.glm, "zai/glm-4.7-flash")
+    assert.equal(resolveConfig.models.gpt, "openai/gpt-5.5")
+    assert.equal(resolveConfig.models.coder, "silver")
+    assert.equal(resolveConfig.models.resolver, "gold")
   } finally {
     await rm(configHome, { recursive: true, force: true })
   }
@@ -195,6 +260,7 @@ test("postinstall keeps models empty for unknown provider", async () => {
 
     const resolveConfig = await readJson(join(configHome, "resolve.json"))
     assert.deepEqual(resolveConfig.models, {})
+    assert.equal(resolveConfig.profile, "mix")
   } finally {
     await rm(configHome, { recursive: true, force: true })
   }
@@ -293,7 +359,7 @@ test("OPENCODE_RESOLVE_SKIP_COMPANIONS=1 silences the companion suggestion", asy
   }
 })
 
-test("postinstall injects ZAI MCP servers when GLM model detected", async () => {
+test("postinstall injects ZAI MCP server without copying API keys", async () => {
   const configHome = await mkdtemp(join(tmpdir(), "opencode-resolve-postinstall-"))
   const dataHome = await mkdtemp(join(tmpdir(), "opencode-resolve-data-"))
 
@@ -312,18 +378,14 @@ test("postinstall injects ZAI MCP servers when GLM model detected", async () => 
 
     const opencodeConfig = await readJson(join(configHome, "opencode.json"))
 
-    // All 4 ZAI MCP servers should be present
+    // Local ZAI MCP server should be present
     assert.ok(opencodeConfig.mcp, "mcp section should exist")
     assert.ok(opencodeConfig.mcp["zai-mcp-server"], "zai-mcp-server should be injected")
-    assert.ok(opencodeConfig.mcp["web-search-prime"], "web-search-prime should be injected")
-    assert.ok(opencodeConfig.mcp["web-reader"], "web-reader should be injected")
-    assert.ok(opencodeConfig.mcp.zread, "zread should be injected")
-
-    // Verify actual API key is injected (not {env:...} template)
-    assert.equal(opencodeConfig.mcp["zai-mcp-server"].environment.Z_AI_API_KEY, "test-api-key-12345")
-    assert.equal(opencodeConfig.mcp["web-search-prime"].headers.Authorization, "Bearer test-api-key-12345")
-    assert.equal(opencodeConfig.mcp["web-reader"].headers.Authorization, "Bearer test-api-key-12345")
-    assert.equal(opencodeConfig.mcp.zread.headers.Authorization, "Bearer test-api-key-12345")
+    assert.equal(opencodeConfig.mcp["zai-mcp-server"].environment.Z_AI_MODE, "ZAI")
+    assert.equal(opencodeConfig.mcp["zai-mcp-server"].environment.Z_AI_API_KEY, undefined)
+    assert.equal(opencodeConfig.mcp["web-search-prime"], undefined)
+    assert.equal(opencodeConfig.mcp["web-reader"], undefined)
+    assert.equal(opencodeConfig.mcp.zread, undefined)
   } finally {
     await rm(configHome, { recursive: true, force: true })
     await rm(dataHome, { recursive: true, force: true })
@@ -355,11 +417,10 @@ test("postinstall preserves existing MCP servers and skips already-present ZAI M
     assert.deepEqual(opencodeConfig.mcp["custom-mcp"], { type: "local", command: ["my-tool"] })
     // Existing ZAI MCP NOT overwritten
     assert.deepEqual(opencodeConfig.mcp["zai-mcp-server"], { type: "local", command: ["custom-npx"] })
-    // Other ZAI MCPs still injected with actual key
-    assert.ok(opencodeConfig.mcp["web-search-prime"])
-    assert.equal(opencodeConfig.mcp["web-search-prime"].headers.Authorization, "Bearer test-key")
-    assert.ok(opencodeConfig.mcp["web-reader"])
-    assert.ok(opencodeConfig.mcp.zread)
+    // No API key or remote Authorization headers are copied into config
+    assert.equal(opencodeConfig.mcp["web-search-prime"], undefined)
+    assert.equal(opencodeConfig.mcp["web-reader"], undefined)
+    assert.equal(opencodeConfig.mcp.zread, undefined)
   } finally {
     await rm(configHome, { recursive: true, force: true })
     await rm(dataHome, { recursive: true, force: true })
@@ -384,7 +445,7 @@ test("postinstall does NOT inject ZAI MCP servers for non-GLM models", async () 
   }
 })
 
-test("postinstall reads ZAI API key from auth.json, falling back to env", async () => {
+test("postinstall does not copy ZAI API key from env into config", async () => {
   const configHome = await mkdtemp(join(tmpdir(), "opencode-resolve-postinstall-"))
   const dataHome = await mkdtemp(join(tmpdir(), "opencode-resolve-data-"))
 
@@ -392,15 +453,15 @@ test("postinstall reads ZAI API key from auth.json, falling back to env", async 
     await writeJson(join(configHome, "opencode.json"), {
       model: "zai-coding-plan/glm-5.1",
     })
-    // No auth.json — should fall back to env
-    const { stdout } = runPostinstall(configHome, {
+    runPostinstall(configHome, {
       XDG_DATA_HOME: dataHome,
       Z_AI_API_KEY: "env-fallback-key",
     })
 
     const opencodeConfig = await readJson(join(configHome, "opencode.json"))
-    assert.ok(opencodeConfig.mcp["web-search-prime"])
-    assert.equal(opencodeConfig.mcp["web-search-prime"].headers.Authorization, "Bearer env-fallback-key")
+    assert.ok(opencodeConfig.mcp["zai-mcp-server"])
+    assert.equal(opencodeConfig.mcp["zai-mcp-server"].environment.Z_AI_API_KEY, undefined)
+    assert.doesNotMatch(JSON.stringify(opencodeConfig), /env-fallback-key/)
   } finally {
     await rm(configHome, { recursive: true, force: true })
     await rm(dataHome, { recursive: true, force: true })

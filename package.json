@@ -1,7 +1,7 @@
 {
   "name": "opencode-resolve",
-  "version": "0.1.7",
-  "description": "OpenCode plugin that adds a small coder/reviewer agent set while preserving native plan/build behavior.",
+  "version": "0.1.8",
+  "description": "OpenCode plugin that adds a lightweight resolver/coder harness for continuous agentic coding.",
   "type": "module",
   "homepage": "https://github.com/jshsakura/opencode-resolve#readme",
   "bugs": {
@@ -25,6 +25,7 @@
     "opencode-resolve.example.json",
     "opencode-resolve.reference.jsonc",
     "README.md",
+    "README.ko.md",
     "LICENSE"
   ],
   "scripts": {
@@ -39,6 +40,9 @@
     "opencode",
     "opencode-plugin",
     "agents",
+    "agentic-coding",
+    "autonomous-coding",
+    "harness",
     "taskflow",
     "resolve",
     "task-resolution",

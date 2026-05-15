@@ -92,8 +92,12 @@ export function applyResolveConfig(config: Config, resolveConfig: ResolveConfig,
 export function buildContextInjection(ctx: ProjectContext): string {
     const lines: string[] = [];
     if (ctx.knowledgeFiles.length > 0) {
-    lines.push(`Project knowledge files detected: ${ctx.knowledgeFiles.join(", ")}.`)
-    lines.push("Read these FIRST before inspecting code — they contain infra decisions, traps, and agent patterns.")
+    lines.push(`Project knowledge sources detected: ${ctx.knowledgeFiles.join(", ")}.`)
+    lines.push("Read these FIRST when relevant before inspecting code — they contain infra decisions, patterns, traps, and team context.")
+    }
+    if (ctx.contextFiles.length > 0) {
+    lines.push(`Relevant context documents available: ${ctx.contextFiles.slice(0, 20).join(", ")}.`)
+    lines.push("MVI rule: read only the context documents relevant to the current task, not the whole context tree.")
     }
 
     if (ctx.packageManager) {
@@ -114,6 +118,7 @@ export function buildContextInjection(ctx: ProjectContext): string {
 
 export function defaultResolveConfig(): ResolveConfig {
     return {
+    profile: "mix",
     models: {},
     agents: {},
     preserveNative: true,

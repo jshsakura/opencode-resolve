@@ -10,7 +10,7 @@
 >
 > It is **not** a standalone application, not a model provider, not a separate CLI you run daily, and not a replacement for your `opencode.json` configuration. It is an OpenCode plugin and nothing more.
 
-It exposes a **fixed-role verified resolve loop** — **resolver** (context-efficient planner/judge) and **coder** (focused implementer) — running with auto-approved permissions so a task drives to completion without prompting at every step. The resolver inspects only relevant files, plans the smallest patch, dispatches coder with exact instructions, verifies, and iterates through verified checkpoints. Each checkpoint is retried up to 3 times on failure, then the resolver moves forward. Internal specialist subagents (**explorer**, **reviewer**, **deep-reviewer**) are injected by default as OpenCode-native subagents — available when the resolver judges them justified — but they are not part of the core path and are never user-facing primary roles. It defines roles, not model providers: agents inherit your OpenCode default model unless you pin them.
+It exposes a **fixed-role verified resolve loop** — **resolver** (context-efficient planner/judge) and **coder** (focused implementer) — with low-friction permissions for edits, verification, and safe shell commands. The resolver inspects only relevant files, plans the smallest patch, dispatches coder with exact instructions, verifies, and iterates through verified checkpoints. Repeated failures trigger debugger/architect recovery guidance and, after repeated consecutive failures, the resolver should stop and report the blocker instead of pretending the task is complete. Internal specialist subagents (**explorer**, **reviewer**, **deep-reviewer**) are injected by default as OpenCode-native subagents — available when the resolver judges them justified — but they are not part of the core path and are never user-facing primary roles. It defines roles, not model providers: agents inherit your OpenCode default model unless you pin them.
 
 ```
 # Paste this into any AI coding assistant for fully guided setup
@@ -42,6 +42,7 @@ If OpenCode is not installed or not running, opencode-resolve does nothing.
 - [Quick Start](#quick-start)
 - [Drop-in setup (give to an LLM)](#drop-in-setup-give-to-an-llm)
 - [Default Behavior](#default-behavior)
+- [Project Context Sources](#project-context-sources)
 - [Configuration](#configuration)
 - [Configuration Reference](#configuration-reference)
 - [Auto Approval](#auto-approval)
@@ -63,9 +64,10 @@ If OpenCode is not installed or not running, opencode-resolve does nothing.
 ## Features
 
 - **Fixed-role verified resolve loop** — `resolver` (context-efficient planner/judge) + `coder` (focused implementer)
-- **Context-efficient by default** — minimal file reads, smallest patch, targeted verification, checkpointed execution with max 3 retries per failing checkpoint
+- **Context-efficient by default** — minimal file reads, smallest patch, targeted verification, checkpointed execution, and explicit blocker reporting when repeated fixes fail
+- **Committed team context discovery** — detects `HARNESS.md`, `AGENTS.md`, `.opencode/context`, `.claude/context`, `context/`, and Agentic-style `thoughts/`, then lists task-relevant pattern documents without stuffing the whole repo into the prompt
 - **OpenCode-native internal specialist subagents** — `reviewer` (verification-gap audit), `explorer` (codebase scout), `deep-reviewer` (risky/security review) — injected as subagents by default but not part of the core path; resolver dispatches them only when justified
-- **Auto-approved permissions** — coder and resolver work without per-action prompts
+- **Low-friction permissions** — edit/webfetch are allowed for write agents; bash is classifier-routed so safe commands are allowed, dangerous commands denied, and unknown commands still ask
 - **Context7 MCP** — auto-registers [Context7](https://context7.com) documentation lookup when `context7: true`
 - **Model pinning** — pin different models per role when you have measured a benefit; by default all roles inherit your OpenCode default model
 - **Soft parallel cap** — `maxParallelSubagents` controls how many coders the resolver fans out
@@ -138,7 +140,7 @@ Example minimal provider setup:
 }
 ```
 
-> No additional API keys or MCP servers are required. Context7 is auto-registered by the plugin.
+> No additional API keys are required for the plugin itself. Context7 is auto-registered by the plugin. For GLM/ZAI users, postinstall may add a local ZAI MCP server bootstrap, but it does **not** copy API keys into `opencode.json`; export `Z_AI_API_KEY` in your shell if that MCP server requires it.
 
 ---
 
@@ -154,7 +156,7 @@ The `postinstall` script automatically:
 
 1. Adds `opencode-resolve` to `~/.config/opencode/opencode.json` `plugin` array (if not already present).
 2. Creates `~/.config/opencode/resolve.json` adapted to your current model provider when the file does not exist:
-   - **GLM/ZAI model detected** → mixed GLM + GPT alias preset (`coder` → GLM, `resolver` → GPT).
+   - **GLM/ZAI model detected** → GLM-only alias preset (no GPT dependency) and a non-secret local ZAI MCP bootstrap.
    - **OpenAI/GPT model detected** → single-provider GPT preset using your current model for all roles.
    - **Other or no model** → model-neutral `models: {}` (all roles inherit OpenCode default).
 
@@ -190,7 +192,7 @@ If `postinstall` didn't register the plugin, add it to `~/.config/opencode/openc
 opencode
 ```
 
-You should now see `resolver` and `coder` agents available.
+You should now see `resolver` available as the user-facing resolve agent. `coder` is enabled as a subagent for resolver to dispatch, so it may not appear in the primary picker.
 
 ---
 
@@ -307,7 +309,7 @@ The default flow does **not** write `maxParallelSubagents` to `resolve.json`. Th
 
 Only ask about `maxParallelSubagents` if the user explicitly mentions wanting to cap fan-out. Common case: GLM coding-plan users who want to **guarantee** they never burst beyond 1 or 2 coder calls. Suggested wording:
 
-> _(optional, ask only if relevant)_ _Your `coder` model is GLM — the coding-plan throttles under bursts. Pin `maxParallelSubagents: 2` to be safe?_
+> _(optional, ask only if relevant)_ _Your `coder` model is GLM — the coding-plan throttles under bursts. Pin `maxParallelSubagents: 1` for strict serial coder dispatch?_
 
 Otherwise, omit the field entirely.
 
@@ -333,7 +335,7 @@ Otherwise, omit the field entirely.
     "planner":       "gold"
   },
   "agents": {
-    "coder":         { "enabled": true,  "mode": "all" },
+    "coder":         { "enabled": true,  "mode": "subagent" },
     "resolver":      { "enabled": true },
     "explorer":      { "enabled": true,  "mode": "subagent" },
     "reviewer":      { "enabled": true,  "mode": "subagent" },
@@ -402,16 +404,16 @@ The output **must** include `resolver` and `coder` (and `reviewer` if enabled). 
 | Agents appear but fail when invoked with "model not found" | A pinned model ID in `models` doesn't exist | Re-open `resolve.json`, replace the offending ID with one the user actually has, restart. |
 | The user said split but only one tier shows up | `models` block missing `fast` or `strong` | Re-run Step 3 from 3d. |
 
-Internal specialist subagents (`explorer`, `reviewer`, `deep-reviewer`) are subagent-only and won't appear in the primary picker — only `resolver` (and `coder` since it has `mode: "all"`) show up there.
+Internal specialist subagents (`coder`, `explorer`, `reviewer`, `deep-reviewer`, `planner`) are subagent-only and won't appear in the primary picker — `resolver` is the default user-facing resolve agent.
 
 ### Why this template
 
 | Setting | Why |
 |---|---|
-| `enabled: ["coder", "resolver", "explorer", "reviewer", "deep-reviewer"]` | Fixed core path (resolver→coder) plus OpenCode-native internal specialist subagents injected by default |
-| `autoApprove: true` | Coder and resolver work without per-action prompts |
-| `maxParallelSubagents: 2` | Up to two coders may run in parallel for independent work |
-| `agents.coder.mode = "all"` | Coder appears in the agent picker, not just as a subagent |
+| `enabled: ["coder", "resolver", "explorer", "reviewer", "deep-reviewer", "planner"]` | Fixed core path (resolver→coder) plus OpenCode-native internal specialist subagents injected by default |
+| `autoApprove: true` | Compatibility/readability flag; actual low-friction behavior comes from base permissions plus the `permission.ask` bash classifier |
+| no `maxParallelSubagents` by default | Keeps the resolver on soft fan-out guidance; GLM profile already defaults to serial coder dispatch |
+| `agents.coder.mode = "subagent"` | Coder stays on the fixed resolver→coder path instead of becoming a user-facing primary role |
 | `agents.{explorer,reviewer,deep-reviewer}.mode = "subagent"` | Internal specialists are subagent-only — never user-facing primary roles |
 | `context7: true` | Plugin auto-registers Context7 MCP — no manual MCP config needed |
 | `models` aliases | Empty by default — all roles inherit the OpenCode default model. Pin role-specific models only when you have measured a benefit |
@@ -424,7 +426,7 @@ Internal specialist subagents (`explorer`, `reviewer`, `deep-reviewer`) are suba
 3. **For trivial work** — Resolver applies the small edit directly. No subagent needed.
 4. **Implement** — Dispatches `coder` with exact file paths and focused instructions.
 5. **Verify** — Runs the cheapest meaningful check first (targeted test, type check, or lint).
-6. **Retry** — If issues remain, dispatches `coder` again with a focused fix. Max 3 attempts per failing checkpoint. When verified, proceed to the next checkpoint.
+6. **Recover** — If issues remain, dispatches `debugger` or `coder` again with a focused fix. After repeated consecutive failures, stop and report the blocker instead of claiming completion.
 7. **Report** — Returns a concise evidence summary: what changed, verification results, and any remaining blockers.
 8. **Internal specialists** — When justified: dispatch `explorer` (scope genuinely unknown), `reviewer` (verification gap on non-trivial changes), or `deep-reviewer` (risky/security/high-impact only). These are available by default as subagents but are not the core path.
 
@@ -434,16 +436,52 @@ Internal specialist subagents (`explorer`, `reviewer`, `deep-reviewer`) are suba
 
 | Item | Default |
 |---|---|
-| Enabled agents | `coder`, `resolver`, `explorer`, `reviewer`, `deep-reviewer` |
+| Enabled agents | `coder`, `resolver`, `explorer`, `reviewer`, `deep-reviewer`, `planner` |
 | Core path | `resolver` → `coder` (fixed-role verified loop) |
 | Internal subagents | `explorer`, `reviewer`, `deep-reviewer` (subagent-only, dispatched when justified) |
 | Primary agent for new tasks | `resolver` (`mode: "all"`) |
 | Agent model | Inherits top-level OpenCode `model` |
 | Native `plan` / `build` | Preserved untouched |
+| Project context sources | `HARNESS.md`, `AGENTS.md`, `CLAUDE.md`, `CONVENTIONS.md`, `.opencode/context`, `.claude/context`, `context/`, `thoughts/` |
 | Context7 MCP preset | Added automatically when `context7: true` |
 | Optional commands | Disabled |
-| `autoApprove` | `true` (no per-action prompts on coder/resolver) |
-| Max retries per checkpoint | 3 (via resolver prompt) |
+| `autoApprove` | `true` (compatibility/readability flag; bash routing is handled by the permission hook) |
+| Repeated-failure behavior | Diagnose, retry with a different fix, pivot to architect after heavy failure, then report blockers instead of claiming completion |
+
+---
+
+## Project Context Sources
+
+opencode-resolve can discover committed project knowledge without loading the whole repository into the prompt. The resolver sees the available sources and should read only the documents relevant to the current task.
+
+Detected top-level knowledge files:
+
+| Source | Purpose |
+|---|---|
+| `HARNESS.md` | Build, verification, infrastructure, deployment, and project traps |
+| `AGENTS.md` | Agent behavior, delegation rules, review expectations, local workflow |
+| `CLAUDE.md` | Existing AI coding guidance used by other tools |
+| `CONVENTIONS.md` | Code style, naming, architecture, and repository conventions |
+
+Detected context directories:
+
+| Source | Behavior |
+|---|---|
+| `.opencode/context/` | OpenCode/OAC-style team pattern docs |
+| `.claude/context/` | Claude-style shared context docs |
+| `context/` | Generic project context docs |
+| `thoughts/` | Agentic-style persistent knowledge: architecture, tickets, research, plans, reviews |
+
+For context directories, the plugin lists `.md`, `.mdx`, `.txt`, `.json`, `.jsonc`, `.yaml`, and `.yml` files up to a bounded depth and count. `thoughts/archive/` is intentionally skipped because archived notes are often stale or misleading.
+
+Local runtime state is intentionally ignored by git:
+
+```text
+.opencode/resolve-state.json
+.opencode/*.local.json
+```
+
+Committed context such as `.opencode/context/` and `thoughts/` is not ignored.
 
 ---
 
@@ -470,7 +508,7 @@ Minimal config (matches defaults):
 
 ```json
 {
-  "enabled": ["coder", "resolver", "explorer", "reviewer", "deep-reviewer"],
+  "enabled": ["coder", "resolver", "explorer", "reviewer", "deep-reviewer", "planner"],
   "autoApprove": true,
   "context7": true,
   "commands": false
@@ -485,7 +523,7 @@ Inline form inside `opencode.json`:
     [
       "opencode-resolve",
       {
-        "enabled": ["coder", "resolver", "explorer", "reviewer", "deep-reviewer"],
+        "enabled": ["coder", "resolver", "explorer", "reviewer", "deep-reviewer", "planner"],
         "autoApprove": true,
         "context7": true,
         "commands": false
@@ -505,12 +543,15 @@ Every accepted top-level option:
 
 | Key | Type | Default | Purpose |
 |---|---|---|---|
-| `enabled` | `string[]` | `["coder", "resolver", "explorer", "reviewer", "deep-reviewer"]` | Which resolve agents to inject. Core path: resolver→coder. Internal specialists (explorer, reviewer, deep-reviewer) are subagent-only. Per-agent `agents.<name>.enabled` overrides this. |
+| `profile` | `"mix" \| "gpt" \| "glm"` | `"mix"` | Top-level operating profile. `mix` is the explicit default; `gpt` and `glm` apply provider-specific prompts, enabled-agent defaults, and chat parameters. |
+| `tier` | `"bronze" \| "silver" \| "gold"` | _none_ | Optional enabled-agent preset. `bronze` is minimal, `silver` is standard, `gold` enables the full specialist set. |
+| `enabled` | `string[]` | `["coder", "resolver", "explorer", "reviewer", "deep-reviewer", "planner"]` | Which resolve agents to inject. Core path: resolver→coder. Internal specialists (coder, explorer, reviewer, deep-reviewer, planner) are subagent-only. Per-agent `agents.<name>.enabled` overrides this. |
 | `preserveNative` | `boolean` | `true` | Native `plan`/`build` are always preserved. Accepted for readability. |
 | `context7` | `boolean` | `true` | When true, registers the Context7 MCP server unless already configured. |
 | `commands` | `boolean` | `false` | When true, adds `resolve`, `resolve-code`, `resolve-review` commands. |
-| `autoApprove` | `boolean` | `true` | Flips default `"ask"` permissions to `"allow"` on enabled agents. Never touches `"deny"` or user-set keys. |
-| `maxParallelSubagents` | `positive integer` | `2` | Cap on simultaneous subagents the resolver dispatches per role. |
+| `autoApprove` | `boolean` | `true` | Compatibility/readability flag. Current behavior is controlled by built-in base permissions and the `permission.ask` bash classifier; the flag does not rewrite permissions. |
+| `autoUpdate` | `boolean` | `true` | Best-effort npm version check and OpenCode plugin cache refresh notice. Set false to disable. |
+| `maxParallelSubagents` | `positive integer` | _unset_ | Optional prompt-level cap on simultaneous coders. When unset, the resolver uses soft fan-out guidance and backs off on rate-limit errors. GLM profile defaults to one coder at a time. |
 | `models` | `object` | `{}` | Alias map. Keys are agent names or `fast`/`strong`/`mini`/`codex`/`quick`/`deep`/`glm`/`gpt`. Values are model ids or other aliases. Empty by default — all roles inherit the OpenCode default model. |
 | `agents` | `object` | `{}` | Per-agent overrides (see below). |
 | `config` | `string` | _none_ | Custom path to a config file (relative to the project or absolute). |
@@ -549,19 +590,20 @@ A fully-annotated reference config ships with the package as [`opencode-resolve.
 
 ## Auto Approval
 
-`autoApprove` (default `true`) flips every `"ask"` permission on the **enabled** agents to `"allow"`, so coder and resolver work continuously without per-action prompts. It never touches `"deny"` and never overrides a permission key the user explicitly set.
+`autoApprove` (default `true`) is now a compatibility/readability flag. It is accepted in config so older `resolve.json` files continue to load, but the current harness does **not** rewrite permissions from `"ask"` to `"allow"`.
 
-| Permission state | autoApprove: true | autoApprove: false |
-|---|---|---|
-| Default `"ask"` | becomes `"allow"` | stays `"ask"` |
-| Default `"deny"` | stays `"deny"` | stays `"deny"` |
-| User explicit `"ask"` | stays `"ask"` | stays `"ask"` |
-| User explicit `"allow"` | stays `"allow"` | stays `"allow"` |
-| User explicit `"deny"` | stays `"deny"` | stays `"deny"` |
+Low-friction autonomous behavior comes from two explicit defaults:
 
-Agents with `"deny"` defaults (e.g. reviewer's `edit` and `bash`) keep those denials even with `autoApprove: true`. Reviewer is enabled by default as an internal subagent — its deny permissions ensure it stays read-only.
+| Permission | Current default behavior |
+|---|---|
+| Write-agent `edit` / `webfetch` | `allow` |
+| Write-agent `bash` | `ask`, routed through the plugin's `permission.ask` classifier |
+| Safe bash commands | Auto-allowed by classifier |
+| Dangerous bash commands | Auto-denied by classifier |
+| Unknown bash commands | Left as `ask` for OpenCode/user handling |
+| Read-only agent `edit` / `bash` | `deny`; write-capable plugin tools also block read-only agents |
 
-Turn it off when you want the conservative ask-every-time behavior:
+You may leave the flag in config for intent clarity:
 
 ```json
 {
@@ -569,18 +611,18 @@ Turn it off when you want the conservative ask-every-time behavior:
 }
 ```
 
-> **Trust note:** `autoApprove: true` assumes you trust the workspace and the model you have configured. Use a sandbox or VM for untrusted code, and keep `autoApprove: false` if you want to inspect every action.
+> **Trust note:** low-friction write-agent permissions assume you trust the workspace and configured model. Use a sandbox or VM for untrusted code. Bash remains classifier-routed rather than blindly allowed.
 
 ---
 
 ## Parallel Subagent Limit
 
-`maxParallelSubagents` (default `2`) caps how many subagents the **resolver** may dispatch concurrently **per role** for context efficiency. The default of `2` lets up to two coders run in parallel for genuinely independent work.
+`maxParallelSubagents` is optional. When omitted, the **resolver** uses soft fan-out guidance: dispatch coders for genuinely independent work and back off on rate-limit errors. Set it only when you want the resolver prompt to carry an explicit per-role concurrency cap. GLM profile defaults to one coder at a time.
 
 | Value | Behavior |
 |---|---|
 | `1` | Strictly one coder at a time. |
-| `2` (default) | Up to two coders concurrently. Useful when fanning out genuinely independent work. |
+| `2` | Up to two coders concurrently. Useful when fanning out genuinely independent work. |
 | `N > 2` | Up to N coders concurrently. Use sparingly to avoid context waste. |
 
 Override per project or per user:
@@ -601,7 +643,7 @@ The limit is templated into the prompt at config-load time, so restart OpenCode 
 
 When you upgrade to a newer version of `opencode-resolve`, the `postinstall` script runs an **additive migration** on your existing `~/.config/opencode/resolve.json`:
 
-- Adds new top-level keys (e.g. `autoApprove`, `maxParallelSubagents`) with their defaults if they are absent.
+- Adds new top-level keys (currently `autoApprove`) with their defaults if they are absent.
 - **Never** modifies keys you have already set.
 - **Never** rewrites your `enabled` list, `models` map, or `agents` overrides.
 - If `enabled` is set and does not include `"resolver"`, prints a one-line tip suggesting you add it. Your file is left untouched.
@@ -612,9 +654,10 @@ When `resolve.json` does **not** exist, postinstall inspects your OpenCode model
 
 | Detected provider | Preset |
 |---|---|
-| GLM / ZAI | Mixed GLM + GPT: coder/explorer → GLM, resolver/reviewer/deep-reviewer → GPT |
+| GLM/ZAI + OpenAI/GPT | Mixed: `profile: "mix"`, GLM for scout/coder aliases, GPT for resolver/reviewer/planner aliases |
+| GLM / ZAI | GLM-only: all resolve agents use GLM aliases, avoiding GPT dependency |
 | OpenAI / GPT | Single-provider: all roles use your current OpenAI model |
-| Other or none | Model-neutral: `models: {}` (all roles inherit OpenCode default) |
+| Other or none | `profile: "mix"` with model-neutral `models: {}` (all roles inherit OpenCode default) |
 
 To change presets at any time, edit `models` in `resolve.json` directly or delete the file and reinstall.
 
@@ -718,17 +761,18 @@ Aliases only resolve when defined in `models`. Agent names (`coder`, `resolver`,
 
 | Agent | Default | Mode | Edit | Bash | WebFetch | Purpose |
 |---|:---:|---|---|---|---|---|
-| `resolver` | Yes (core) | `all` | ask → allow | ask → allow | ask → allow | Context-efficient orchestrator. Decomposes work into verified checkpoints, dispatches coder, verifies each, carries forward. Max 3 retries per failing checkpoint. |
-| `coder` | Yes (core) | `subagent` | ask → allow | ask → allow | ask → allow | Focused implementer. Smallest correct patch. Reads only needed files. |
-| `explorer` | Yes (subagent) | `subagent` | **deny** | ask → allow | ask → allow | Internal fast codebase scout. Resolver dispatches when scope is genuinely unknown; prefers local read/grep/glob for narrow scope. |
-| `reviewer` | Yes (subagent) | `subagent` | **deny** | **deny** | ask → allow | Internal verification-gap auditor. Resolver dispatches for post-change verification gaps on non-trivial changes. |
-| `deep-reviewer` | Yes (subagent) | `subagent` | **deny** | **deny** | ask → allow | Internal thorough review for risky/security/architecture changes. Resolver dispatches ONLY for high-impact work. |
-| `architect` | No | `subagent` | deny | ask → allow | ask → allow | Design and task decomposition. |
-| `gpt-coder` | No | `subagent` | ask → allow | ask → allow | ask → allow | Stronger-reasoning implementation fallback. |
-| `debugger` | No | `subagent` | ask → allow | ask → allow | ask → allow | Reproduction and root-cause analysis. |
-| `researcher` | No | `subagent` | deny | ask → allow | ask → allow | Codebase and documentation research. |
+| `resolver` | Yes (core) | `all` | allow | ask (classifier-routed) | allow | Context-efficient orchestrator. Decomposes work into verified checkpoints, dispatches coder, verifies each, and reports blockers when repeated recovery fails. |
+| `coder` | Yes (core) | `subagent` | allow | ask (classifier-routed) | allow | Focused implementer. Smallest correct patch. Reads only needed files. |
+| `explorer` | Yes (subagent) | `subagent` | **deny** | **deny** | allow | Internal fast codebase scout. Resolver dispatches when scope is genuinely unknown; prefers local read/grep/glob for narrow scope. |
+| `reviewer` | Yes (subagent) | `subagent` | **deny** | **deny** | allow | Internal verification-gap auditor. Resolver dispatches for post-change verification gaps on non-trivial changes. |
+| `deep-reviewer` | Yes (subagent) | `subagent` | **deny** | **deny** | allow | Internal thorough review for risky/security/architecture changes. Resolver dispatches ONLY for high-impact work. |
+| `planner` | Yes (subagent) | `subagent` | **deny** | **deny** | allow | Explicit-plan specialist. Resolver dispatches only when the user asks for a plan/decomposition/strategy. |
+| `architect` | No | `subagent` | **deny** | **deny** | allow | Design and task decomposition. |
+| `gpt-coder` | No | `subagent` | allow | ask (classifier-routed) | allow | Stronger-reasoning implementation fallback. |
+| `debugger` | No | `subagent` | allow | ask (classifier-routed) | allow | Reproduction and root-cause analysis. |
+| `researcher` | No | `subagent` | **deny** | **deny** | allow | Codebase and documentation research. |
 
-`ask → allow` means the default is `"ask"` and `autoApprove` (default on) flips it to `"allow"`. Set `autoApprove: false` to keep them as `"ask"`.
+`bash: ask` is intentional for write agents: the plugin's `permission.ask` hook auto-allows known safe commands, auto-denies dangerous commands, and leaves unknown commands for OpenCode/user handling.
 
 Supported modes:
 
@@ -746,14 +790,15 @@ Supported model alias keys: `fast`, `strong`, `mini`, `codex`, `quick`, `deep`, 
 
 ### Resolver orchestration rules
 
-The resolver uses a context-efficient approach with checkpointed execution (max 3 retries per failing checkpoint):
+The resolver uses a context-efficient approach with checkpointed execution and repeated-failure recovery:
 
 - **Classify** the work as quick, normal, deep, or risky before planning.
 - **Inspect only relevant files** using local tools — avoid broad exploration.
 - For trivial work, apply edits directly — no subagent needed.
 - Dispatch **coder** with focused file/behavior instructions.
 - Run the **cheapest meaningful verification** first.
-- Retry from verification logs if issues remain. Max 3 attempts per failing checkpoint; then move forward or report the blocker.
+- Retry from verification logs if issues remain; on verification failure, diagnose root cause before re-dispatching a coder with a different fix.
+- After repeated consecutive failures, stop and report the blocker instead of claiming completion; after heavy failure counts, pivot to `architect` for a different strategy.
 - Use **explorer** only when scope is genuinely unknown and local read/grep/glob are insufficient (internal subagent, not core path).
 - Use **reviewer** only when a verification gap exists on non-trivial changes (internal subagent, not core path).
 - Use **deep-reviewer** only for risky, security-sensitive, architectural, or high-impact changes (internal subagent, not core path).
@@ -785,7 +830,7 @@ When `context7: true` (the default), the plugin automatically registers the [Con
 }
 ```
 
-This gives all resolve agents access to up-to-date library and framework documentation through the `resolve-library-id` and `query-docs` tools — no manual MCP configuration needed.
+This gives resolve agents access to Context7's documentation tools through OpenCode's MCP integration — no manual MCP configuration needed.
 
 To disable Context7 registration (e.g. you already have it configured, or you don't want it):
 
@@ -905,7 +950,7 @@ The release workflow runs `npm ci`, `npm run typecheck`, `npm test`, and `npm pu
 - Resolver dispatches `reviewer` only for verification gaps on non-trivial changes.
 - Resolver dispatches `deep-reviewer` only for risky, security-sensitive, architectural, or high-impact changes.
 - Reviewer and deep-reviewer are read-only — fixes always go through `coder` or `resolver`.
-- Max 3 retries per failing checkpoint to avoid wasted context. Large tasks are decomposed into verified checkpoints.
+- Repeated verification failures trigger diagnosis, a different fix strategy, and blocker reporting instead of silent loop continuation. Large tasks are decomposed into verified checkpoints.
 - The resolver honors `maxParallelSubagents` for context efficiency.
 - Search and inspect before editing. Make the smallest correct change. Verify when practical.
 - Read only needed files. Avoid broad exploration. Targeted verification, not full suites.

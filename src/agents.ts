@@ -330,7 +330,7 @@ export const VALID_MODEL_ALIASES = [
       "gold",
     ] as const;
 export const VALID_MODEL_ALIAS_SET = new Set<string>(VALID_MODEL_ALIASES);
-export const VALID_PROFILES = new Set<string>(["glm", "gpt"]);
+export const VALID_PROFILES = new Set<string>(["mix", "glm", "gpt"]);
 export const VALID_TIERS = new Set<string>(["bronze", "silver", "gold"]);
 export const GLM_ENABLED: ResolveAgentName[] = ["coder", "resolver", "explorer", "reviewer", "planner"];
 export const GPT_ENABLED: ResolveAgentName[] = ["coder", "resolver", "explorer", "reviewer", "deep-reviewer", "planner"];

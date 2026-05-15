@@ -316,6 +316,9 @@ config: async (config: any) => {
       if (ctx?.knowledgeFiles.length) {
         contextLines.push(`Project knowledge files: ${ctx.knowledgeFiles.join(", ")}.`)
       }
+      if (ctx?.contextFiles.length) {
+        contextLines.push(`Context docs: ${ctx.contextFiles.slice(0, 20).join(", ")}.`)
+      }
       if (ctx?.verifyCommands.length) {
         contextLines.push(`Verify commands: ${ctx.verifyCommands.join("; ")}.`)
       }
@@ -400,7 +403,10 @@ config: async (config: any) => {
       const lines: string[] = []
 
       if (ctx?.knowledgeFiles.length) {
-        lines.push(`[opencode-resolve] Project knowledge: ${ctx.knowledgeFiles.join(", ")}. Read before modifying code.`)
+        lines.push(`[opencode-resolve] Project knowledge: ${ctx.knowledgeFiles.join(", ")}. Read when relevant before modifying code.`)
+      }
+      if (ctx?.contextFiles.length) {
+        lines.push(`[opencode-resolve] Context docs: ${ctx.contextFiles.slice(0, 20).join(", ")}. MVI: load only task-relevant docs.`)
       }
       if (ctx?.verifyCommands.length) {
         lines.push(`[opencode-resolve] Verify commands: ${ctx.verifyCommands.join("; ")}. Run after changes.`)

@@ -40,7 +40,7 @@ export type ResolveAgentConfig = {
         external_directory?: PermissionValue
       }
     };
-export type ProfileName = "glm" | "gpt";
+export type ProfileName = "mix" | "glm" | "gpt";
 export type TierName = "bronze" | "silver" | "gold";
 export type ResolveConfig = {
       profile?: ProfileName
@@ -60,8 +60,10 @@ export type ResolvePluginOptions = ResolveConfig & {
     };
 export type UnknownRecord = Record<string, unknown>;
 export type ProjectContext = {
-      /** Absolute paths to project knowledge files that exist */
+      /** Project knowledge files or directories that exist */
       knowledgeFiles: string[]
+      /** Pattern/context documents discovered under committed context directories */
+      contextFiles: string[]
       /** Package manager detected (npm, yarn, pnpm, bun) */
       packageManager: string | undefined
       /** Verification commands available (e.g. "npx tsc --noEmit", "npm run lint") */

@@ -6,6 +6,16 @@ import { runCommand, sanitizeShellArg, truncateOutput } from "../utils.js";
 import { SessionState, DIAGNOSTICS_TTL_MS } from "../state.js";
 import { VALID_PROFILES, VALID_TIERS, VALID_AGENT_NAME_SET, VALID_AGENT_NAMES } from "../agents.js";
 
+const WRITE_CAPABLE_AGENTS = new Set(["resolver", "coder", "glm", "gpt-coder", "debugger"]);
+
+function canWriteFromTool(ctx: { agent?: string }): boolean {
+  return typeof ctx.agent !== "string" || WRITE_CAPABLE_AGENTS.has(ctx.agent)
+}
+
+function readOnlyToolWriteDenied(ctx: { agent?: string }, action: string): string {
+  return `Permission denied: agent '${ctx.agent ?? "unknown"}' is read-only and cannot ${action}. Dispatch resolver/coder for workspace writes.`
+}
+
 export function getTools(sessionState: SessionState) {
   return {
       "resolve-verify": tool({
@@ -63,6 +73,7 @@ export function getTools(sessionState: SessionState) {
           if (!ctx) return "No project context detected."
           const lines: string[] = []
           if (ctx.knowledgeFiles.length > 0) lines.push(`Knowledge files: ${ctx.knowledgeFiles.join(", ")}`)
+          if (ctx.contextFiles.length > 0) lines.push(`Context docs: ${ctx.contextFiles.join(", ")}`)
           if (ctx.verifyCommands.length > 0) lines.push(`Verify commands: ${ctx.verifyCommands.join("; ")}`)
           if (ctx.packageManager) lines.push(`Package manager: ${ctx.packageManager}`)
           if (ctx.hasTypeScript) lines.push("TypeScript: yes")
@@ -294,14 +305,16 @@ export function getTools(sessionState: SessionState) {
               `Modified: ${s.mtime.toISOString()}`,
               `Language: ${langMap[ext] ?? ext.toUpperCase()}`,
             ]
-            // Quick line count
+            // Quick line count — pure Node.js, no shell injection risk
             try {
-              const wc = await runCommand(`wc -l '${filePath}'`, ctx.directory, 5_000)
-              if (wc.exitCode === 0) lines.push(`Lines: ${wc.stdout.trim().split(/\s+/)[0]}`)
+              const content = await readFile(filePath, "utf8")
+              const lineCount = content.split("\n").length - (content.endsWith("\n") ? 1 : 0)
+              lines.push(`Lines: ${lineCount}`)
             } catch { /* skip */ }
-            // Git tracked?
+            // Git tracked? — sanitize path to prevent shell injection
             try {
-              const git = await runCommand(`git ls-files --error-unmatch '${filePath}' 2>/dev/null`, ctx.directory, 3_000)
+              const safePath = sanitizeShellArg(filePath)
+              const git = await runCommand(`git ls-files --error-unmatch '${safePath}' 2>/dev/null`, ctx.directory, 3_000)
               lines.push(`Git: ${git.exitCode === 0 ? "tracked" : "untracked"}`)
             } catch {
               lines.push("Git: not a git repo")
@@ -419,6 +432,10 @@ export function getTools(sessionState: SessionState) {
           const projCtx = sessionState.storedProjectContext
           const results: string[] = []
           const dryRun = args.dry_run ?? false
+
+          if (!dryRun && !canWriteFromTool(ctx)) {
+            return readOnlyToolWriteDenied(ctx, "initialize files")
+          }
 
           // Build resolve.json content
           const resolveConfig: Record<string, unknown> = {}
@@ -576,11 +593,9 @@ export function getTools(sessionState: SessionState) {
       }),
 
       "resolve-env": tool({
-        description: "Check environment configuration. Reads .env.example if present, lists required variables, and shows which ones are set in the current environment.",
-        args: {
-          show_values: tool.schema.boolean().optional().describe("If true, show actual values (WARNING: may expose secrets). Default: false (names only)."),
-        },
-        async execute(args, ctx) {
+        description: "Check environment configuration. Reads .env.example if present, lists required variables, and shows which ones are set (names only, never values).",
+        args: {},
+        async execute(_args, ctx) {
           const results: string[] = []
           // Check for .env.example
           for (const name of [".env.example", ".env.sample", ".env.template"]) {
@@ -593,12 +608,12 @@ export function getTools(sessionState: SessionState) {
                 .filter(Boolean)
               if (vars.length > 0) {
                 results.push(`${name} variables: ${vars.join(", ")}`)
-                // Check which are set
+                // Check which are set (names only — never expose values)
                 const set: string[] = []
                 const missing: string[] = []
                 for (const v of vars) {
                   if (process.env[v]) {
-                    set.push(args.show_values ? `${v}=${process.env[v]}` : v)
+                    set.push(v)
                   } else {
                     missing.push(v)
                   }
@@ -1097,6 +1112,10 @@ export function getTools(sessionState: SessionState) {
           }
 
           // save
+          if (!canWriteFromTool(ctx)) {
+            return readOnlyToolWriteDenied(ctx, "save session state")
+          }
+
           const state: Record<string, unknown> = {
             timestamp: new Date().toISOString(),
             sessionId: ctx.sessionID ?? "unknown",
@@ -1112,6 +1131,7 @@ export function getTools(sessionState: SessionState) {
           if (args.note) state.note = args.note
           if (sessionState.storedProjectContext) {
             state.knowledgeFiles = sessionState.storedProjectContext.knowledgeFiles
+            state.contextFiles = sessionState.storedProjectContext.contextFiles
             state.verifyCommands = sessionState.storedProjectContext.verifyCommands
           }
           // Track hotspots

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import cp from "node:child_process"
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
+import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import test from "node:test"
@@ -603,12 +603,19 @@ test("glm agent is disabled by default", async () => {
   assert.equal(config.agent.glm, undefined)
 })
 
-test("mixed mode (no profile) uses default resolver prompt", async () => {
+test("mix profile uses default resolver prompt", async () => {
   const { config } = await runPlugin(
     { model: "provider/default" },
     undefined,
-    {},
+    { profile: "mix" },
   )
+
+  assert.match(config.agent.resolver.prompt, /You are Resolver, the context-efficient orchestrator/)
+  assert.equal(config.agent["deep-reviewer"].mode, "subagent")
+})
+
+test("default profile is explicit mix", async () => {
+  const { config } = await runPlugin({ model: "provider/default" })
 
   assert.match(config.agent.resolver.prompt, /You are Resolver, the context-efficient orchestrator/)
   assert.equal(config.agent["deep-reviewer"].mode, "subagent")
@@ -635,6 +642,28 @@ test("injects project context: knowledge files + verify commands into resolver p
     assert.match(config.agent.resolver.prompt, /npm run lint/)
     assert.match(config.agent.resolver.prompt, /npm test/)
     assert.match(config.agent.resolver.prompt, /TypeScript project/)
+  } finally {
+    await rm(tmpPath, { recursive: true, force: true })
+  }
+})
+
+test("detects committed project context directories", async () => {
+  const tmpPath = await mkdtemp(join(tmpdir(), "opencode-resolve-test-"))
+  try {
+    await mkdir(join(tmpPath, ".opencode", "context", "project"), { recursive: true })
+    await writeFile(join(tmpPath, ".opencode", "context", "project", "patterns.md"), "# Patterns\nUse project style.\n")
+    await mkdir(join(tmpPath, "thoughts", "architecture"), { recursive: true })
+    await writeFile(join(tmpPath, "thoughts", "architecture", "overview.md"), "# Architecture\nSystem design.\n")
+    await mkdir(join(tmpPath, "thoughts", "archive"), { recursive: true })
+    await writeFile(join(tmpPath, "thoughts", "archive", "old.md"), "# Old\nDo not use.\n")
+
+    const { config } = await runPlugin({ model: "provider/model" }, { path: tmpPath, cleanup: () => rm(tmpPath, { recursive: true, force: true }) })
+
+    assert.match(config.agent.resolver.prompt, /\.opencode\/context/)
+    assert.match(config.agent.resolver.prompt, /\.opencode\/context\/project\/patterns\.md/)
+    assert.match(config.agent.resolver.prompt, /thoughts\/architecture\/overview\.md/)
+    assert.doesNotMatch(config.agent.resolver.prompt, /thoughts\/archive\/old\.md/)
+    assert.match(config.agent.resolver.prompt, /MVI rule/)
   } finally {
     await rm(tmpPath, { recursive: true, force: true })
   }
@@ -1594,6 +1623,36 @@ test("resolve-init tool is registered", async () => {
   assert.ok(hooks.tool["resolve-init"], "should have resolve-init tool")
   assert.equal(typeof hooks.tool["resolve-init"].execute, "function")
   assert.ok(hooks.tool["resolve-init"].description.includes("config files"))
+})
+
+test("resolve-init blocks read-only agents from writing files", async () => {
+  const project = await createProject({
+    "opencode.json": {},
+    "opencode-resolve.json": {},
+    "package.json": { name: "test" },
+  })
+  try {
+    const hooks = await OpencodeResolve(
+      { directory: project.path, client: {}, project: {}, worktree: project.path, serverUrl: new URL("http://localhost"), $: {}, experimental_workspace: { register() {} } },
+      {},
+    )
+    await hooks.config({ model: "provider/model", agent: {} })
+
+    const denied = await hooks.tool["resolve-init"].execute(
+      { harness: true, agents: true },
+      { sessionID: "s1", messageID: "m1", agent: "reviewer", directory: project.path, worktree: project.path, abort: new AbortController().signal, metadata() {}, ask: () => ({}) },
+    )
+    assert.match(String(denied), /Permission denied/)
+    await assert.rejects(() => access(join(project.path, "HARNESS.md")))
+
+    const dryRun = await hooks.tool["resolve-init"].execute(
+      { dry_run: true, harness: true },
+      { sessionID: "s1", messageID: "m2", agent: "reviewer", directory: project.path, worktree: project.path, abort: new AbortController().signal, metadata() {}, ask: () => ({}) },
+    )
+    assert.match(String(dryRun), /DRY RUN/)
+  } finally {
+    await project.cleanup()
+  }
 })
 
 // ── chat.params topP for GLM ───────────────────────────────────────────────
@@ -2583,6 +2642,36 @@ test("resolve-state tool saves and loads checkpoint", async () => {
     else process.env.HOME = previousHome
     if (previousUserprofile === undefined) delete process.env.USERPROFILE
     else process.env.USERPROFILE = previousUserprofile
+    await project.cleanup()
+  }
+})
+
+test("resolve-state blocks read-only agents from saving checkpoints", async () => {
+  const project = await createProject({
+    "opencode.json": {},
+    "opencode-resolve.json": {},
+    "package.json": { name: "test" },
+  })
+  try {
+    const hooks = await OpencodeResolve(
+      { directory: project.path, client: {}, project: {}, worktree: project.path, serverUrl: new URL("http://localhost"), $: {}, experimental_workspace: { register() {} } },
+      {},
+    )
+    await hooks.config({ model: "provider/model", agent: {} })
+
+    const saveResult = await hooks.tool["resolve-state"].execute(
+      { action: "save", note: "should not write" },
+      { directory: project.path, sessionID: "test-session", messageID: "m1", agent: "planner", worktree: project.path, abort: new AbortController().signal, metadata() {}, async ask() { return "yes" } },
+    )
+    assert.match(String(saveResult), /Permission denied/)
+    await assert.rejects(() => access(join(project.path, ".opencode", "resolve-state.json")))
+
+    const loadResult = await hooks.tool["resolve-state"].execute(
+      { action: "load" },
+      { directory: project.path, sessionID: "test-session", messageID: "m2", agent: "planner", worktree: project.path, abort: new AbortController().signal, metadata() {}, async ask() { return "yes" } },
+    )
+    assert.match(String(loadResult), /No previous checkpoint/)
+  } finally {
     await project.cleanup()
   }
 })

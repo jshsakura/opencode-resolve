@@ -17,8 +17,9 @@ const ADDITIVE_DEFAULTS = {
   autoApprove: true,
 }
 
-// ZAI MCP servers that boost GLM capabilities (vision, web search, GitHub, URL reading)
-// Only injected when GLM is detected — GLM users already have Z_AI_API_KEY
+// ZAI local MCP server bootstrap for GLM users.
+// Do not copy provider secrets from OpenCode's auth store into opencode.json.
+// The MCP process should receive credentials from the user's runtime environment.
 const ZAI_MCP_SERVERS = {
   "zai-mcp-server": {
     type: "local",
@@ -27,44 +28,6 @@ const ZAI_MCP_SERVERS = {
       Z_AI_MODE: "ZAI",
     },
   },
-  "web-search-prime": {
-    type: "remote",
-    url: "https://api.z.ai/api/mcp/web_search_prime/mcp",
-  },
-  "web-reader": {
-    type: "remote",
-    url: "https://api.z.ai/api/mcp/web_reader/mcp",
-  },
-  zread: {
-    type: "remote",
-    url: "https://api.z.ai/api/mcp/zread/mcp",
-  },
-}
-
-// Read ZAI API key from OpenCode's auth store (~/.local/share/opencode/auth.json)
-// OpenCode stores provider credentials here when user sets up a provider
-async function readZAIApiKey() {
-  const dataDir = process.env.XDG_DATA_HOME || join(homedir(), ".local", "share")
-  const authPath = join(dataDir, "opencode", "auth.json")
-  try {
-    const raw = await readFile(authPath, "utf8")
-    const auth = JSON.parse(raw)
-    // Look for ZAI provider entries: "zai", "zai-coding-plan", or any key starting with "zai"
-    for (const [providerId, entry] of Object.entries(auth)) {
-      if (
-        (providerId === "zai" || providerId.startsWith("zai")) &&
-        isObject(entry) &&
-        entry.type === "api" &&
-        typeof entry.key === "string" &&
-        entry.key.length > 0
-      ) {
-        return entry.key
-      }
-    }
-  } catch {
-    // auth.json doesn't exist or isn't readable — fall back to env var
-  }
-  return process.env.Z_AI_API_KEY || null
 }
 
 const COMPANION_PLUGINS = [
@@ -140,13 +103,12 @@ async function createAdaptiveResolveConfig(opencodeConfig) {
 
   const currentModel = detectOpenCodeModel(opencodeConfig)
   const allModels = detectAllModels(opencodeConfig)
-  const preset = buildModelPreset(currentModel)
-
   const resolveConfig = { ...example }
 
   // Profile selection based on detected providers
   const hasGLM = allModels.some((m) => isGLMModel(m))
   const hasGPT = allModels.some((m) => isGPTModel(m))
+  const preset = buildModelPreset(currentModel, allModels)
 
   if (hasGLM && !hasGPT) {
     // GLM only → GLM profile, silver tier (token-efficient, no deep-reviewer)
@@ -156,8 +118,10 @@ async function createAdaptiveResolveConfig(opencodeConfig) {
     // GPT only → GPT profile, gold tier (full power)
     resolveConfig.profile = "gpt"
     resolveConfig.tier = "gold"
+  } else {
+    // Mixed or unknown provider → explicit mix profile. No tier: use DEFAULT_ENABLED.
+    resolveConfig.profile = "mix"
   }
-  // Both GLM + GPT → no profile (mixed, default recommendation)
 
   if (preset && Object.keys(preset).length > 0) {
     resolveConfig.models = preset
@@ -196,44 +160,80 @@ function detectOpenCodeModel(config) {
   return null
 }
 
-function buildModelPreset(currentModel) {
-  if (!currentModel) return {}
+function buildModelPreset(currentModel, allModels = []) {
+  const glmModel = allModels.find((m) => isGLMModel(m))
+  const gptModel = allModels.find((m) => isGPTModel(m))
+
+  if (glmModel && gptModel) {
+    return {
+      mix: "gpt",
+      glm: glmModel,
+      gpt: gptModel,
+      bronze: "glm",
+      silver: "glm",
+      gold: "gpt",
+      fast: "glm",
+      strong: "gpt",
+      mini: "glm",
+      codex: "gpt",
+      explorer: "bronze",
+      coder: "silver",
+      resolver: "gold",
+      reviewer: "gold",
+      "deep-reviewer": "gold",
+      planner: "gold",
+    }
+  }
+
+  if (!currentModel) {
+    if (glmModel) return buildGLMOnlyPreset(glmModel)
+    if (gptModel) return buildGPTOnlyPreset(gptModel)
+    return {}
+  }
 
   const lower = currentModel.toLowerCase()
 
   // GLM / ZAI — GLM-only preset (no GPT dependency, avoids token-exhaustion errors)
   if (lower.includes("glm") || lower.includes("zai")) {
-    return {
-      glm: "zai-coding-plan/glm-5.1",
-      fast: "glm",
-      strong: "glm",
-      coder: "glm",
-      resolver: "glm",
-      reviewer: "glm",
-      "deep-reviewer": "glm",
-      explorer: "fast",
-      planner: "glm",
-    }
+    return buildGLMOnlyPreset(currentModel)
   }
 
   // OpenAI / GPT single-provider preset
   if (lower.includes("openai/") || lower.includes("gpt")) {
-    return {
-      gpt: currentModel,
-      fast: "gpt",
-      strong: "gpt",
-      mini: "gpt",
-      codex: "gpt",
-      coder: "gpt",
-      resolver: "gpt",
-      explorer: "gpt",
-      reviewer: "gpt",
-      "deep-reviewer": "gpt",
-    }
+    return buildGPTOnlyPreset(currentModel)
   }
 
   // Unknown provider — keep model-neutral
   return {}
+}
+
+function buildGLMOnlyPreset(model) {
+  return {
+    glm: model,
+    fast: "glm",
+    strong: "glm",
+    coder: "glm",
+    resolver: "glm",
+    reviewer: "glm",
+    "deep-reviewer": "glm",
+    explorer: "fast",
+    planner: "glm",
+  }
+}
+
+function buildGPTOnlyPreset(model) {
+  return {
+    gpt: model,
+    fast: "gpt",
+    strong: "gpt",
+    mini: "gpt",
+    codex: "gpt",
+    coder: "gpt",
+    resolver: "gpt",
+    explorer: "gpt",
+    reviewer: "gpt",
+    "deep-reviewer": "gpt",
+  }
 }
 
 function getPresetLabel(currentModel) {
@@ -275,11 +275,17 @@ function detectAllModels(config) {
 
   // Provider model lists
   if (isObject(config.provider)) {
-    for (const providerConfig of Object.values(config.provider)) {
+    for (const [providerId, providerConfig] of Object.entries(config.provider)) {
       if (isObject(providerConfig) && isObject(providerConfig.models)) {
-        for (const modelEntry of Object.values(providerConfig.models)) {
-          if (typeof modelEntry === "string") models.add(modelEntry)
-          else if (isObject(modelEntry) && typeof modelEntry.id === "string") models.add(modelEntry.id)
+        for (const [modelKey, modelEntry] of Object.entries(providerConfig.models)) {
+          if (typeof modelKey === "string" && modelKey.length > 0) {
+            models.add(qualifyModelId(providerId, modelKey))
+          }
+          if (typeof modelEntry === "string") {
+            models.add(qualifyModelId(providerId, modelEntry))
+          } else if (isObject(modelEntry) && typeof modelEntry.id === "string") {
+            models.add(qualifyModelId(providerId, modelEntry.id))
+          }
         }
       }
     }
@@ -295,6 +301,12 @@ function detectAllModels(config) {
   }
 
   return [...models]
+}
+
+function qualifyModelId(providerId, modelId) {
+  if (typeof modelId !== "string" || modelId.length === 0) return modelId
+  if (modelId.includes("/")) return modelId
+  return `${providerId}/${modelId}`
 }
 
 async function migrateResolveConfig() {
@@ -371,48 +383,8 @@ async function injectZAIMCPs(config) {
   config.mcp ??= {}
   if (!isObject(config.mcp)) return false
 
-  const apiKey = await readZAIApiKey()
-  if (!apiKey) {
-    console.warn(`[${packageName}] GLM detected but no ZAI API key found in auth.json or env — MCP servers may not work`)
-    console.warn(`[${packageName}] Set up the ZAI provider in OpenCode first, or set Z_AI_API_KEY in your environment`)
-    return false
-  }
-
-  // Build MCP configs with the actual API key
-  const zaiMcpWithKey = {
-    "zai-mcp-server": {
-      type: "local",
-      command: ["npx", "-y", "@z_ai/mcp-server"],
-      environment: {
-        Z_AI_API_KEY: apiKey,
-        Z_AI_MODE: "ZAI",
-      },
-    },
-    "web-search-prime": {
-      type: "remote",
-      url: "https://api.z.ai/api/mcp/web_search_prime/mcp",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-      },
-    },
-    "web-reader": {
-      type: "remote",
-      url: "https://api.z.ai/api/mcp/web_reader/mcp",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-      },
-    },
-    zread: {
-      type: "remote",
-      url: "https://api.z.ai/api/mcp/zread/mcp",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-      },
-    },
-  }
-
   const added = []
-  for (const [name, mcpConfig] of Object.entries(zaiMcpWithKey)) {
+  for (const [name, mcpConfig] of Object.entries(ZAI_MCP_SERVERS)) {
     if (config.mcp[name] === undefined) {
       config.mcp[name] = mcpConfig
       added.push(name)
@@ -420,11 +392,12 @@ async function injectZAIMCPs(config) {
   }
 
   if (added.length > 0) {
-    console.log(`[${packageName}] injected ZAI MCP servers: ${added.join(", ")}`)
+    console.log(`[${packageName}] injected ZAI MCP server config: ${added.join(", ")}`)
+    console.log(`[${packageName}] note: API keys are not copied into opencode.json; export Z_AI_API_KEY if the MCP server requires it.`)
     return true
   }
 
-  console.log(`[${packageName}] ZAI MCP servers already present — skipping`)
+  console.log(`[${packageName}] ZAI MCP server already present — skipping`)
   return false
 }
 

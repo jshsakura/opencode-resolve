@@ -1,4 +1,5 @@
 {
+  "profile": "mix",
   "preserveNative": true,
   "context7": true,
   "commands": false,
@@ -8,7 +9,7 @@
   "agents": {
     "coder": {
       "enabled": true,
-      "mode": "all"
+      "mode": "subagent"
     },
     "resolver": {
       "enabled": true

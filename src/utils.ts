@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
-import { stat, readFile, access } from "node:fs/promises";
-import { resolve, join, dirname, isAbsolute } from "node:path";
+import { stat, readFile, access, readdir } from "node:fs/promises";
+import { resolve, join, dirname, isAbsolute, extname, relative } from "node:path";
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -89,27 +89,60 @@ export async function existsFile(path: string): Promise<boolean> {
     }
 }
 
+export async function existsPath(path: string): Promise<boolean> {
+    try {
+    await stat(path)
+    return true
+    } catch {
+    return false
+    }
+}
+
+export async function existsDirectory(path: string): Promise<boolean> {
+    try {
+    const s = await stat(path)
+    return s.isDirectory()
+    } catch {
+    return false
+    }
+}
+
 export async function detectProjectContext(directory: string): Promise<ProjectContext> {
     const ctx: ProjectContext = {
             knowledgeFiles: [],
+            contextFiles: [],
             packageManager: undefined,
             verifyCommands: [],
             hasTypeScript: false,
             hasHarness: false,
             hasAgents: false,
           };
-    const knowledgeCandidates = [
+    const knowledgeFileCandidates = [
             "HARNESS.md",
             "AGENTS.md",
             "CLAUDE.md",
             "CONVENTIONS.md",
           ];
-    for (const candidate of knowledgeCandidates) {
+    for (const candidate of knowledgeFileCandidates) {
     const fullPath = join(directory, candidate)
     if (await existsFile(fullPath)) {
       ctx.knowledgeFiles.push(candidate)
       if (candidate === "HARNESS.md") ctx.hasHarness = true
       if (candidate === "AGENTS.md") ctx.hasAgents = true
+    }
+    }
+
+    const knowledgeDirectoryCandidates = [
+            ".opencode/context",
+            ".claude/context",
+            "context",
+            "thoughts",
+          ];
+    for (const candidate of knowledgeDirectoryCandidates) {
+    const fullPath = join(directory, candidate)
+    if (await existsDirectory(fullPath)) {
+      ctx.knowledgeFiles.push(candidate)
+      ctx.contextFiles.push(...await collectContextFiles(directory, candidate))
     }
     }
 
@@ -142,6 +175,36 @@ export async function detectProjectContext(directory: string): Promise<ProjectCo
     }
 
     return ctx
+}
+
+export async function collectContextFiles(rootDirectory: string, relativeDirectory: string, maxFiles = 40): Promise<string[]> {
+    const allowedExtensions = new Set([".md", ".mdx", ".txt", ".json", ".jsonc", ".yaml", ".yml"]);
+    const results: string[] = [];
+    async function walk(current: string, depth: number): Promise<void> {
+    if (depth > 3 || results.length >= maxFiles) return
+    let entries;
+    try {
+      entries = await readdir(current, { withFileTypes: true })
+    } catch {
+      return
+    }
+    entries.sort((a, b) => a.name.localeCompare(b.name))
+    for (const entry of entries) {
+      if (results.length >= maxFiles) break
+      if (entry.name.startsWith(".")) continue
+      if (entry.name === "archive") continue
+      const fullPath = join(current, entry.name)
+      if (entry.isDirectory()) {
+        await walk(fullPath, depth + 1)
+        continue
+      }
+      if (!entry.isFile()) continue
+      if (!allowedExtensions.has(extname(entry.name).toLowerCase())) continue
+      results.push(relative(rootDirectory, fullPath))
+    }
+    }
+    await walk(join(rootDirectory, relativeDirectory), 0)
+    return results
 }
 
 export function readPluginVersion(): string {
