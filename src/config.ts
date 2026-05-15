@@ -2,7 +2,7 @@ import { join, basename, isAbsolute, resolve } from "node:path";
 import { homedir } from "node:os";
 import { access, readFile } from "node:fs/promises";
 import { Config } from "@opencode-ai/plugin";
-import { ResolveConfig, ProjectContext, ResolveAgentName, ProfileName, TierName, AgentMode, UnknownRecord, ResolvePluginOptions, ResolveAgentConfig, ModelAlias, PermissionValue } from "./types.js";
+import { ResolveConfig, ProjectContext, ResolveAgentName, ProfileName, TierName, AgentMode, UnknownRecord, ResolvePluginOptions, ResolveAgentConfig, ModelAlias, PermissionValue, LanguageSetting } from "./types.js";
 import { DEFAULT_AGENT_CONFIG, buildGLMResolverPrompt, GLM_CODER_PROMPT, buildGPTResolverPrompt, GPT_CODER_PROMPT, buildResolverPrompt, VALID_AGENT_NAME_SET, DEFAULT_MODELS, DEFAULT_ENABLED, VALID_AGENT_NAMES, GLM_ENABLED, GPT_ENABLED, TIER_ENABLED, GLM_AGENT_OVERRIDES, GPT_AGENT_OVERRIDES, VALID_MODEL_ALIAS_SET, VALID_PROFILES, VALID_TIERS } from "./agents.js";
 import { readFirstJson } from "./utils.js";
 
@@ -142,6 +142,7 @@ export function mergeResolveConfig(...configs: Array<ResolveConfig | undefined>)
     result.autoApprove = config.autoApprove ?? result.autoApprove
     result.maxParallelSubagents = config.maxParallelSubagents ?? result.maxParallelSubagents
     result.autoUpdate = config.autoUpdate ?? result.autoUpdate
+    result.language = config.language ?? result.language
     result.models = { ...result.models, ...config.models }
     result.agents = mergeAgents(result.agents, config.agents)
     }
@@ -253,6 +254,14 @@ export function normalizeResolveConfig(value: unknown, source: string): ResolveP
       throw new Error(`Unknown tier "${tier}" in ${source}.tier. Valid tiers: ${[...VALID_TIERS].join(", ")}`)
     }
     result.tier = tier as TierName
+    }
+
+    if (config.language !== undefined) {
+    const language = expectString(config.language, `${source}.language`)
+    if (!VALID_LANGUAGES.has(language)) {
+      throw new Error(`Unknown language "${language}" in ${source}.language. Valid: ${[...VALID_LANGUAGES].join(", ")}`)
+    }
+    result.language = language as LanguageSetting
     }
 
     if (config.maxParallelSubagents !== undefined) {
@@ -407,6 +416,7 @@ export const VALID_TOP_LEVEL_KEYS = new Set<string>([
       "autoApprove",
       "maxParallelSubagents",
       "autoUpdate",
+      "language",
       "config",
     ]);
 export const VALID_AGENT_KEYS = new Set<string>([
@@ -422,3 +432,4 @@ export const VALID_AGENT_KEYS = new Set<string>([
     ]);
 export const VALID_MODES = new Set<string>(["subagent", "primary", "all"]);
 export const VALID_PERMISSION_VALUES = new Set<string>(["ask", "allow", "deny"]);
+export const VALID_LANGUAGES = new Set<string>(["auto", "en", "ko"]);

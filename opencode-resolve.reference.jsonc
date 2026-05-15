@@ -117,6 +117,22 @@
   "maxParallelSubagents": 2,
 
   // -----------------------------------------------------------------------
+  // language ("auto" | "en" | "ko")
+  // Locale for hook-generated reminders, role-play narration, and system
+  // nudges. Does NOT change agent prompts or model output — only the
+  // plugin's own messages.
+  //
+  //   "auto" — detect from $LANG (defaults to en if not Korean). Default.
+  //   "en"   — force English.
+  //   "ko"   — force Korean.
+  //
+  // Examples of what this affects:
+  //   en: "[resolver] Reminder: verify your changes ..."
+  //   ko: "[리졸버] 리마인더: 완료 보고 전에 변경사항을 검증하세요 ..."
+  // -----------------------------------------------------------------------
+  "language": "auto",
+
+  // -----------------------------------------------------------------------
   // models (object)
 // Alias map. Keys are either an agent name (coder, reviewer, resolver,
 // codex, gpt, glm, architect, gpt-coder, debugger, researcher, explorer,

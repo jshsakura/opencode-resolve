@@ -1,4 +1,5 @@
 import { ProjectContext, ResolveConfig } from "./types.js";
+import type { Locale } from "./messages.js";
 
 export const DIAGNOSTICS_TTL_MS = 30_000;
 export const FAILURE_PATTERN_TTL_MS = 120_000;
@@ -22,6 +23,9 @@ export interface SessionState {
   sessionStartTime: number;
   loopWarnings: string[];
   lastStrategyHint: string;
+
+  currentAgent?: string;
+  locale: Locale;
 }
 
 export function createSessionState(): SessionState {
@@ -35,6 +39,7 @@ export function createSessionState(): SessionState {
     totalToolCalls: 0,
     sessionStartTime: Date.now(),
     loopWarnings: [],
-    lastStrategyHint: ""
+    lastStrategyHint: "",
+    locale: "en"
   };
 }

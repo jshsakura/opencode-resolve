@@ -138,6 +138,7 @@ export function mergeResolveConfig(...configs) {
         result.autoApprove = config.autoApprove ?? result.autoApprove;
         result.maxParallelSubagents = config.maxParallelSubagents ?? result.maxParallelSubagents;
         result.autoUpdate = config.autoUpdate ?? result.autoUpdate;
+        result.language = config.language ?? result.language;
         result.models = { ...result.models, ...config.models };
         result.agents = mergeAgents(result.agents, config.agents);
     }
@@ -243,6 +244,13 @@ export function normalizeResolveConfig(value, source) {
             throw new Error(`Unknown tier "${tier}" in ${source}.tier. Valid tiers: ${[...VALID_TIERS].join(", ")}`);
         }
         result.tier = tier;
+    }
+    if (config.language !== undefined) {
+        const language = expectString(config.language, `${source}.language`);
+        if (!VALID_LANGUAGES.has(language)) {
+            throw new Error(`Unknown language "${language}" in ${source}.language. Valid: ${[...VALID_LANGUAGES].join(", ")}`);
+        }
+        result.language = language;
     }
     if (config.maxParallelSubagents !== undefined) {
         const limit = expectNumber(config.maxParallelSubagents, `${source}.maxParallelSubagents`);
@@ -387,6 +395,7 @@ export const VALID_TOP_LEVEL_KEYS = new Set([
     "autoApprove",
     "maxParallelSubagents",
     "autoUpdate",
+    "language",
     "config",
 ]);
 export const VALID_AGENT_KEYS = new Set([
@@ -402,3 +411,4 @@ export const VALID_AGENT_KEYS = new Set([
 ]);
 export const VALID_MODES = new Set(["subagent", "primary", "all"]);
 export const VALID_PERMISSION_VALUES = new Set(["ask", "allow", "deny"]);
+export const VALID_LANGUAGES = new Set(["auto", "en", "ko"]);

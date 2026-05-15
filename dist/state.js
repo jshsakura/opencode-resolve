@@ -15,6 +15,7 @@ export function createSessionState() {
         totalToolCalls: 0,
         sessionStartTime: Date.now(),
         loopWarnings: [],
-        lastStrategyHint: ""
+        lastStrategyHint: "",
+        locale: "en"
     };
 }

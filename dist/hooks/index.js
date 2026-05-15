@@ -1,12 +1,82 @@
 import { DIAGNOSTICS_TTL_MS, FAILURE_PATTERN_TTL_MS, FAILURE_THRESHOLD, STRATEGY_PIVOT_THRESHOLD, EDIT_HOTSPOT_TTL_MS, EDIT_HOTSPOT_THRESHOLD } from "../state.js";
 import { classifyBashCommand, maybeAutoUpdate, detectProjectContext } from "../utils.js";
 import { loadResolveConfig, applyResolveConfig } from "../config.js";
+import { contextMessage, narrate, resolveLocale, t, agentDisplayName, PLUGIN_BRAND } from "../messages.js";
 function capTemperature(current, cap) {
     return typeof current === "number" && Number.isFinite(current)
         ? Math.min(current, cap)
         : cap;
 }
+const DISPATCH_KEYS = {
+    coder: "dispatch.coder",
+    reviewer: "dispatch.reviewer",
+    "deep-reviewer": "dispatch.deepReviewer",
+    explorer: "dispatch.explorer",
+    planner: "dispatch.planner",
+    architect: "dispatch.architect",
+    researcher: "dispatch.researcher",
+    debugger: "dispatch.debugger",
+    codex: "dispatch.codex",
+    glm: "dispatch.glm",
+    gpt: "dispatch.gpt",
+    "gpt-coder": "dispatch.gptCoder",
+};
+function extractSubagentType(args) {
+    if (!args || typeof args !== "object")
+        return undefined;
+    const candidate = args.subagent_type ?? args.subagentType ?? args.agent ?? args.type ?? args.role;
+    return typeof candidate === "string" && candidate.length > 0 ? candidate : undefined;
+}
+function extractDispatchGoal(args) {
+    if (!args || typeof args !== "object")
+        return "";
+    const candidate = args.description ?? args.title ?? args.task ?? args.prompt;
+    if (typeof candidate !== "string")
+        return "";
+    const trimmed = candidate.trim().split("\n")[0] ?? "";
+    return trimmed.length > 80 ? trimmed.slice(0, 77) + "…" : trimmed;
+}
 export function getHooks(directory, options, sessionState) {
+    const narrateToolStart = (input, output) => {
+        const tool = input.tool;
+        if (tool === "task") {
+            const sub = extractSubagentType(output?.args ?? input?.args);
+            if (!sub)
+                return;
+            const goal = extractDispatchGoal(output?.args ?? input?.args);
+            const to = agentDisplayName(sub, sessionState.locale);
+            const key = DISPATCH_KEYS[sub] ?? "dispatch.fromResolver";
+            narrate(sessionState, key, { to, goal });
+            return;
+        }
+        if (tool === "edit" || tool === "write") {
+            narrate(sessionState, "narration.editing");
+            return;
+        }
+        if (tool === "grep" || tool === "glob") {
+            narrate(sessionState, "narration.searching");
+            return;
+        }
+        if (tool === "read") {
+            narrate(sessionState, "narration.reading");
+            return;
+        }
+        if (tool === "bash") {
+            narrate(sessionState, "narration.bashing");
+            return;
+        }
+    };
+    const narrateToolEnd = (input, output) => {
+        if (input.tool !== "task")
+            return;
+        const sub = extractSubagentType(input?.args);
+        if (!sub)
+            return;
+        const to = agentDisplayName(sub, sessionState.locale);
+        const errorPresent = Boolean(output?.error) ||
+            (typeof output?.metadata === "object" && output.metadata?.error);
+        narrate(sessionState, errorPresent ? "dispatch.failed" : "dispatch.completed", { to });
+    };
     return {
         event: async (input) => {
             const evt = input.event;
@@ -134,6 +204,7 @@ export function getHooks(directory, options, sessionState) {
             const projectContext = await detectProjectContext(directory);
             sessionState.storedConfig = resolveConfig;
             sessionState.storedProjectContext = projectContext;
+            sessionState.locale = resolveLocale(resolveConfig.language, process.env.LANG);
             applyResolveConfig(config, resolveConfig, projectContext);
             if (resolveConfig.autoUpdate !== false && process.env.OPENCODE_RESOLVE_NO_AUTO_UPDATE !== "1") {
                 maybeAutoUpdate().catch(() => { });
@@ -169,6 +240,9 @@ export function getHooks(directory, options, sessionState) {
             }
         },
         "chat.params": async (input, output) => {
+            if (typeof input.agent === "string" && input.agent.length > 0) {
+                sessionState.currentAgent = input.agent;
+            }
             const profile = sessionState.storedConfig?.profile;
             if (profile === "glm") {
                 output.temperature = capTemperature(output.temperature, 0.4);
@@ -198,19 +272,23 @@ export function getHooks(directory, options, sessionState) {
             }
         },
         "tool.definition": async (input, output) => {
-            const hints = {
-                edit: "\n[opencode-resolve] Read the file first. Make the smallest correct change. Verify after editing.",
-                write: "\n[opencode-resolve] Only write new files when explicitly needed. Prefer editing existing files.",
-                bash: "\n[opencode-resolve] Commands run in non-interactive mode. No interactive editors, pagers, or REPLs. Use -c flags for scripting.",
-                task: "\n[opencode-resolve] Dispatch subagents with: TASK (atomic goal), OUTCOME (success criteria), MUST DO, MUST NOT DO, CONTEXT.",
-                glob: "\n[opencode-resolve] Use specific patterns. Avoid '**/*' unless genuinely needed — prefer scoped searches.",
-                grep: "\n[opencode-resolve] Use specific regex patterns. Combine with include filter for targeted search.",
-                read: "\n[opencode-resolve] Read only what you need. Use offset/limit for large files. Check file-info tool for quick metadata.",
-                webfetch: "\n[opencode-resolve] Only fetch URLs when you genuinely need external information. Prefer local docs and code first.",
-                todowrite: "\n[opencode-resolve] Keep todos current. Mark completed immediately. One in_progress at a time.",
+            const prefix = `[${PLUGIN_BRAND}]`;
+            const hintKeys = {
+                edit: "tool.edit",
+                write: "tool.write",
+                bash: "tool.bash",
+                task: "tool.task",
+                glob: "tool.glob",
+                grep: "tool.grep",
+                read: "tool.read",
+                webfetch: "tool.webfetch",
+                todowrite: "tool.todowrite",
             };
-            if (hints[input.toolID]) {
-                output.description = output.description + hints[input.toolID];
+            const key = hintKeys[input.toolID];
+            if (key) {
+                // Tool definitions are shipped as tool descriptions on every turn, so
+                // keep them English (context-bound) regardless of session locale.
+                output.description = output.description + `\n${prefix} ${t(key, "en")}`;
             }
         },
         "command.execute.before": async (_input, output) => {
@@ -222,7 +300,7 @@ export function getHooks(directory, options, sessionState) {
                 sessionID: "",
                 messageID: "",
                 type: "text",
-                text: "[opencode-resolve] Drive to verified resolution. Classify intent, dispatch focused subagents, verify after each, iterate on failure. Report completion only when verified.",
+                text: contextMessage(sessionState.currentAgent, "system.driveResolution"),
             });
         },
         "tool.execute.before": async (input, output) => {
@@ -242,6 +320,8 @@ export function getHooks(directory, options, sessionState) {
                     output.args = { ...output.args, _resolve_meta: meta };
                 }
             }
+            // Role-play narration → terminal only. Does NOT enter LLM context.
+            narrateToolStart(input, output);
         },
         "chat.headers": async (input, output) => {
             const providerID = input.provider?.info?.id ?? "";
@@ -290,6 +370,8 @@ export function getHooks(directory, options, sessionState) {
                     }
                 }
             }
+            // Role-play narration → terminal only. Does NOT enter LLM context.
+            narrateToolEnd(input, output);
             // For bash: extract key error lines from failing commands
             if (input.tool === "bash") {
                 const outputText = typeof output.output === "string" ? output.output
@@ -308,6 +390,7 @@ export function getHooks(directory, options, sessionState) {
             }
         },
         "experimental.session.compacting": async (_input, output) => {
+            narrate(sessionState, "narration.compacting");
             const ctx = sessionState.storedProjectContext;
             const cfg = sessionState.storedConfig;
             if (!ctx && !cfg)
@@ -347,7 +430,7 @@ export function getHooks(directory, options, sessionState) {
                 contextLines.push(`Session stats: ${sessionState.totalEdits} edits, ${sessionState.totalToolCalls} tool calls.`);
             }
             if (contextLines.length > 0) {
-                output.context.push("[" + "opencode-resolve" + "] Project context (preserve): " + contextLines.join(" "));
+                output.context.push(`[${PLUGIN_BRAND}] ` + t("compaction.contextHeader", "en", { body: contextLines.join(" ") }));
             }
         },
         "experimental.chat.messages.transform": async (_input, output) => {
@@ -407,59 +490,67 @@ export function getHooks(directory, options, sessionState) {
             if (!ctx && !hasFailures && !hasLoops)
                 return;
             const lines = [];
+            const agent = sessionState.currentAgent;
+            // All entries below land in LLM context — keep them English.
             if (ctx?.knowledgeFiles.length) {
-                lines.push(`[opencode-resolve] Project knowledge: ${ctx.knowledgeFiles.join(", ")}. Read when relevant before modifying code.`);
+                lines.push(contextMessage(agent, "system.projectKnowledge", { files: ctx.knowledgeFiles.join(", ") }));
             }
             if (ctx?.contextFiles.length) {
-                lines.push(`[opencode-resolve] Context docs: ${ctx.contextFiles.slice(0, 20).join(", ")}. MVI: load only task-relevant docs.`);
+                lines.push(contextMessage(agent, "system.contextDocs", { files: ctx.contextFiles.slice(0, 20).join(", ") }));
             }
             if (ctx?.verifyCommands.length) {
-                lines.push(`[opencode-resolve] Verify commands: ${ctx.verifyCommands.join("; ")}. Run after changes.`);
+                lines.push(contextMessage(agent, "system.verifyCommands", { commands: ctx.verifyCommands.join("; ") }));
             }
             if (ctx?.hasTypeScript) {
-                lines.push("[opencode-resolve] TypeScript project — type safety is mandatory. No `as any` or `@ts-ignore`.");
+                lines.push(contextMessage(agent, "system.typescriptMandatory"));
             }
             // Inject failure pattern warnings — encourage trying different approaches, don't stop
             if (hasFailures) {
-                lines.push("[opencode-resolve] ⚠️ Recurring failures detected:");
+                lines.push(contextMessage(agent, "system.failuresHeader"));
                 for (const w of sessionState.failureWarnings.slice(0, 3)) {
                     lines.push(`  - ${w}`);
                 }
-                lines.push("Keep going — try a different approach for the same goal. The Ralph Loop should drive to completion.");
+                lines.push(t("system.failuresFooter", "en"));
             }
             // Strategy Pivot: after many total failures, suggest architect intervention
             if (sessionState.totalFailures >= STRATEGY_PIVOT_THRESHOLD) {
-                lines.push(`[opencode-resolve] 🔀 STRATEGY PIVOT: ${sessionState.totalFailures} total failures detected.`);
-                lines.push("The current approach is not working. Dispatch ARCHITECT to analyze the problem from scratch and propose a fundamentally different strategy.");
-                lines.push("Then apply the new strategy. Do NOT keep retrying the same approach.");
+                lines.push(contextMessage(agent, "system.strategyPivotHeader", { count: sessionState.totalFailures }));
+                lines.push(t("system.strategyPivotBody", "en"));
+                lines.push(t("system.strategyPivotTail", "en"));
             }
             // Ralph Loop: inject strategy hints when same file edited many times
             if (hasLoops) {
-                lines.push("[opencode-resolve] 🔄 Ralph Loop: heavy editing detected on same file(s):");
+                lines.push(contextMessage(agent, "system.ralphHeader"));
                 for (const w of sessionState.loopWarnings.slice(0, 3)) {
                     lines.push(`  - ${w}`);
                 }
-                const strategies = [
-                    "Re-read the file carefully. You may be missing existing code that conflicts with your edit.",
-                    "Try a completely different approach — revert your last change and try a different fix.",
-                    "Use resolve-diagnostics to check current LSP errors before the next edit.",
-                    "Break the problem into smaller pieces. Edit one function at a time, verify between each.",
-                    "Check if the error is actually in a DIFFERENT file — the real issue may be upstream.",
-                    "Read the test file if it exists — the test often reveals the expected behavior.",
-                    "Check imports — missing or wrong imports are a common cause of cascading errors.",
-                    "Use resolve-search to find similar patterns elsewhere in the codebase.",
+                const strategyKeys = [
+                    "strategy.rereadFile",
+                    "strategy.tryDifferent",
+                    "strategy.useDiagnostics",
+                    "strategy.smallerPieces",
+                    "strategy.differentFile",
+                    "strategy.readTest",
+                    "strategy.checkImports",
+                    "strategy.searchSimilar",
                 ];
-                const hint = strategies[Math.floor(Date.now() / 30_000) % strategies.length];
+                const pickedKey = strategyKeys[Math.floor(Date.now() / 30_000) % strategyKeys.length];
+                const hint = t(pickedKey, "en");
                 if (hint !== sessionState.lastStrategyHint) {
-                    lines.push(`Strategy suggestion: ${hint}`);
+                    lines.push(`${t("strategy.suggestionLabel", "en")}: ${hint}`);
                     sessionState.lastStrategyHint = hint;
                 }
-                lines.push("Keep driving — the Ralph Loop should keep iterating until verified resolution.");
+                lines.push(t("system.ralphKeepGoing", "en"));
             }
             // Ralph Loop: inject session context when significant work done
             if (sessionState.totalEdits >= 20 && sessionState.failureWarnings.length > 0) {
-                lines.push(`[opencode-resolve] 📊 Session stats: ${sessionState.totalEdits} edits, ${sessionState.totalToolCalls} tool calls, ${Math.round((Date.now() - sessionState.sessionStartTime) / 1000)}s elapsed.`);
-                lines.push("Significant iteration with failures. Consider a fundamentally different approach — but keep going.");
+                const elapsed = Math.round((Date.now() - sessionState.sessionStartTime) / 1000);
+                lines.push(contextMessage(agent, "system.sessionStats", {
+                    edits: sessionState.totalEdits,
+                    calls: sessionState.totalToolCalls,
+                    elapsed,
+                }));
+                lines.push(t("system.iterationWarning", "en"));
             }
             if (lines.length > 0) {
                 output.system.push(lines.join("\n"));
@@ -482,11 +573,11 @@ export function getHooks(directory, options, sessionState) {
             const loopSignals = ["trying again", "attempting", "retrying", "second attempt", "third attempt", "another approach", "let me try"];
             const looksLikeLoop = loopSignals.some(s => text.toLowerCase().includes(s));
             if (looksLikeEdit && !alreadyVerified && !isHandoff) {
-                output.text = text + "\n\n[opencode-resolve] Reminder: verify your changes (resolve-verify) before reporting completion.";
+                output.text = text + "\n\n" + contextMessage(sessionState.currentAgent, "reminder.verify");
             }
             // Ralph Loop: if loop detected in text AND hotspot exists, suggest strategy change
             if (looksLikeLoop && sessionState.loopWarnings.length > 0) {
-                output.text = (output.text ?? text) + "\n\n[opencode-resolve] 🔄 Ralph Loop: heavy iteration detected. Use resolve-diagnostics to check current state, then try a different approach. Keep driving to completion.";
+                output.text = (output.text ?? text) + "\n\n" + contextMessage(sessionState.currentAgent, "reminder.ralphLoopText");
             }
         }
     };

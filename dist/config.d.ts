@@ -27,3 +27,4 @@ export declare const VALID_TOP_LEVEL_KEYS: Set<string>;
 export declare const VALID_AGENT_KEYS: Set<string>;
 export declare const VALID_MODES: Set<string>;
 export declare const VALID_PERMISSION_VALUES: Set<string>;
+export declare const VALID_LANGUAGES: Set<string>;

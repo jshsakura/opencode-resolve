@@ -5,6 +5,7 @@
   "commands": false,
   "autoApprove": true,
   "autoUpdate": true,
+  "language": "auto",
   "models": {},
   "agents": {
     "coder": {

@@ -50,6 +50,7 @@ export type ResolveAgentConfig = {
     };
 export type ProfileName = "mix" | "glm" | "gpt";
 export type TierName = "bronze" | "silver" | "gold";
+export type LanguageSetting = "auto" | "en" | "ko";
 export type ResolveConfig = {
       profile?: ProfileName
       tier?: TierName
@@ -62,6 +63,7 @@ export type ResolveConfig = {
       autoApprove?: boolean
       maxParallelSubagents?: number
       autoUpdate?: boolean
+      language?: LanguageSetting
     };
 export type ResolvePluginOptions = ResolveConfig & {
       config?: string
