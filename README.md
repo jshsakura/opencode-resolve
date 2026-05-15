@@ -176,6 +176,30 @@ OPENCODE_RESOLVE_SKIP_POSTINSTALL=1 npm install -g opencode-resolve
 opencode plugin opencode-resolve --global --force
 ```
 
+If OpenCode keeps loading the old package anyway, clear only the OpenCode plugin cache entry and install again. This does **not** delete `~/.config/opencode/resolve.json`.
+
+Linux/macOS:
+
+```sh
+export OPENCODE_CACHE_ROOT="${XDG_CACHE_HOME:-$HOME/.cache}/opencode"
+rm -rf "$OPENCODE_CACHE_ROOT/packages/opencode-resolve@latest"
+opencode plugin opencode-resolve@latest --global --force
+node -e "console.log(require(process.env.OPENCODE_CACHE_ROOT + '/packages/opencode-resolve@latest/node_modules/opencode-resolve/package.json').version)"
+```
+
+Windows PowerShell:
+
+```powershell
+$OpenCodeCacheRoot = if ($env:XDG_CACHE_HOME) { Join-Path $env:XDG_CACHE_HOME "opencode" } else { Join-Path $env:LOCALAPPDATA "opencode" }
+$PluginCache = Join-Path $OpenCodeCacheRoot "packages\opencode-resolve@latest"
+Remove-Item -Recurse -Force $PluginCache -ErrorAction SilentlyContinue
+opencode plugin opencode-resolve@latest --global --force
+$Pkg = Join-Path $PluginCache "node_modules\opencode-resolve\package.json"
+node -e "console.log(require(process.argv[1]).version)" $Pkg
+```
+
+Restart OpenCode after the cache refresh.
+
 ### Manual fallback
 
 If `postinstall` didn't register the plugin, add it to `~/.config/opencode/opencode.json` yourself:
@@ -862,6 +886,28 @@ npm install -g opencode-resolve@latest
 opencode plugin opencode-resolve --global --force
 
 # Restart OpenCode
+```
+
+If the version still does not change, OpenCode is reusing its package cache. Hard-refresh that one plugin entry:
+
+Linux/macOS:
+
+```sh
+export OPENCODE_CACHE_ROOT="${XDG_CACHE_HOME:-$HOME/.cache}/opencode"
+rm -rf "$OPENCODE_CACHE_ROOT/packages/opencode-resolve@latest"
+opencode plugin opencode-resolve@latest --global --force
+node -e "console.log(require(process.env.OPENCODE_CACHE_ROOT + '/packages/opencode-resolve@latest/node_modules/opencode-resolve/package.json').version)"
+```
+
+Windows PowerShell:
+
+```powershell
+$OpenCodeCacheRoot = if ($env:XDG_CACHE_HOME) { Join-Path $env:XDG_CACHE_HOME "opencode" } else { Join-Path $env:LOCALAPPDATA "opencode" }
+$PluginCache = Join-Path $OpenCodeCacheRoot "packages\opencode-resolve@latest"
+Remove-Item -Recurse -Force $PluginCache -ErrorAction SilentlyContinue
+opencode plugin opencode-resolve@latest --global --force
+$Pkg = Join-Path $PluginCache "node_modules\opencode-resolve\package.json"
+node -e "console.log(require(process.argv[1]).version)" $Pkg
 ```
 
 After upgrading, `postinstall` runs additive migration on your `resolve.json` — new keys are added, existing keys are never modified.

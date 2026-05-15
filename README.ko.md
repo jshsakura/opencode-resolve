@@ -176,6 +176,30 @@ OPENCODE_RESOLVE_SKIP_POSTINSTALL=1 npm install -g opencode-resolve
 opencode plugin opencode-resolve --global --force
 ```
 
+그래도 OpenCode가 계속 예전 패키지를 로드하면, OpenCode 플러그인 캐시 항목만 지우고 다시 설치하세요. 이 절차는 `~/.config/opencode/resolve.json`을 삭제하지 않습니다.
+
+Linux/macOS:
+
+```sh
+export OPENCODE_CACHE_ROOT="${XDG_CACHE_HOME:-$HOME/.cache}/opencode"
+rm -rf "$OPENCODE_CACHE_ROOT/packages/opencode-resolve@latest"
+opencode plugin opencode-resolve@latest --global --force
+node -e "console.log(require(process.env.OPENCODE_CACHE_ROOT + '/packages/opencode-resolve@latest/node_modules/opencode-resolve/package.json').version)"
+```
+
+Windows PowerShell:
+
+```powershell
+$OpenCodeCacheRoot = if ($env:XDG_CACHE_HOME) { Join-Path $env:XDG_CACHE_HOME "opencode" } else { Join-Path $env:LOCALAPPDATA "opencode" }
+$PluginCache = Join-Path $OpenCodeCacheRoot "packages\opencode-resolve@latest"
+Remove-Item -Recurse -Force $PluginCache -ErrorAction SilentlyContinue
+opencode plugin opencode-resolve@latest --global --force
+$Pkg = Join-Path $PluginCache "node_modules\opencode-resolve\package.json"
+node -e "console.log(require(process.argv[1]).version)" $Pkg
+```
+
+캐시 새로고침 후 OpenCode를 재시작하세요.
+
 ### 수동 대안
 
 `postinstall`이 플러그인을 등록하지 않았다면, `~/.config/opencode/opencode.json`에 직접 추가:
@@ -862,6 +886,28 @@ npm install -g opencode-resolve@latest
 opencode plugin opencode-resolve --global --force
 
 # OpenCode 재시작
+```
+
+그래도 버전이 바뀌지 않으면 OpenCode가 패키지 캐시를 재사용하는 상태입니다. 해당 플러그인 캐시 항목만 hard refresh 하세요:
+
+Linux/macOS:
+
+```sh
+export OPENCODE_CACHE_ROOT="${XDG_CACHE_HOME:-$HOME/.cache}/opencode"
+rm -rf "$OPENCODE_CACHE_ROOT/packages/opencode-resolve@latest"
+opencode plugin opencode-resolve@latest --global --force
+node -e "console.log(require(process.env.OPENCODE_CACHE_ROOT + '/packages/opencode-resolve@latest/node_modules/opencode-resolve/package.json').version)"
+```
+
+Windows PowerShell:
+
+```powershell
+$OpenCodeCacheRoot = if ($env:XDG_CACHE_HOME) { Join-Path $env:XDG_CACHE_HOME "opencode" } else { Join-Path $env:LOCALAPPDATA "opencode" }
+$PluginCache = Join-Path $OpenCodeCacheRoot "packages\opencode-resolve@latest"
+Remove-Item -Recurse -Force $PluginCache -ErrorAction SilentlyContinue
+opencode plugin opencode-resolve@latest --global --force
+$Pkg = Join-Path $PluginCache "node_modules\opencode-resolve\package.json"
+node -e "console.log(require(process.argv[1]).version)" $Pkg
 ```
 
 업그레이드 후 `postinstall`이 `resolve.json`에 추가적 마이그레이션을 실행합니다 — 새 키가 추가되고, 기존 키는 절대 수정되지 않습니다.
