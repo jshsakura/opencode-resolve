@@ -16,7 +16,11 @@ hero:
       icon: external
 ---
 
+import ResolvePlayground from "../../../components/ResolvePlayground.astro";
+
 `opencode-resolve`는 OpenCode에 집중된 `resolver -> coder` 루프를 추가합니다. 기본 경로는 단순하게 유지하고, 탐색/리뷰는 읽기 전용 서브에이전트가 필요할 때만 맡습니다.
+
+<ResolvePlayground locale="ko" />
 
 <div class="card-grid">
   <div class="doc-card">
@@ -37,20 +41,43 @@ hero:
   </div>
 </div>
 
-## 빠른 시작
+<section class="resolve-section">
+  <h2>빠른 시작</h2>
 
-```sh
-npm install -g opencode-resolve
-opencode plugin opencode-resolve --global --force
-opencode
-```
+  <div class="install-panel">
+    <div>
+      <div class="install-label">설치 및 캐시 새로고침</div>
+      <code>npm install -g opencode-resolve && opencode plugin opencode-resolve --global --force</code>
+    </div>
+    <a class="link-pill" href="/opencode-resolve/ko/start/install/">설치 가이드</a>
+  </div>
 
-그다음 OpenCode에서 `resolver`를 선택합니다.
+  <div class="metric-grid">
+    <div class="metric-card">
+      <strong>6</strong>
+      <span>기본 에이전트</span>
+    </div>
+    <div class="metric-card">
+      <strong>0</strong>
+      <span>기본 모델 핀</span>
+    </div>
+    <div class="metric-card">
+      <strong>1</strong>
+      <span>분리된 resolve 설정</span>
+    </div>
+  </div>
+</section>
 
-## 추천 스킬
+<section class="resolve-section">
+  <h2>추천 스킬</h2>
 
-도메인별 작업에는 [awesome-opencode-skills](https://github.com/jshsakura/awesome-opencode-skills)를 같이 사용해 보세요.
+  <p>도메인별 작업에는 <a href="https://github.com/jshsakura/awesome-opencode-skills">awesome-opencode-skills</a>를 같이 사용해 보세요.</p>
 
-```sh
-curl -sL https://raw.githubusercontent.com/jshsakura/awesome-opencode-skills/main/install.sh | bash
-```
+  <div class="install-panel">
+    <div>
+      <div class="install-label">macOS / Linux</div>
+      <pre class="install-command"><code>curl -sL https://raw.githubusercontent.com/jshsakura/awesome-opencode-skills/main/install.sh | bash</code></pre>
+    </div>
+    <a class="link-pill" href="https://github.com/jshsakura/awesome-opencode-skills">스킬 보기</a>
+  </div>
+</section>

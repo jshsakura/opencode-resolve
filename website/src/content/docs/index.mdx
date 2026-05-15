@@ -16,7 +16,11 @@ hero:
       icon: external
 ---
 
+import ResolvePlayground from "../../components/ResolvePlayground.astro";
+
 `opencode-resolve` adds a focused `resolver -> coder` loop to OpenCode. It keeps the default path simple, lets read-only subagents handle discovery and review when useful, and avoids turning your OpenCode config into a large prompt dump.
+
+<ResolvePlayground locale="en" />
 
 <div class="card-grid">
   <div class="doc-card">
@@ -37,28 +41,66 @@ hero:
   </div>
 </div>
 
-## Fast Path
+<section class="resolve-section">
+  <h2>Fast Path</h2>
 
-```sh
-npm install -g opencode-resolve
-opencode plugin opencode-resolve --global --force
-opencode
-```
+  <div class="install-panel">
+    <div>
+      <div class="install-label">Install and refresh cache</div>
+      <code>npm install -g opencode-resolve && opencode plugin opencode-resolve --global --force</code>
+    </div>
+    <a class="link-pill" href="/opencode-resolve/start/install/">Open guide</a>
+  </div>
 
-Then select `resolver` in OpenCode.
+  <div class="metric-grid">
+    <div class="metric-card">
+      <strong>6</strong>
+      <span>default agents</span>
+    </div>
+    <div class="metric-card">
+      <strong>0</strong>
+      <span>model pins by default</span>
+    </div>
+    <div class="metric-card">
+      <strong>1</strong>
+      <span>separate resolve config</span>
+    </div>
+  </div>
+</section>
 
-## Documentation Map
+<section class="resolve-section">
+  <h2>Documentation Map</h2>
 
-- [Installation](start/install.md): standard install, manual setup, cache refresh, reinstall modes.
-- [AI setup](start/llm-setup.md): copy-ready instructions for an AI coding assistant.
-- [Configuration](reference/configuration.md): config discovery, options, model aliases, Context7.
-- [Agents](reference/agents.md): default and optional agent roles.
-- [Troubleshooting](reference/troubleshooting.md): cache, config, model, and permission checks.
+  <div class="card-grid">
+    <div class="doc-card">
+      <h3><a href="/opencode-resolve/start/install/">Installation</a></h3>
+      <p>Standard install, manual setup, cache refresh, reinstall modes.</p>
+    </div>
+    <div class="doc-card">
+      <h3><a href="/opencode-resolve/start/llm-setup/">AI setup</a></h3>
+      <p>Copy-ready instructions for an AI coding assistant.</p>
+    </div>
+    <div class="doc-card">
+      <h3><a href="/opencode-resolve/reference/configuration/">Configuration</a></h3>
+      <p>Config discovery, options, model aliases, Context7.</p>
+    </div>
+    <div class="doc-card">
+      <h3><a href="/opencode-resolve/reference/troubleshooting/">Troubleshooting</a></h3>
+      <p>Cache, config, model, and permission checks.</p>
+    </div>
+  </div>
+</section>
 
-## Recommended Skills
+<section class="resolve-section">
+  <h2>Recommended Skills</h2>
 
-For domain-specific work, try [awesome-opencode-skills](https://github.com/jshsakura/awesome-opencode-skills):
+  <p>For domain-specific work, try <a href="https://github.com/jshsakura/awesome-opencode-skills">awesome-opencode-skills</a>.</p>
 
-```sh
-curl -sL https://raw.githubusercontent.com/jshsakura/awesome-opencode-skills/main/install.sh | bash
-```
+  <div class="install-panel">
+    <div>
+      <div class="install-label">macOS / Linux</div>
+      <pre class="install-command"><code>curl -sL https://raw.githubusercontent.com/jshsakura/awesome-opencode-skills/main/install.sh | bash</code></pre>
+    </div>
+    <a class="link-pill" href="https://github.com/jshsakura/awesome-opencode-skills">View skills</a>
+  </div>
+</section>
