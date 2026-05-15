@@ -1,0 +1,56 @@
+---
+title: opencode-resolve
+description: OpenCode용 가벼운 resolver/coder 하네스.
+template: splash
+hero:
+  tagline: OpenCode 에이전트를 위한 작은 검증형 resolve 루프.
+  image:
+    file: ../../../assets/hero.svg
+  actions:
+    - text: 설치
+      link: /ko/start/install/
+      icon: right-arrow
+      variant: primary
+    - text: AI 설치 가이드
+      link: /ko/start/llm-setup/
+      icon: external
+---
+
+`opencode-resolve`는 OpenCode에 집중된 `resolver -> coder` 루프를 추가합니다. 기본 경로는 단순하게 유지하고, 탐색/리뷰는 읽기 전용 서브에이전트가 필요할 때만 맡습니다.
+
+<div class="card-grid">
+  <div class="doc-card">
+    <h3>한 번 설치</h3>
+    <p>플러그인을 등록하고 OpenCode 캐시를 새로고침한 뒤 resolve 전용 설정은 <code>resolve.json</code>에 둡니다.</p>
+  </div>
+  <div class="doc-card">
+    <h3>작은 역할</h3>
+    <p><code>resolver</code>는 오케스트레이션, <code>coder</code>는 편집, scout/review 에이전트는 기본적으로 읽기 전용입니다.</p>
+  </div>
+  <div class="doc-card">
+    <h3>필요할 때만 모델 핀닝</h3>
+    <p>기본값은 OpenCode 최상위 모델 상속입니다. tier는 이점이 있을 때만 추가하세요.</p>
+  </div>
+  <div class="doc-card">
+    <h3>전문 스킬 추가</h3>
+    <p>더 큰 OpenCode Skills 컬렉션이 필요하면 <a href="https://github.com/jshsakura/awesome-opencode-skills">awesome-opencode-skills</a>를 같이 사용해 보세요.</p>
+  </div>
+</div>
+
+## 빠른 시작
+
+```sh
+npm install -g opencode-resolve
+opencode plugin opencode-resolve --global --force
+opencode
+```
+
+그다음 OpenCode에서 `resolver`를 선택합니다.
+
+## 추천 스킬
+
+도메인별 작업에는 [awesome-opencode-skills](https://github.com/jshsakura/awesome-opencode-skills)를 같이 사용해 보세요.
+
+```sh
+curl -sL https://raw.githubusercontent.com/jshsakura/awesome-opencode-skills/main/install.sh | bash
+```

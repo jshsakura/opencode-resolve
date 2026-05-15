@@ -31,6 +31,8 @@ coverage/
 # Build/package artifacts that should not be committed
 *.tgz
 *.tsbuildinfo
+website/.astro/
+website/dist/
 
 # OS/editor noise
 .DS_Store

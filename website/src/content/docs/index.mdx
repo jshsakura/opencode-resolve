@@ -1,0 +1,64 @@
+---
+title: opencode-resolve
+description: Lightweight resolver/coder harness for OpenCode.
+template: splash
+hero:
+  tagline: A small verified resolve loop for OpenCode agents.
+  image:
+    file: ../../assets/hero.svg
+  actions:
+    - text: Install
+      link: /start/install/
+      icon: right-arrow
+      variant: primary
+    - text: AI setup guide
+      link: /start/llm-setup/
+      icon: external
+---
+
+`opencode-resolve` adds a focused `resolver -> coder` loop to OpenCode. It keeps the default path simple, lets read-only subagents handle discovery and review when useful, and avoids turning your OpenCode config into a large prompt dump.
+
+<div class="card-grid">
+  <div class="doc-card">
+    <h3>Install once</h3>
+    <p>Register the plugin, refresh OpenCode's plugin cache, and keep resolve-specific settings in <code>resolve.json</code>.</p>
+  </div>
+  <div class="doc-card">
+    <h3>Use small roles</h3>
+    <p><code>resolver</code> orchestrates. <code>coder</code> edits. Scout and review agents stay read-only by default.</p>
+  </div>
+  <div class="doc-card">
+    <h3>Pin models only when needed</h3>
+    <p>By default, all resolve agents inherit OpenCode's top-level model. Add tiers only when they help.</p>
+  </div>
+  <div class="doc-card">
+    <h3>Add specialist skills</h3>
+    <p>Pair this plugin with <a href="https://github.com/jshsakura/awesome-opencode-skills">awesome-opencode-skills</a> for a larger OpenCode Skills library.</p>
+  </div>
+</div>
+
+## Fast Path
+
+```sh
+npm install -g opencode-resolve
+opencode plugin opencode-resolve --global --force
+opencode
+```
+
+Then select `resolver` in OpenCode.
+
+## Documentation Map
+
+- [Installation](start/install.md): standard install, manual setup, cache refresh, reinstall modes.
+- [AI setup](start/llm-setup.md): copy-ready instructions for an AI coding assistant.
+- [Configuration](reference/configuration.md): config discovery, options, model aliases, Context7.
+- [Agents](reference/agents.md): default and optional agent roles.
+- [Troubleshooting](reference/troubleshooting.md): cache, config, model, and permission checks.
+
+## Recommended Skills
+
+For domain-specific work, try [awesome-opencode-skills](https://github.com/jshsakura/awesome-opencode-skills):
+
+```sh
+curl -sL https://raw.githubusercontent.com/jshsakura/awesome-opencode-skills/main/install.sh | bash
+```
