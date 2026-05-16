@@ -40,8 +40,11 @@ async function handleExistingResolveConfig() {
     return
   }
 
+  const existing = await readExistingResolveConfig()
   await backupResolveConfig()
-  await createAdaptiveResolveConfig()
+  await createAdaptiveResolveConfig({
+    preservedModels: process.env.OPENCODE_RESOLVE_RESET_MODELS === "1" ? undefined : existing?.models,
+  })
 }
 
 async function chooseExistingResolveConfigAction() {
@@ -53,7 +56,7 @@ async function chooseExistingResolveConfigAction() {
   }
 
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
-    console.log(`Existing resolve config found; preserving it. Set OPENCODE_RESOLVE_REINSTALL=fresh or npm_config_opencode_resolve_reinstall=fresh for a fresh reinstall.`)
+    console.log("Existing resolve config found; preserving it. Run `opencode-resolve setup --models` for model setup or `opencode-resolve setup --fresh` to regenerate without dropping model pins.")
     return "update"
   }
 
@@ -62,7 +65,7 @@ async function chooseExistingResolveConfigAction() {
     console.log("")
     console.log(`Existing resolve config found: ${resolveConfigPath}`)
     console.log("  1. update existing config — preserve your settings")
-    console.log("  2. fresh reinstall — back up resolve.json and create a new config")
+    console.log("  2. fresh reinstall — back up resolve.json and create a new config, preserving model pins")
     const raw = await rl.question("Existing config [1=update, 2=fresh reinstall, default 1]: ")
     return raw.trim() === "2" ? "fresh" : "update"
   } finally {
@@ -78,9 +81,20 @@ async function backupResolveConfig() {
   console.log(`Backed up existing resolve config to ${backupPath}`)
 }
 
-async function createAdaptiveResolveConfig() {
+async function readExistingResolveConfig() {
+  try {
+    const raw = await readFile(resolveConfigPath, "utf8")
+    const parsed = JSON.parse(raw)
+    return isObject(parsed) ? parsed : undefined
+  } catch {
+    return undefined
+  }
+}
+
+async function createAdaptiveResolveConfig(options = {}) {
   const raw = await readFile(exampleConfig, "utf8")
   const example = JSON.parse(raw)
+  const preservedModels = isObject(options.preservedModels) ? options.preservedModels : undefined
 
   let opencodeConfig = {}
   try {
@@ -105,7 +119,9 @@ async function createAdaptiveResolveConfig() {
     }
   }
   if (preset && Object.keys(preset).length > 0) {
-    resolveConfig.models = preset
+    resolveConfig.models = preservedModels ? { ...preset, ...preservedModels } : preset
+  } else if (preservedModels) {
+    resolveConfig.models = { ...preservedModels }
   }
 
   await mkdir(configDir, { recursive: true })

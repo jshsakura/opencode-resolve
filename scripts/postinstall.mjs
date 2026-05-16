@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process"
 import { constants } from "node:fs"
-import { access, mkdir, readFile, writeFile } from "node:fs/promises"
+import { access, mkdir, readFile, rm, writeFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { createInterface } from "node:readline/promises"
@@ -9,9 +9,12 @@ import { fileURLToPath } from "node:url"
 const packageName = "opencode-resolve"
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..")
 const configDir = process.env.OPENCODE_CONFIG_HOME || join(homedir(), ".config", "opencode")
+const cacheDir = process.env.OPENCODE_CACHE_HOME || join(homedir(), ".cache", "opencode")
 const opencodeConfigPath = join(configDir, "opencode.json")
 const resolveConfigPath = join(configDir, "resolve.json")
 const exampleConfigPath = join(root, "opencode-resolve.example.json")
+const selfPluginCachePath = join(cacheDir, "packages", `${packageName}@latest`)
+const selfPluginCachedPackageJson = join(selfPluginCachePath, "node_modules", packageName, "package.json")
 
 const ADDITIVE_DEFAULTS = {
   autoApprove: true,
@@ -57,16 +60,21 @@ const OPENAI_MODEL_HINTS = [
 
 const GLM_MODEL_HINTS = [
   "zai-coding-plan/glm-5.1",
+  "zai-coding-plan/glm-4.5",
+  "zai-coding-plan/glm-4.5-air",
   "zai-coding-plan/glm-5",
-  "zai-coding-plan/glm-4.7-flash",
-  "zai-coding-plan/glm-4.5-flash",
+  "zai-coding-plan/glm-4.7",
   "zai/glm-5.1",
-  "zai/glm-5",
-  "zai/glm-4.7-flash",
-  "zai/glm-4.7",
-  "zai/glm-4.5-flash",
   "zai/glm-4.5",
   "zai/glm-4.5-air",
+  "zai/glm-5",
+  "zai/glm-4.7",
+  "zai-coding-plan/glm-4.7-flashx",
+  "zai/glm-4.7-flashx",
+  "zai-coding-plan/glm-4.5-flash",
+  "zai/glm-4.5-flash",
+  "zai-coding-plan/glm-4.7-flash",
+  "zai/glm-4.7-flash",
 ]
 
 if (process.env.OPENCODE_RESOLVE_SKIP_POSTINSTALL === "1") {
@@ -78,6 +86,7 @@ console.log(`[${packageName}] installing v${pluginVersion}`)
 
 try {
   await registerPlugin()
+  await refreshSelfPluginCache(pluginVersion)
   await offerCompanionPlugins()
   console.log(`[${packageName}] v${pluginVersion} install complete — restart OpenCode to load the plugin`)
 } catch (error) {
@@ -125,6 +134,68 @@ async function registerPlugin() {
   await handleExistingResolveConfig(probe, scriptedAnswers)
 }
 
+async function refreshSelfPluginCache(expectedVersion) {
+  if (process.env.OPENCODE_RESOLVE_SKIP_CACHE_REFRESH === "1") return
+  if (process.env.OPENCODE_RESOLVE_REFRESHING_CACHE === "1") return
+
+  const forceRefresh = readInstallerOption("force_cache_refresh") === "1"
+  const cachedVersion = await readCachedSelfVersion()
+  if (!forceRefresh && cachedVersion === expectedVersion) {
+    console.log(`[${packageName}] OpenCode plugin cache already at v${expectedVersion}`)
+    return
+  }
+
+  if (forceRefresh && cachedVersion === expectedVersion) {
+    console.log(`[${packageName}] forcing OpenCode plugin cache refresh at v${expectedVersion}`)
+  } else if (cachedVersion) {
+    console.log(`[${packageName}] stale OpenCode plugin cache detected: v${cachedVersion} -> v${expectedVersion}`)
+  } else {
+    console.log(`[${packageName}] OpenCode plugin cache missing; refreshing cache`)
+  }
+
+  await rm(selfPluginCachePath, { recursive: true, force: true })
+  const refreshed = await runOpenCodePluginInstall()
+  if (!refreshed) {
+    console.warn(`[${packageName}] could not refresh OpenCode plugin cache automatically`)
+    console.warn(`[${packageName}] run manually: opencode plugin ${packageName} --global --force`)
+    return
+  }
+
+  const nextVersion = await readCachedSelfVersion()
+  if (nextVersion && nextVersion !== expectedVersion) {
+    console.warn(`[${packageName}] OpenCode plugin cache refreshed but still reports v${nextVersion}; expected v${expectedVersion}`)
+    return
+  }
+  console.log(`[${packageName}] OpenCode plugin cache refreshed to v${nextVersion ?? expectedVersion}`)
+}
+
+async function readCachedSelfVersion() {
+  try {
+    const raw = await readFile(selfPluginCachedPackageJson, "utf8")
+    const parsed = JSON.parse(raw)
+    return typeof parsed?.version === "string" ? parsed.version : undefined
+  } catch (error) {
+    if (isMissingFileError(error)) return undefined
+    return undefined
+  }
+}
+
+async function runOpenCodePluginInstall() {
+  return new Promise((resolveSpawn) => {
+    const child = spawn("opencode", ["plugin", packageName, "--global", "--force"], {
+      stdio: "ignore",
+      env: {
+        ...process.env,
+        OPENCODE_RESOLVE_REFRESHING_CACHE: "1",
+        OPENCODE_RESOLVE_SKIP_POSTINSTALL: "1",
+        OPENCODE_RESOLVE_SKIP_COMPANIONS: "1",
+      },
+    })
+    child.on("exit", (code) => resolveSpawn(code === 0))
+    child.on("error", () => resolveSpawn(false))
+  })
+}
+
 function isPluginRegisteredIn(config) {
   return Array.isArray(config.plugin) && config.plugin.some(isRegisteredPluginEntry)
 }
@@ -153,8 +224,18 @@ function applyMCPPatches(config, names) {
 async function handleExistingResolveConfig(opencodeConfig, scriptedAnswers) {
   const action = await chooseExistingResolveConfigAction(scriptedAnswers)
   if (action === "fresh") {
+    const existing = await readExistingResolveConfig()
     await backupResolveConfig()
-    await createAdaptiveResolveConfig(opencodeConfig, scriptedAnswers)
+    const preserveModels = readInstallerOption("reset_models") !== "1"
+    await createAdaptiveResolveConfig(opencodeConfig, scriptedAnswers, {
+      preservedModels: preserveModels ? existing?.models : undefined,
+    })
+    return
+  }
+
+  if (action === "models") {
+    await backupResolveConfig()
+    await reconfigureExistingModels(opencodeConfig, scriptedAnswers)
     return
   }
 
@@ -162,6 +243,7 @@ async function handleExistingResolveConfig(opencodeConfig, scriptedAnswers) {
 }
 
 async function chooseExistingResolveConfigAction(scriptedAnswers) {
+  if (readInstallerOption("configure_models") === "1") return "models"
   const requested = readInstallerOption("reinstall").trim().toLowerCase()
   if (["fresh", "reset", "recreate", "new"].includes(requested)) return "fresh"
   if (["update", "keep", "migrate", "preserve"].includes(requested)) return "update"
@@ -173,7 +255,8 @@ async function chooseExistingResolveConfigAction(scriptedAnswers) {
   const canPrompt = Boolean((process.stdin.isTTY && process.stdout.isTTY) || forcePrompt)
   if (!canPrompt) {
     console.log(`[${packageName}] existing ${resolveConfigPath} found; preserving it and applying additive updates.`)
-    console.log(`[${packageName}] for a fresh reinstall, run: npm install -g ${packageName} --opencode-resolve-reinstall=fresh`)
+    console.log(`[${packageName}] for model setup, run: ${packageName} setup --models`)
+    console.log(`[${packageName}] to force plugin cache reinstall without touching settings, run: ${packageName} setup --force-cache`)
     return "update"
   }
 
@@ -182,11 +265,23 @@ async function chooseExistingResolveConfigAction(scriptedAnswers) {
     console.log("")
     console.log(`[${packageName}] Existing resolve config found: ${resolveConfigPath}`)
     console.log("  1. update existing config — preserve your settings and add missing defaults")
-    console.log("  2. fresh reinstall — back up resolve.json and run setup again")
-    const answer = await askChoice(rl, "Existing config [1=update, 2=fresh reinstall, default 1]: ", ["1", "2"], "1")
-    return answer === "2" ? "fresh" : "update"
+    console.log("  2. reconfigure models — preserve the rest of resolve.json")
+    console.log("  3. fresh reinstall — back up resolve.json and run setup again, preserving model pins")
+    const answer = await askChoice(rl, "Existing config [1=update, 2=models, 3=fresh, default 1]: ", ["1", "2", "3"], "1")
+    if (answer === "2") return "models"
+    return answer === "3" ? "fresh" : "update"
   } finally {
     rl.close()
+  }
+}
+
+async function readExistingResolveConfig() {
+  try {
+    const raw = await readFile(resolveConfigPath, "utf8")
+    const parsed = JSON.parse(raw)
+    return isObject(parsed) ? parsed : undefined
+  } catch {
+    return undefined
   }
 }
 
@@ -198,10 +293,11 @@ async function backupResolveConfig() {
   console.log(`[${packageName}] backed up existing resolve config to ${backupPath}`)
 }
 
-async function createAdaptiveResolveConfig(opencodeConfig, scriptedAnswers) {
+async function createAdaptiveResolveConfig(opencodeConfig, scriptedAnswers, options = {}) {
   await assertReadable(exampleConfigPath)
   const raw = await readFile(exampleConfigPath, "utf8")
   const example = JSON.parse(raw)
+  const preservedModels = isObject(options.preservedModels) ? options.preservedModels : undefined
 
   const currentModel = detectOpenCodeModel(opencodeConfig)
   const allModels = detectAllModels(opencodeConfig)
@@ -219,7 +315,7 @@ async function createAdaptiveResolveConfig(opencodeConfig, scriptedAnswers) {
     if (interactivePreset.tier) resolveConfig.tier = interactivePreset.tier
     else delete resolveConfig.tier
     if (interactivePreset.enabled) resolveConfig.enabled = interactivePreset.enabled
-    resolveConfig.models = interactivePreset.models
+    resolveConfig.models = mergePreservedModels(interactivePreset.models, preservedModels)
     resolveConfig.agents = {
       ...resolveConfig.agents,
       ...(interactivePreset.agents ?? {}),
@@ -259,7 +355,9 @@ async function createAdaptiveResolveConfig(opencodeConfig, scriptedAnswers) {
   }
 
   if (preset && Object.keys(preset).length > 0) {
-    resolveConfig.models = preset
+    resolveConfig.models = mergePreservedModels(preset, preservedModels)
+  } else if (preservedModels) {
+    resolveConfig.models = { ...preservedModels }
   } else {
     console.log(`[${packageName}] no GPT/GLM models detected in opencode.json — agents inherit the top-level model`)
     console.log(`[${packageName}] to configure model pinning, rerun setup in a TTY or edit ${resolveConfigPath}`)
@@ -269,6 +367,59 @@ async function createAdaptiveResolveConfig(opencodeConfig, scriptedAnswers) {
 
   const label = getPresetLabel(currentModel)
   console.log(`[${packageName}] created ${resolveConfigPath} (preset: ${label})`)
+}
+
+async function reconfigureExistingModels(opencodeConfig, scriptedAnswers) {
+  const existing = await readExistingResolveConfig()
+  if (!existing) {
+    await createAdaptiveResolveConfig(opencodeConfig, scriptedAnswers)
+    return
+  }
+
+  const currentModel = detectOpenCodeModel(opencodeConfig)
+  const allModels = detectAllModels(opencodeConfig)
+  const forcePrompt = readInstallerOption("force_prompt") === "1"
+  const canPrompt = Boolean((process.stdin.isTTY && process.stdout.isTTY) || forcePrompt)
+  const interactivePreset = canPrompt
+    ? await buildInteractivePreset(currentModel, allModels, scriptedAnswers)
+    : undefined
+  const preset = interactivePreset ?? {
+    label: getPresetLabel(currentModel),
+    profile: inferProfileFromModels(currentModel, allModels),
+    models: buildModelPreset(currentModel, allModels),
+  }
+
+  if (!preset.models || Object.keys(preset.models).length === 0) {
+    console.log(`[${packageName}] no GPT/GLM models detected; existing model pins preserved`)
+    return
+  }
+
+  const updated = { ...existing }
+  updated.profile = preset.profile
+  if (preset.tier) updated.tier = preset.tier
+  else delete updated.tier
+  if (preset.enabled) updated.enabled = preset.enabled
+  updated.models = preset.models
+  updated.agents = {
+    ...(updated.agents ?? {}),
+    ...(preset.agents ?? {}),
+  }
+
+  await writeFile(resolveConfigPath, `${JSON.stringify(updated, null, 2)}\n`)
+  console.log(`[${packageName}] updated model pins in ${resolveConfigPath} (preset: ${preset.label})`)
+}
+
+function mergePreservedModels(generated, preserved) {
+  if (!preserved) return generated
+  return { ...generated, ...preserved }
+}
+
+function inferProfileFromModels(currentModel, allModels) {
+  const hasGLM = allModels.some((m) => isGLMModel(m)) || isGLMModel(currentModel)
+  const hasGPT = allModels.some((m) => isGPTModel(m)) || isGPTModel(currentModel)
+  if (hasGLM && !hasGPT) return "glm"
+  if (hasGPT && !hasGLM) return "gpt"
+  return "mix"
 }
 
 function detectOpenCodeModel(config) {
@@ -587,17 +738,38 @@ function collectModelChoices(allModels, predicate, hints, includeFallbackHints =
   const matchingHints = includeFallbackHints
     ? hints.filter((model) => providerIds.size === 0 || providerIds.has(model.split("/")[0]) || detected.length < 3)
     : []
-  return unique([...detected, ...matchingHints])
+  const choices = unique([...detected, ...matchingHints])
+  return predicate === isGLMModel ? sortGLMModelChoices(choices) : choices
 }
 
 function chooseThreeTier(models, family, includeFallbackHints = true) {
   const fallback = family === "glm" ? GLM_MODEL_HINTS : OPENAI_MODEL_HINTS
   const choices = unique(includeFallbackHints ? [...models, ...fallback] : models)
   return {
-    bronze: preferModel(choices, family === "glm" ? ["flash", "air", "mini"] : ["spark", "mini", "4o-mini"], choices[0]),
-    silver: preferModel(choices, family === "glm" ? ["4.7", "4.5", "5"] : ["codex", "5.3", "5.2"], choices[1] ?? choices[0]),
+    bronze: preferModel(choices, family === "glm" ? ["5.1", "4.5", "5"] : ["spark", "mini", "4o-mini"], choices[0]),
+    silver: preferModel(choices, family === "glm" ? ["5.1", "4.5", "5"] : ["codex", "5.3", "5.2"], choices[1] ?? choices[0]),
     gold: preferModel(choices, family === "glm" ? ["5.1", "5", "4.5"] : ["5.5", "5.4", "gpt-5.3-codex"], choices[2] ?? choices[1] ?? choices[0]),
   }
+}
+
+function sortGLMModelChoices(models) {
+  return [...models].sort((a, b) => rankGLMModel(a) - rankGLMModel(b))
+}
+
+function rankGLMModel(model) {
+  const lower = model.toLowerCase()
+  if (lower.includes("5.1")) return 0
+  if (lower.includes("4.5") && !lower.includes("air") && !lower.includes("flash")) return 1
+  if (lower.includes("4.5-airx")) return 2
+  if (lower.includes("4.5-air")) return 3
+  if (/\bglm-5\b/.test(lower)) return 4
+  if (lower.includes("4.7-flashx")) return 5
+  if (lower.includes("4.7") && !lower.includes("flash")) return 6
+  if (lower.includes("4.6")) return 7
+  if (lower.includes("4.5-flash")) return 8
+  if (lower.includes("4.7-flash")) return 9
+  if (lower.includes("flash")) return 10
+  return 20
 }
 
 function preferModel(models, needles, fallback) {

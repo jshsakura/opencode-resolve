@@ -246,9 +246,12 @@ export function isNewerVersion(candidate, baseline) {
     return false;
 }
 export async function maybeAutoUpdate() {
+    const previous = readUpdateCheckCache();
     try {
-        const previous = readUpdateCheckCache();
         if (previous && Date.now() - previous.checkedAt < UPDATE_CHECK_INTERVAL_MS) {
+            if (isNewerVersion(previous.latest, PLUGIN_VERSION)) {
+                refreshPluginCacheInBackground(previous.latest, "cached");
+            }
             return;
         }
     }
@@ -280,9 +283,22 @@ export async function maybeAutoUpdate() {
     }
     if (!isNewerVersion(latest, PLUGIN_VERSION))
         return;
-    console.log(`[opencode-resolve] new version v${latest} available (current: v${PLUGIN_VERSION}) — refreshing cache in background. Restart OpenCode to activate (current session stays on v${PLUGIN_VERSION}).`);
+    refreshPluginCacheInBackground(latest, "registry");
+}
+function refreshPluginCacheInBackground(latest, source) {
+    const sourceLabel = source === "cached" ? "cached latest" : "registry latest";
+    console.log(`[opencode-resolve] new version v${latest} available (${sourceLabel}, current: v${PLUGIN_VERSION}) — refreshing OpenCode plugin cache in background. Restart OpenCode to activate it.`);
     try {
-        spawn("sh", ["-c", `rm -rf "${PLUGIN_CACHE_DIR}" && opencode plugin opencode-resolve --global --force`], { detached: true, stdio: "ignore" }).unref();
+        spawn("sh", ["-c", `rm -rf "${PLUGIN_CACHE_DIR}" && opencode plugin opencode-resolve@latest --global --force`], {
+            detached: true,
+            stdio: "ignore",
+            env: {
+                ...process.env,
+                OPENCODE_RESOLVE_REFRESHING_CACHE: "1",
+                OPENCODE_RESOLVE_SKIP_POSTINSTALL: "1",
+                OPENCODE_RESOLVE_SKIP_COMPANIONS: "1",
+            },
+        }).unref();
     }
     catch {
         // If spawn fails, the user already saw the notice and can run the command manually.
@@ -311,6 +327,7 @@ export const BANNED_COMMANDS = [
     /\b(irb|ghci|scala|jshell)\b(\s*$)/, // other REPLs
     /\b(bash|zsh|fish|sh)\s+-i\b/, // interactive shells
     /\bgit\s+add\s+-p\b/, // interactive git add
+    /\bgit\s+add\s+(\.|-A|--all)(\s|$)/, // broad staging can capture unrelated files
     /\bgit\s+rebase\s+-i\b/, // interactive rebase
     /\bgit\s+commit\b(?!\s+-m)/, // commit without -m
     /\bscreen\b/, // screen multiplexer

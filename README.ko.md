@@ -16,15 +16,15 @@
 독립 실행형 앱, 모델 프로바이더, API 키 관리자, `opencode.json` 대체물이 아닙니다.
 
 ```sh
-# AI 코딩 어시스턴트에게 guided setup을 맡기려면 이 문장을 전달하세요:
-curl -s https://raw.githubusercontent.com/jshsakura/opencode-resolve/main/docs/llm-setup.ko.md
+npm install -g opencode-resolve
+opencode plugin opencode-resolve --global --force
 ```
 
 ## 목차
 
 - [무엇을 추가하나](#무엇을-추가하나)
 - [설치](#설치)
-- [드롭인 설정](#드롭인-설정-llm에-전달)
+- [CLI 설정](#cli-설정)
 - [추천 스킬](#추천-스킬)
 - [설정](#설정)
 - [모델 설정](#모델-설정)
@@ -76,7 +76,7 @@ opencode
 
 1. `~/.config/opencode/opencode.json`에 `"opencode-resolve"` 추가
 2. 없을 때만 `~/.config/opencode/resolve.json` 생성
-3. 명시적으로 fresh reinstall을 고르지 않으면 기존 설정 보존
+3. 명시적으로 `--reset-config`를 고르지 않으면 기존 모델 핀 보존
 
 자동 설정을 건너뛰려면:
 
@@ -84,11 +84,22 @@ opencode
 OPENCODE_RESOLVE_SKIP_POSTINSTALL=1 npm install -g opencode-resolve
 ```
 
-자동화에서 재설치 방식을 지정하려면:
+기존 모델 핀을 유지한 채 설정을 다시 생성하려면:
 
 ```sh
-OPENCODE_RESOLVE_REINSTALL=update npm install -g opencode-resolve
-OPENCODE_RESOLVE_REINSTALL=fresh npm install -g opencode-resolve
+opencode-resolve setup --fresh
+```
+
+모델 핀만 다시 잡으려면:
+
+```sh
+opencode-resolve setup --models
+```
+
+`resolve.json`은 건드리지 않고 OpenCode 플러그인 캐시만 강제 재설치하려면:
+
+```sh
+opencode-resolve setup --force-cache
 ```
 
 ### 수동 설정
@@ -136,24 +147,25 @@ rm -rf "$OPENCODE_CACHE_ROOT/packages/opencode-resolve@latest"
 opencode plugin opencode-resolve@latest --global --force
 ```
 
-## 드롭인 설정 (LLM에 전달)
+## CLI 설정
 
-어시스턴트에게 플러그인 설치, OpenCode 플러그인 캐시 새로고침, `opencode.json` 병합, `resolve.json` 생성, OpenCode 재시작까지 맡기면 됩니다. 역할별 모델을 핀닝하려면 기존 provider/model id를 먼저 검사하고 사용자에게 물어봐야 합니다.
+셸에서 직접 설치합니다. npm postinstall이 플러그인을 등록하고, 기존 OpenCode 설정을 보존하며, 없을 때만 `resolve.json`을 만들고, 오래된 OpenCode 플러그인 캐시를 새로고침합니다.
 
-권장 프롬프트:
+```sh
+npm install -g opencode-resolve
+opencode
+```
 
-```text
-Install and configure opencode-resolve on this machine.
+기존 모델 핀을 유지한 채 `resolve.json`을 다시 생성하려면:
 
-Rules:
-- Do not overwrite existing OpenCode config.
-- Add "opencode-resolve" to the OpenCode plugin array if missing.
-- Refresh the OpenCode plugin cache with:
-  opencode plugin opencode-resolve --global --force
-- Create ~/.config/opencode/resolve.json only if it does not exist.
-- If choosing role-specific models, inspect existing provider/model ids first and ask me which ones to use.
-- Do not invent model ids.
-- Restart OpenCode or tell me to restart it.
+```sh
+opencode-resolve setup --fresh
+```
+
+`resolve.json` 나머지는 유지하고 모델 핀만 다시 감지하려면:
+
+```sh
+opencode-resolve setup --models
 ```
 
 선택적 companion 플러그인:
@@ -258,7 +270,7 @@ irm https://raw.githubusercontent.com/jshsakura/awesome-opencode-skills/main/ins
 ```json
 {
   "models": {
-    "bronze": "zai-coding-plan/glm-4.7-flash",
+    "bronze": "zai-coding-plan/glm-4.5",
     "silver": "zai-coding-plan/glm-5.1",
     "gold": "openai/gpt-5.5",
     "explorer": "bronze",

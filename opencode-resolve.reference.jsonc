@@ -161,7 +161,8 @@
   //   - non-interactive install → no guessed model pinning; profile mix,
   //     models {}, and resolver/codex/glm primary routes enabled
   //   - OPENCODE_RESOLVE_AUTO_PRESET=1 → legacy non-interactive
-  //     provider-adapted presets
+  //     provider-adapted presets. GLM presets prefer high-concurrency models
+  //     such as GLM-5.1 / GLM-4.5 over low-concurrency Flash tiers.
   // Existing resolve.json files are never overwritten without consent.
   // Interactive reinstall asks whether to update or back up and run fresh
   // setup. Non-interactive automation can set:
@@ -184,8 +185,8 @@
   //   third-party providers never blocks agent execution.
   //   "models": {
   //     "glm": "zai-coding-plan/glm-5.1",
-  //     "bronze": "zai-coding-plan/glm-4.7-flash",
-  //     "silver": "zai-coding-plan/glm-5",
+  //     "bronze": "zai-coding-plan/glm-4.5",
+  //     "silver": "zai-coding-plan/glm-5.1",
   //     "gold": "zai-coding-plan/glm-5.1",
   //     "fast": "bronze",
   //     "strong": "gold",

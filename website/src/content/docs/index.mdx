@@ -1,10 +1,10 @@
 ---
-title: Resolve
-description: Lightweight resolver/coder harness for OpenCode.
+title: Finish OpenCode Tasks End-to-End
+description: A lightweight OpenCode agent loop that keeps moving until the task is verified.
 template: splash
 hero:
   title: Resolve
-  tagline: A small verified resolve loop for OpenCode agents.
+  tagline: A lightweight OpenCode agent loop for finishing coding tasks end-to-end, with focused roles and verification built in.
   image:
     file: ../../assets/hero.svg
   actions:
@@ -12,14 +12,14 @@ hero:
       link: /opencode-resolve/start/install/
       icon: right-arrow
       variant: primary
-    - text: AI setup guide
-      link: /opencode-resolve/start/llm-setup/
-      icon: external
+    - text: Configuration
+      link: /opencode-resolve/reference/configuration/
+      icon: setting
 ---
 
 import ResolvePlayground from "../../components/ResolvePlayground.astro";
 
-`opencode-resolve` adds a focused `resolver -> coder` loop to OpenCode. It keeps the default path simple, lets read-only subagents handle discovery and review when useful, and avoids turning your OpenCode config into a large prompt dump.
+`opencode-resolve` adds a focused `resolver -> coder` loop to OpenCode. It keeps the default path simple, lets read-only subagents handle discovery and review when useful, and drives coding tasks through implementation, verification, and final reporting.
 
 <ResolvePlayground locale="en" />
 
@@ -57,14 +57,17 @@ import ResolvePlayground from "../../components/ResolvePlayground.astro";
     <div class="metric-card">
       <strong>6</strong>
       <span>default agents</span>
+      <p>Resolver and coder handle the core path; explorer, reviewer, deep-reviewer, and planner stay available when useful.</p>
     </div>
     <div class="metric-card">
       <strong>0</strong>
       <span>model pins by default</span>
+      <p>Agents inherit your OpenCode model unless you explicitly add role or tier model routing.</p>
     </div>
     <div class="metric-card">
       <strong>1</strong>
       <span>separate resolve config</span>
+      <p>Resolve-specific options live in <code>resolve.json</code>, keeping provider credentials and OpenCode config separate.</p>
     </div>
   </div>
 </section>
@@ -78,8 +81,8 @@ import ResolvePlayground from "../../components/ResolvePlayground.astro";
       <p>Standard install, manual setup, cache refresh, reinstall modes.</p>
     </div>
     <div class="doc-card">
-      <h3><a href="/opencode-resolve/start/llm-setup/">AI setup</a></h3>
-      <p>Copy-ready instructions for an AI coding assistant.</p>
+      <h3><a href="/opencode-resolve/reference/agents/">Agents</a></h3>
+      <p>Resolver/coder roles, read-only helpers, model inheritance, and permissions.</p>
     </div>
     <div class="doc-card">
       <h3><a href="/opencode-resolve/reference/configuration/">Configuration</a></h3>

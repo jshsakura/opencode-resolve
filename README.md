@@ -16,15 +16,15 @@
 It is not a standalone app, model provider, API key manager, or replacement for `opencode.json`.
 
 ```sh
-# Give this to an AI coding assistant for guided setup:
-curl -s https://raw.githubusercontent.com/jshsakura/opencode-resolve/main/docs/llm-setup.md
+npm install -g opencode-resolve
+opencode plugin opencode-resolve --global --force
 ```
 
 ## Contents
 
 - [What It Adds](#what-it-adds)
 - [Install](#install)
-- [Drop-in Setup](#drop-in-setup-give-to-an-llm)
+- [CLI Setup](#cli-setup)
 - [Recommended Skills](#recommended-skills)
 - [Configuration](#configuration)
 - [Model Setup](#model-setup)
@@ -76,7 +76,7 @@ The `postinstall` script tries to:
 
 1. Add `"opencode-resolve"` to `~/.config/opencode/opencode.json`.
 2. Create `~/.config/opencode/resolve.json` if it does not already exist.
-3. Preserve existing config unless you explicitly choose a fresh reinstall.
+3. Preserve existing model pins unless you explicitly choose `--reset-config`.
 
 Skip postinstall automation when needed:
 
@@ -84,11 +84,22 @@ Skip postinstall automation when needed:
 OPENCODE_RESOLVE_SKIP_POSTINSTALL=1 npm install -g opencode-resolve
 ```
 
-Force reinstall behavior in automation:
+Run setup again without dropping existing model pins:
 
 ```sh
-OPENCODE_RESOLVE_REINSTALL=update npm install -g opencode-resolve
-OPENCODE_RESOLVE_REINSTALL=fresh npm install -g opencode-resolve
+opencode-resolve setup --fresh
+```
+
+Reconfigure only model pins:
+
+```sh
+opencode-resolve setup --models
+```
+
+Force the OpenCode plugin cache to reinstall without touching `resolve.json`:
+
+```sh
+opencode-resolve setup --force-cache
 ```
 
 ### Manual Setup
@@ -136,24 +147,25 @@ rm -rf "$OPENCODE_CACHE_ROOT/packages/opencode-resolve@latest"
 opencode plugin opencode-resolve@latest --global --force
 ```
 
-## Drop-in Setup (Give to an LLM)
+## CLI Setup
 
-Ask the assistant to install the plugin, refresh the OpenCode plugin cache, merge the plugin entry into `opencode.json`, create `resolve.json`, and restart OpenCode. It should inspect your existing providers and ask before pinning role-specific models.
+Install from the shell. The npm postinstall registers the plugin, preserves existing OpenCode config, creates `resolve.json` when missing, and refreshes stale OpenCode plugin cache entries.
 
-Recommended prompt:
+```sh
+npm install -g opencode-resolve
+opencode
+```
 
-```text
-Install and configure opencode-resolve on this machine.
+For a regenerated `resolve.json` that keeps existing model pins:
 
-Rules:
-- Do not overwrite existing OpenCode config.
-- Add "opencode-resolve" to the OpenCode plugin array if missing.
-- Refresh the OpenCode plugin cache with:
-  opencode plugin opencode-resolve --global --force
-- Create ~/.config/opencode/resolve.json only if it does not exist.
-- If choosing role-specific models, inspect existing provider/model ids first and ask me which ones to use.
-- Do not invent model ids.
-- Restart OpenCode or tell me to restart it.
+```sh
+opencode-resolve setup --fresh
+```
+
+To re-detect model pins without replacing the rest of `resolve.json`:
+
+```sh
+opencode-resolve setup --models
 ```
 
 Recommended companion plugins, optional:
@@ -258,7 +270,7 @@ Example three-tier setup:
 ```json
 {
   "models": {
-    "bronze": "zai-coding-plan/glm-4.7-flash",
+    "bronze": "zai-coding-plan/glm-4.5",
     "silver": "zai-coding-plan/glm-5.1",
     "gold": "openai/gpt-5.5",
     "explorer": "bronze",

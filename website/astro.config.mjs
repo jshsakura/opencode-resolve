@@ -33,7 +33,6 @@ export default defineConfig({
           items: [
             { label: "Overview", slug: "index" },
             { label: "Install", slug: "start/install" },
-            { label: "AI Setup", slug: "start/llm-setup" },
           ],
         },
         {

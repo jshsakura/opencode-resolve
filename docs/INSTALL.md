@@ -75,25 +75,25 @@ opencode plugin opencode-resolve --global --force
 opencode
 ```
 
-## Fresh Reinstall
+## Model Setup / Reinstall
 
-Use this when you want the installer to prompt for a fresh setup. This npm flag works the same in Windows PowerShell, macOS, and Linux shells:
+Use the package CLI when you want a visible, interactive setup flow. npm install scripts are not a reliable place for prompts.
 
 ```sh
-npm install -g opencode-resolve --opencode-resolve-reinstall=fresh
+opencode-resolve setup --models
+opencode-resolve setup --fresh
 ```
 
-Shell-specific environment variables are still supported:
+For additive migration:
 
 ```sh
-OPENCODE_RESOLVE_REINSTALL=fresh npm install -g opencode-resolve
+opencode-resolve setup --update
 ```
 
-Use this when you want additive migration only:
+For plugin cache reinstall without touching `resolve.json`:
 
 ```sh
-npm install -g opencode-resolve --opencode-resolve-reinstall=update
-OPENCODE_RESOLVE_REINSTALL=update npm install -g opencode-resolve
+opencode-resolve setup --force-cache
 ```
 
 ## Skip Automation

@@ -6,8 +6,8 @@ const { locale = "en" } = Astro.props as { locale?: Locale };
 const copy = {
   en: {
     badge: "Live workflow",
-    title: "Resolve loop cockpit",
-    subtitle: "Switch roles, inspect the loop, and copy the setup path without leaving the docs.",
+    title: "End-to-end task loop",
+    subtitle: "A small resolver/coder path that keeps implementation, verification, and reporting moving in one flow.",
     roles: "Roles",
     commands: "Setup path",
     checkpoint: "Checkpoint",
@@ -17,16 +17,16 @@ const copy = {
     terminalTitle: "resolver session",
     commandTabs: [
       {
-        id: "ai",
-        label: "LLM setup",
-        command: "curl -s https://raw.githubusercontent.com/jshsakura/opencode-resolve/main/docs/llm-setup.md",
-        note: "Give the raw setup guide to an AI coding assistant and let it preserve your config.",
-      },
-      {
         id: "npm",
         label: "Standard",
-        command: "npm install -g opencode-resolve\nopencode plugin opencode-resolve --global --force",
-        note: "Install once, refresh OpenCode's plugin cache, then restart OpenCode.",
+        command: "npm install -g opencode-resolve\nopencode",
+        note: "Install once. The postinstall registers the plugin and refreshes stale OpenCode cache entries.",
+      },
+      {
+        id: "refresh",
+        label: "Refresh",
+        command: "opencode plugin opencode-resolve --global --force\nopencode",
+        note: "Use when you want to force OpenCode's plugin cache to reinstall the current package.",
       },
       {
         id: "skills",
@@ -79,8 +79,8 @@ const copy = {
   },
   ko: {
     badge: "Live workflow",
-    title: "Resolve loop cockpit",
-    subtitle: "역할을 전환하고, 루프를 확인하고, 설치 경로를 문서 안에서 바로 복사합니다.",
+    title: "끝까지 가는 작업 루프",
+    subtitle: "resolver와 coder가 구현, 검증, 보고를 한 흐름으로 이어 가는 가벼운 작업 경로입니다.",
     roles: "역할",
     commands: "설치 경로",
     checkpoint: "체크포인트",
@@ -90,16 +90,16 @@ const copy = {
     terminalTitle: "resolver session",
     commandTabs: [
       {
-        id: "ai",
-        label: "LLM 설치",
-        command: "curl -s https://raw.githubusercontent.com/jshsakura/opencode-resolve/main/docs/llm-setup.ko.md",
-        note: "Raw 설치 가이드를 AI 코딩 어시스턴트에게 주고 기존 설정을 보존하게 합니다.",
-      },
-      {
         id: "npm",
         label: "표준",
-        command: "npm install -g opencode-resolve\nopencode plugin opencode-resolve --global --force",
-        note: "한 번 설치하고 OpenCode 플러그인 캐시를 새로고침한 뒤 OpenCode를 재시작합니다.",
+        command: "npm install -g opencode-resolve\nopencode",
+        note: "한 번 설치합니다. postinstall이 플러그인 등록과 오래된 OpenCode 캐시 새로고침을 처리합니다.",
+      },
+      {
+        id: "refresh",
+        label: "캐시 갱신",
+        command: "opencode plugin opencode-resolve --global --force\nopencode",
+        note: "OpenCode 플러그인 캐시를 강제로 다시 설치하고 싶을 때 사용합니다.",
       },
       {
         id: "skills",

@@ -1,36 +1,31 @@
 ---
-title: AI 설치 가이드
-description: AI 코딩 어시스턴트에게 설치를 맡기기 위한 지시문.
+title: CLI 설치
+description: LLM에 설치를 맡기지 말고 설치기를 직접 사용하세요.
 ---
 
-AI 코딩 어시스턴트에게 아래를 전달하세요.
-
-```text
-Install and configure opencode-resolve on this machine.
-
-Rules:
-- Do not overwrite existing OpenCode config.
-- Add "opencode-resolve" to the OpenCode plugin array if missing.
-- Refresh the OpenCode plugin cache with:
-  opencode plugin opencode-resolve --global --force
-- Create ~/.config/opencode/resolve.json only if it does not exist.
-- If choosing role-specific models, inspect existing provider/model ids first and ask me which ones to use.
-- Do not invent model ids.
-- Restart OpenCode or tell me to restart it.
-```
-
-Raw 설치 가이드:
+설치는 LLM에 맡기지 않습니다. 셸에서 직접 설치해야 npm 설치기가 OpenCode 등록, `resolve.json`, 오래된 플러그인 캐시 갱신을 처리할 수 있습니다.
 
 ```sh
-curl -s https://raw.githubusercontent.com/jshsakura/opencode-resolve/main/docs/llm-setup.ko.md
+npm install -g opencode-resolve
+opencode
 ```
 
-Windows PowerShell, macOS, Linux에서 같은 방식으로 동작하는 fresh reinstall 명령:
+모델 핀만 다시 잡으려면:
 
 ```sh
-npm install -g opencode-resolve --opencode-resolve-reinstall=fresh
+opencode-resolve setup --models
 ```
 
-## 기대 결과
+기존 모델 핀을 유지한 채 `resolve.json`을 다시 생성하려면:
 
-어시스턴트는 OpenCode/Node 버전을 확인하고, 플러그인을 설치하고, 캐시를 새로고침하고, 기존 설정을 보존하며, 모델 핀닝 전 사용자에게 물어봐야 합니다. 추가로 `awesome-opencode-skills`를 선택적 스킬 컬렉션으로 제안하면 됩니다.
+```sh
+opencode-resolve setup --fresh
+```
+
+필요할 때 수동 캐시 갱신도 가능합니다.
+
+```sh
+opencode plugin opencode-resolve --global --force
+```
+
+전체 운영자 경로는 [설치](/opencode-resolve/ko/start/install/)를 보세요.

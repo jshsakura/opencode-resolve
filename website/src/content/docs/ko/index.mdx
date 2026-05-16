@@ -1,10 +1,10 @@
 ---
-title: Resolve
-description: OpenCode용 가벼운 resolver/coder 하네스.
+title: 작업을 끝까지 완수하는 OpenCode 에이전트
+description: 구현부터 검증까지 계속 진행하는 가벼운 OpenCode 에이전트 루프.
 template: splash
 hero:
   title: Resolve
-  tagline: OpenCode 에이전트를 위한 작은 검증형 resolve 루프.
+  tagline: 코딩 작업을 끝까지 완수하도록 집중된 역할과 검증 흐름을 붙여 주는 가벼운 OpenCode 에이전트 루프.
   image:
     file: ../../../assets/hero.svg
   actions:
@@ -12,14 +12,14 @@ hero:
       link: /opencode-resolve/ko/start/install/
       icon: right-arrow
       variant: primary
-    - text: AI 설치 가이드
-      link: /opencode-resolve/ko/start/llm-setup/
-      icon: external
+    - text: 설정
+      link: /opencode-resolve/ko/reference/configuration/
+      icon: setting
 ---
 
 import ResolvePlayground from "../../../components/ResolvePlayground.astro";
 
-`opencode-resolve`는 OpenCode에 집중된 `resolver -> coder` 루프를 추가합니다. 기본 경로는 단순하게 유지하고, 탐색/리뷰는 읽기 전용 서브에이전트가 필요할 때만 맡습니다.
+`opencode-resolve`는 OpenCode에 집중된 `resolver -> coder` 루프를 추가합니다. 기본 경로는 단순하게 유지하고, 탐색/리뷰는 읽기 전용 서브에이전트가 필요할 때만 맡기며, 구현과 검증, 최종 보고까지 이어서 처리합니다.
 
 <ResolvePlayground locale="ko" />
 
@@ -57,14 +57,17 @@ import ResolvePlayground from "../../../components/ResolvePlayground.astro";
     <div class="metric-card">
       <strong>6</strong>
       <span>기본 에이전트</span>
+      <p>resolver와 coder가 기본 경로를 맡고, explorer/reviewer/deep-reviewer/planner는 필요할 때만 보조합니다.</p>
     </div>
     <div class="metric-card">
       <strong>0</strong>
       <span>기본 모델 핀</span>
+      <p>명시적으로 역할별 모델이나 tier를 지정하지 않으면 OpenCode의 기본 모델을 그대로 상속합니다.</p>
     </div>
     <div class="metric-card">
       <strong>1</strong>
       <span>분리된 resolve 설정</span>
+      <p>resolve 전용 옵션은 <code>resolve.json</code>에 두고 provider 설정과 OpenCode 설정은 분리합니다.</p>
     </div>
   </div>
 </section>

@@ -1,45 +1,31 @@
 ---
-title: AI Setup Guide
-description: Instructions for delegating setup to an AI coding assistant.
+title: CLI Install
+description: Use the installer directly. Do not delegate installation to an LLM.
 ---
 
-Give this to an AI coding assistant:
-
-```text
-Install and configure opencode-resolve on this machine.
-
-Rules:
-- Do not overwrite existing OpenCode config.
-- Add "opencode-resolve" to the OpenCode plugin array if missing.
-- Refresh the OpenCode plugin cache with:
-  opencode plugin opencode-resolve --global --force
-- Create ~/.config/opencode/resolve.json only if it does not exist.
-- If choosing role-specific models, inspect existing provider/model ids first and ask me which ones to use.
-- Do not invent model ids.
-- Restart OpenCode or tell me to restart it.
-```
-
-Raw setup guide:
+Do not delegate installation to an LLM. Install from the shell so the npm installer can manage OpenCode registration, `resolve.json`, and stale plugin cache refresh directly.
 
 ```sh
-curl -s https://raw.githubusercontent.com/jshsakura/opencode-resolve/main/docs/llm-setup.md
+npm install -g opencode-resolve
+opencode
 ```
 
-Fresh reinstall command that works across Windows PowerShell, macOS, and Linux:
+To reconfigure model pins without delegating installation to an LLM:
 
 ```sh
-npm install -g opencode-resolve --opencode-resolve-reinstall=fresh
+opencode-resolve setup --models
 ```
 
-## Expected Result
+For a regenerated `resolve.json` that preserves existing model pins:
 
-The assistant should:
+```sh
+opencode-resolve setup --fresh
+```
 
-1. Check `opencode --version` and `node --version`.
-2. Install `opencode-resolve`.
-3. Run `opencode plugin opencode-resolve --global --force`.
-4. Merge the plugin entry into `opencode.json`.
-5. Create `resolve.json` only if missing.
-6. Ask before pinning any model.
-7. Offer `awesome-opencode-skills` as an optional skills collection.
-8. Tell you to restart OpenCode.
+Manual cache refresh remains available when needed:
+
+```sh
+opencode plugin opencode-resolve --global --force
+```
+
+See [Installation](/opencode-resolve/start/install/) for the full operator path.

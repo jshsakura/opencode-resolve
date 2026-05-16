@@ -183,10 +183,9 @@ body {
 .metric-card {
   display: flex;
   min-width: 0;
-  min-height: 8rem;
+  min-height: 11rem;
   height: 100%;
   flex-direction: column;
-  justify-content: space-between;
   border: 1px solid var(--resolve-card-border);
   border-radius: 0.75rem;
   padding: 1.25rem;
@@ -208,6 +207,13 @@ body {
   font-size: 0.78rem;
   font-weight: 700;
   text-transform: uppercase;
+}
+
+.metric-card p {
+  margin: 0.75rem 0 0;
+  color: var(--resolve-text-soft);
+  font-size: 0.9rem;
+  line-height: 1.5;
 }
 
 .terminal-demo {
@@ -438,7 +444,7 @@ body {
 
 .panel-roles,
 .panel-command {
-  min-height: 18.5rem;
+  min-height: 21rem;
 }
 
 .panel-terminal {
@@ -446,12 +452,16 @@ body {
 }
 
 .panel-title {
+  display: flex;
+  align-items: center;
+  min-height: 1.2rem;
   margin-bottom: 0.85rem;
   color: var(--resolve-text-soft);
   font-size: 0.78rem;
   font-weight: 800;
   letter-spacing: 0;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .role-tabs {
@@ -579,7 +589,8 @@ body {
 }
 
 .command-tabs {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   max-width: 100%;
   gap: 0.5rem;
   margin-bottom: 0.75rem;
@@ -587,7 +598,7 @@ body {
 
 .command-tab {
   min-width: 0;
-  min-height: 2.2rem;
+  min-height: 3.25rem;
   padding: 0.4rem 0.75rem;
   font-size: 0.84rem;
   font-weight: 800;

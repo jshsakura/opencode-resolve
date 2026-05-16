@@ -6,6 +6,7 @@ import { spawnSync } from "node:child_process"
 import test from "node:test"
 
 const script = new URL("../scripts/postinstall.mjs", import.meta.url)
+const cli = new URL("../scripts/cli.mjs", import.meta.url)
 
 test("postinstall creates OpenCode config and resolve config", async () => {
   const configHome = await mkdtemp(join(tmpdir(), "opencode-resolve-postinstall-"))
@@ -340,7 +341,7 @@ test("postinstall asks before updating an existing resolve.json when prompts are
 
     const migrated = await readJson(join(configHome, "resolve.json"))
     assert.match(stdout, /Existing resolve config found/)
-    assert.match(stdout, /Existing config \[1=update, 2=fresh reinstall/)
+    assert.match(stdout, /Existing config \[1=update, 2=models, 3=fresh/)
     assert.deepEqual(migrated.models, existing.models, "user models preserved")
     assert.equal(migrated.autoApprove, true, "missing additive default added")
   } finally {
@@ -383,7 +384,7 @@ test("postinstall can fresh reinstall an existing resolve.json after backing it 
         OPENCODE_RESOLVE_SKIP_COMPANIONS: "1",
       },
       [
-        "2", // fresh reinstall
+        "3", // fresh reinstall
         "1", // mix
         "y", // enable gpt primary
         "y", // enable glm primary
@@ -399,9 +400,9 @@ test("postinstall can fresh reinstall an existing resolve.json after backing it 
     assert.deepEqual(await readJson(join(configHome, backupName)), existing)
     assert.match(stdout, /backed up existing resolve config/)
     assert.equal(resolveConfig.profile, "mix")
-    assert.equal(resolveConfig.models.old, undefined)
+    assert.equal(resolveConfig.models.old, "custom/old-model")
     assert.equal(resolveConfig.models["gpt-gold"], "openai/gpt-5.5")
-    assert.equal(resolveConfig.models["glm-bronze"], "zai/glm-4.7-flash")
+    assert.equal(resolveConfig.models["glm-bronze"], "zai/glm-5.1")
     assert.equal(resolveConfig.agents.gpt.enabled, true)
     assert.equal(resolveConfig.agents.glm.enabled, true)
   } finally {
@@ -423,7 +424,8 @@ test("non-interactive postinstall preserves existing resolve.json and prints rei
 
     const migrated = await readJson(join(configHome, "resolve.json"))
     assert.match(stdout, /existing .*resolve\.json found; preserving it/)
-    assert.match(stdout, /--opencode-resolve-reinstall=fresh/)
+    assert.match(stdout, /opencode-resolve setup --models/)
+    assert.match(stdout, /opencode-resolve setup --force-cache/)
     assert.deepEqual(migrated.enabled, existing.enabled)
     assert.deepEqual(migrated.models, existing.models)
     assert.equal(migrated.autoApprove, true)
@@ -432,7 +434,7 @@ test("non-interactive postinstall preserves existing resolve.json and prints rei
   }
 })
 
-test("postinstall accepts cross-platform npm reinstall flag", async () => {
+test("postinstall fresh reinstall preserves existing model pins by default", async () => {
   const configHome = await mkdtemp(join(tmpdir(), "opencode-resolve-postinstall-"))
 
   try {
@@ -442,18 +444,86 @@ test("postinstall accepts cross-platform npm reinstall flag", async () => {
     })
 
     runPostinstall(configHome, {
-      npm_config_opencode_resolve_reinstall: "fresh",
+      OPENCODE_RESOLVE_REINSTALL: "fresh",
       OPENCODE_RESOLVE_SKIP_COMPANIONS: "1",
     })
 
     const resolveConfig = await readJson(join(configHome, "resolve.json"))
     const files = await readdir(configHome)
     assert.ok(files.some((name) => name.startsWith("resolve.json.bak.")), "existing resolve.json should be backed up")
-    assert.equal(resolveConfig.models.old, undefined)
+    assert.equal(resolveConfig.models.old, "custom/old-model")
     assert.equal(resolveConfig.profile, "mix")
   } finally {
     await rm(configHome, { recursive: true, force: true })
   }
+})
+
+test("postinstall reset models flag allows destructive model regeneration", async () => {
+  const configHome = await mkdtemp(join(tmpdir(), "opencode-resolve-postinstall-"))
+
+  try {
+    await writeJson(join(configHome, "opencode.json"), {
+      model: "openai/gpt-5-mini",
+    })
+    await writeJson(join(configHome, "resolve.json"), {
+      enabled: ["coder"],
+      models: { old: "custom/old-model" },
+    })
+
+    runPostinstall(configHome, {
+      OPENCODE_RESOLVE_REINSTALL: "fresh",
+      OPENCODE_RESOLVE_RESET_MODELS: "1",
+      OPENCODE_RESOLVE_SKIP_COMPANIONS: "1",
+    })
+
+    const resolveConfig = await readJson(join(configHome, "resolve.json"))
+    assert.equal(resolveConfig.models.old, undefined)
+    assert.equal(resolveConfig.models.gpt, "openai/gpt-5-mini")
+    assert.equal(resolveConfig.profile, "gpt")
+  } finally {
+    await rm(configHome, { recursive: true, force: true })
+  }
+})
+
+test("postinstall can reconfigure model pins without replacing other settings", async () => {
+  const configHome = await mkdtemp(join(tmpdir(), "opencode-resolve-postinstall-"))
+
+  try {
+    await writeJson(join(configHome, "opencode.json"), {
+      model: "openai/gpt-5-mini",
+    })
+    await writeJson(join(configHome, "resolve.json"), {
+      enabled: ["coder"],
+      models: { old: "custom/old-model" },
+      autoApprove: false,
+    })
+
+    runPostinstall(configHome, {
+      OPENCODE_RESOLVE_CONFIGURE_MODELS: "1",
+      OPENCODE_RESOLVE_SKIP_COMPANIONS: "1",
+    })
+
+    const resolveConfig = await readJson(join(configHome, "resolve.json"))
+    assert.deepEqual(resolveConfig.enabled, ["coder"])
+    assert.equal(resolveConfig.autoApprove, false)
+    assert.equal(resolveConfig.models.old, undefined)
+    assert.equal(resolveConfig.models.gpt, "openai/gpt-5-mini")
+    assert.equal(resolveConfig.models.coder, "silver")
+  } finally {
+    await rm(configHome, { recursive: true, force: true })
+  }
+})
+
+test("cli prints setup help", () => {
+  const result = spawnSync(process.execPath, [cli.pathname, "--help"], {
+    encoding: "utf8",
+  })
+
+  assert.equal(result.status, 0, result.stderr || result.stdout)
+  assert.match(result.stdout, /opencode-resolve setup --fresh/)
+  assert.match(result.stdout, /--auto-preset/)
+  assert.match(result.stdout, /--models/)
+  assert.match(result.stdout, /--force-cache/)
 })
 
 test("postinstall detects model from agent config when top-level model absent", async () => {
@@ -528,9 +598,9 @@ test("postinstall can force the interactive mix three-tier prompt", async () => 
     assert.equal(resolveConfig.models["gpt-bronze"], "openai/gpt-5.3-codex-spark")
     assert.equal(resolveConfig.models["gpt-silver"], "openai/gpt-5.3-codex")
     assert.equal(resolveConfig.models["gpt-gold"], "openai/gpt-5.5")
-    assert.equal(resolveConfig.models["glm-bronze"], "zai/glm-4.7-flash")
-    assert.equal(resolveConfig.models["glm-silver"], "zai/glm-5.1")
-    assert.equal(resolveConfig.models["glm-gold"], "zai/glm-5.1")
+    assert.equal(resolveConfig.models["glm-bronze"], "zai/glm-5.1")
+    assert.equal(resolveConfig.models["glm-silver"], "zai-coding-plan/glm-5.1")
+    assert.equal(resolveConfig.models["glm-gold"], "zai-coding-plan/glm-5.1")
     assert.equal(resolveConfig.models.coder, "silver")
     assert.equal(resolveConfig.models.planner, "gold")
   } finally {
@@ -746,6 +816,7 @@ function runPostinstall(configHome, env = {}, input = undefined) {
     env: {
       ...process.env,
       OPENCODE_CONFIG_HOME: configHome,
+      OPENCODE_RESOLVE_SKIP_CACHE_REFRESH: "1",
       ...env,
     },
   })

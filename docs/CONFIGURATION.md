@@ -120,7 +120,7 @@ Three-tier example:
 ```json
 {
   "models": {
-    "bronze": "zai-coding-plan/glm-4.7-flash",
+    "bronze": "zai-coding-plan/glm-4.5",
     "silver": "zai-coding-plan/glm-5.1",
     "gold": "openai/gpt-5.5",
     "explorer": "bronze",
