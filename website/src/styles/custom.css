@@ -63,12 +63,15 @@ body {
 }
 
 .hero img {
+  width: min(78vw, 21rem);
+  max-width: 100%;
   filter: drop-shadow(0 20px 55px rgba(8, 145, 178, 0.2));
 }
 
 .hero {
   display: grid;
   align-items: center;
+  gap: clamp(1.5rem, 4vw, 3.5rem);
   min-height: clamp(26rem, 52vh, 34rem);
   padding-block: clamp(2rem, 5vw, 4rem);
 }
@@ -636,8 +639,12 @@ body {
     padding-block: 2.25rem;
   }
 
+  .hero img {
+    width: min(76vw, 16rem);
+  }
+
   .hero h1 {
-    max-width: 10ch;
+    max-width: 14ch;
   }
 
   .card-grid,
