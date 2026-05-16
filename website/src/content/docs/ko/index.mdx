@@ -3,7 +3,7 @@ title: 작업을 끝까지 완수하는 OpenCode 에이전트
 description: 구현부터 검증까지 계속 진행하는 가벼운 OpenCode 에이전트 루프.
 template: splash
 hero:
-  title: Resolve
+  title: OpenCode Resolve
   tagline: 코딩 작업을 끝까지 완수하도록 집중된 역할과 검증 흐름을 붙여 주는 가벼운 OpenCode 에이전트 루프.
   image:
     file: ../../../assets/hero.svg
@@ -62,12 +62,12 @@ import ResolvePlayground from "../../../components/ResolvePlayground.astro";
     <div class="metric-card">
       <strong>0</strong>
       <span>기본 모델 핀</span>
-      <p>명시적으로 역할별 모델이나 tier를 지정하지 않으면 OpenCode의 기본 모델을 그대로 상속합니다.</p>
+      <p>resolve 에이전트는 OpenCode 최상위 모델을 그대로 상속합니다. 비용·속도·추론 분리가 필요할 때만 역할별 또는 tier 라우팅을 지정하세요.</p>
     </div>
     <div class="metric-card">
       <strong>1</strong>
       <span>분리된 resolve 설정</span>
-      <p>resolve 전용 옵션은 <code>resolve.json</code>에 두고 provider 설정과 OpenCode 설정은 분리합니다.</p>
+      <p>resolve 전용 옵션은 <code>resolve.json</code>에 두고, provider 자격증명과 OpenCode 기본 설정은 그대로 둡니다.</p>
     </div>
   </div>
 </section>
