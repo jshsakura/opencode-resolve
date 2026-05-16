@@ -4,69 +4,70 @@ description: A lightweight OpenCode agent loop that keeps moving until the task 
 template: splash
 hero:
   title: OpenCode Resolve
-  tagline: A focused resolver-coder loop for finishing coding tasks end-to-end, with integrated verification and reporting.
+  tagline: A lightweight OpenCode agent loop for finishing coding tasks end-to-end, with focused roles and verification built in.
   image:
     file: ../../assets/hero.svg
   actions:
-    - text: Get Started
+    - text: Install
       link: /opencode-resolve/start/install/
-      icon: rocket
+      icon: right-arrow
       variant: primary
-    - text: View GitHub
-      link: https://github.com/jshsakura/opencode-resolve
-      icon: external
+    - text: Configuration
+      link: /opencode-resolve/reference/configuration/
+      icon: setting
 ---
 
 import ResolvePlayground from "../../components/ResolvePlayground.astro";
+
+`opencode-resolve` adds a focused `resolver -> coder` loop to OpenCode. It keeps the default path simple, lets read-only subagents handle discovery and review when useful, and drives coding tasks through implementation, verification, and final reporting.
 
 <ResolvePlayground locale="en" />
 
 <div class="card-grid">
   <div class="doc-card">
-    <h3>Built for Completion</h3>
-    <p>Unlike standard chat agents, <code>resolve</code> doesn't stop at a proposal. It drives tasks through implementation and automated verification.</p>
+    <h3>Install once</h3>
+    <p>Register the plugin, refresh OpenCode's plugin cache, and keep resolve-specific settings in <code>resolve.json</code>.</p>
   </div>
   <div class="doc-card">
-    <h3>Focused Roles</h3>
-    <p><code>resolver</code> orchestrates and verifies. <code>coder</code> applies the patches. Specialized roles keep the context clean and costs low.</p>
+    <h3>Use small roles</h3>
+    <p><code>resolver</code> orchestrates. <code>coder</code> edits. Scout and review agents stay read-only by default.</p>
   </div>
   <div class="doc-card">
-    <h3>Model Inheritance</h3>
-    <p>Inherit your top-level OpenCode model by default. Pin specific models per-role only when you need specialized reasoning or speed.</p>
+    <h3>Pin models only when needed</h3>
+    <p>By default, all resolve agents inherit OpenCode's top-level model. Add tiers only when they help.</p>
   </div>
   <div class="doc-card">
-    <h3>Extensible Skills</h3>
-    <p>Pair with <a href="https://github.com/jshsakura/awesome-opencode-skills">awesome-opencode-skills</a> to give your agents domain-specific capabilities.</p>
+    <h3>Add specialist skills</h3>
+    <p>Pair this plugin with <a href="https://github.com/jshsakura/awesome-opencode-skills">awesome-opencode-skills</a> for a larger OpenCode Skills library.</p>
   </div>
 </div>
 
 <section class="resolve-section">
-  <h2>Fast Installation</h2>
-  <p>Get up and running in seconds. The postinstall script handles plugin registration and cache refreshes automatically.</p>
+  <h2>Fast Path</h2>
 
   <div class="install-panel">
     <div>
-      <div class="install-label">Global Install</div>
+      <div class="install-label">Install and refresh cache</div>
       <code>npm install -g opencode-resolve && opencode plugin opencode-resolve --global --force</code>
     </div>
-    <a class="link-pill" href="/opencode-resolve/start/install/">Full Guide</a>
+    <a class="link-pill" href="/opencode-resolve/start/install/">Open guide</a>
   </div>
 
   <div class="metric-grid">
     <div class="metric-card">
       <strong>6</strong>
-      <span>Dedicated Agents</span>
-      <p>From planning to deep review, six specialized roles are ready to handle complex coding workflows.</p>
+      <span>default agents</span>
+      <p>Resolver and coder handle the core path; explorer, reviewer, deep-reviewer, and planner stay available when useful.</p>
     </div>
     <div class="metric-card">
       <strong>0</strong>
-      <span>Mandatory Config</span>
-      <p>Zero-config by default. It just works with your existing OpenCode setup and model providers.</p>
+      <span>model pins by default</span>
+      <p>Resolve agents inherit your OpenCode top-level model. Opt in to per-role or tier routing only when you need cost or reasoning splits.</p>
     </div>
     <div class="metric-card">
-      <strong>100%</strong>
-      <span>Verified Patches</span>
-      <p>Every change is verified by the coder and double-checked by the resolver before reporting.</p>
+      <strong>1</strong>
+      <span>separate resolve config</span>
+      <p>Resolve-specific options live in <code>resolve.json</code>, keeping provider credentials and OpenCode config separate.</p>
     </div>
   </div>
 </section>
@@ -76,20 +77,34 @@ import ResolvePlayground from "../../components/ResolvePlayground.astro";
 
   <div class="card-grid">
     <div class="doc-card">
-      <h3><a href="/opencode-resolve/start/install/">Quick Start</a></h3>
-      <p>Installation, environment setup, and your first task.</p>
+      <h3><a href="/opencode-resolve/start/install/">Installation</a></h3>
+      <p>Standard install, manual setup, cache refresh, reinstall modes.</p>
     </div>
     <div class="doc-card">
-      <h3><a href="/opencode-resolve/reference/agents/">Agent Roles</a></h3>
-      <p>Understanding the resolver, coder, and helper roles.</p>
+      <h3><a href="/opencode-resolve/reference/agents/">Agents</a></h3>
+      <p>Resolver/coder roles, read-only helpers, model inheritance, and permissions.</p>
     </div>
     <div class="doc-card">
       <h3><a href="/opencode-resolve/reference/configuration/">Configuration</a></h3>
-      <p>Advanced routing, model pins, and resolve.json options.</p>
+      <p>Config discovery, options, model aliases, Context7.</p>
     </div>
     <div class="doc-card">
       <h3><a href="/opencode-resolve/reference/troubleshooting/">Troubleshooting</a></h3>
-      <p>Common issues with cache, permissions, and model access.</p>
+      <p>Cache, config, model, and permission checks.</p>
     </div>
+  </div>
+</section>
+
+<section class="resolve-section">
+  <h2>Recommended Skills</h2>
+
+  <p>For domain-specific work, try <a href="https://github.com/jshsakura/awesome-opencode-skills">awesome-opencode-skills</a>.</p>
+
+  <div class="install-panel">
+    <div>
+      <div class="install-label">macOS / Linux</div>
+      <pre class="install-command"><code>curl -sL https://raw.githubusercontent.com/jshsakura/awesome-opencode-skills/main/install.sh | bash</code></pre>
+    </div>
+    <a class="link-pill" href="https://github.com/jshsakura/awesome-opencode-skills">View skills</a>
   </div>
 </section>
