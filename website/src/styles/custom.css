@@ -103,11 +103,15 @@ body {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 1rem;
+  align-items: stretch;
   margin: 2rem 0 0;
 }
 
 .doc-card {
+  display: flex;
   min-height: 10.5rem;
+  height: 100%;
+  flex-direction: column;
   border: 1px solid var(--resolve-card-border);
   border-radius: 0.75rem;
   padding: 1.15rem;
@@ -123,6 +127,7 @@ body {
 }
 
 .doc-card p {
+  flex: 1;
   margin-bottom: 0;
   color: var(--resolve-text-soft);
   font-size: 0.94rem;
@@ -141,10 +146,16 @@ body {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 1rem;
+  align-items: stretch;
   margin: 2rem 0 0;
 }
 
 .metric-card {
+  display: flex;
+  min-height: 8rem;
+  height: 100%;
+  flex-direction: column;
+  justify-content: space-between;
   border: 1px solid var(--resolve-card-border);
   border-radius: 0.75rem;
   padding: 1.25rem;
@@ -249,6 +260,7 @@ body {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 1rem;
+  min-height: 5.5rem;
   margin-top: 1.25rem;
   border: 1px solid var(--resolve-card-border);
   border-radius: 0.75rem;
@@ -371,9 +383,13 @@ body {
   display: grid;
   grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
   gap: 1rem;
+  align-items: stretch;
 }
 
 .panel {
+  display: flex;
+  min-height: 100%;
+  flex-direction: column;
   border: 1px solid var(--resolve-card-border);
   border-radius: 0.85rem;
   padding: 1rem;
@@ -397,6 +413,7 @@ body {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.55rem;
+  align-items: stretch;
 }
 
 .role-tab,
@@ -427,6 +444,7 @@ body {
 .role-tab {
   display: flex;
   min-height: 4rem;
+  height: 100%;
   flex-direction: column;
   align-items: flex-start;
   justify-content: center;
@@ -450,6 +468,7 @@ body {
 }
 
 .role-card {
+  flex: 1;
   margin-top: 0.9rem;
   border: 1px solid color-mix(in srgb, var(--resolve-cyan) 35%, var(--resolve-card-border));
   border-radius: 0.75rem;
@@ -528,6 +547,7 @@ body {
 
 .command-output {
   min-height: 6.4rem;
+  flex: 1;
   margin: 0;
   border: 1px solid var(--resolve-terminal-border);
   border-radius: 0.7rem;
@@ -571,7 +591,15 @@ body {
 }
 
 .terminal-demo.compact {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
   margin: 0;
+}
+
+.panel-terminal .terminal-body {
+  flex: 1;
+  min-height: 11rem;
 }
 
 .checkpoint-row {
