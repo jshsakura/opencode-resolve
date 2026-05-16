@@ -469,113 +469,68 @@ body {
 
 .panel-roles,
 .panel-command {
-  min-height: 22rem;
+  min-height: 24rem;
 }
 
 .panel-title {
   display: flex;
   align-items: center;
   min-height: 1.2rem;
-  margin-bottom: 0.85rem;
+  margin-bottom: 1rem;
   color: var(--resolve-text-soft);
-  font-size: 0.78rem;
+  font-size: 0.75rem;
   font-weight: 800;
-  letter-spacing: 0;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
-  white-space: nowrap;
 }
 
 .panel-tabs-area {
-  height: 8.5rem; /* Explicit height to match both sides perfectly */
   margin-bottom: 1.25rem;
+  border-bottom: 1px solid var(--resolve-card-border);
 }
 
-.role-tabs,
-.command-tabs {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  grid-auto-rows: 1fr;
-  gap: 0.65rem;
-  height: 100%;
-}
-
-.command-tab:nth-child(3) {
-  grid-column: span 2;
-}
-
-.role-tab,
-.command-tab,
-.copy-button {
-  border: 1px solid var(--resolve-card-border);
-  border-radius: 0.75rem;
-  background: var(--resolve-card);
-  color: var(--sl-color-gray-1);
-  cursor: pointer;
-  font: inherit;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
-}
-
-:root[data-theme="light"] .role-tab,
-:root[data-theme="light"] .command-tab,
-:root[data-theme="light"] .copy-button {
-  color: #0f172a;
-}
-
-.role-tab:hover,
-.command-tab:hover,
-.copy-button:hover {
-  transform: translateY(-2px);
-  border-color: color-mix(in srgb, var(--resolve-cyan) 55%, var(--resolve-card-border));
-  box-shadow: var(--resolve-shadow);
-}
-
-.role-tab {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 0.4rem;
-  align-items: center;
-  padding: 0 0.85rem;
-  text-align: start;
-}
-
-.role-tab span {
-  min-width: 0;
-  font-family: var(--sl-font-mono);
-  font-weight: 800;
-  font-size: 0.8rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.role-tab small {
-  border: 1px solid var(--resolve-card-border);
-  border-radius: 999px;
-  padding: 0.12rem 0.4rem;
-  color: var(--resolve-text-soft);
-  font-size: 0.62rem;
-  font-weight: 800;
-  line-height: 1.2;
-  white-space: nowrap;
-  background: var(--resolve-muted-panel);
-}
-
-.command-tab {
+.tabs-container {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0.5rem;
+  gap: 0.25rem;
+  overflow-x: auto;
+  scrollbar-width: none; /* Hide scrollbar Firefox */
+  padding-bottom: 0;
+}
+
+.tabs-container::-webkit-scrollbar {
+  display: none; /* Hide scrollbar Chrome/Safari */
+}
+
+.tab-item {
+  flex: 0 0 auto;
+  padding: 0.6rem 1rem;
   font-size: 0.82rem;
   font-weight: 800;
-  text-align: center;
+  color: var(--resolve-text-soft);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
 }
 
-.role-tab.is-active,
-.command-tab.is-active {
-  border-color: var(--resolve-cyan);
-  background: color-mix(in srgb, var(--resolve-cyan) 10%, var(--resolve-card));
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--resolve-cyan) 20%, transparent);
+.tab-item:hover {
+  color: var(--sl-color-gray-1);
+}
+
+.tab-item.is-active {
+  color: var(--resolve-cyan);
+  border-bottom-color: var(--resolve-cyan);
+}
+
+:root[data-theme="light"] .tab-item {
+  color: #64748b;
+}
+
+:root[data-theme="light"] .tab-item.is-active {
+  color: var(--sl-color-accent);
+  border-bottom-color: var(--sl-color-accent);
 }
 
 .panel-content-area {
@@ -586,22 +541,8 @@ body {
 
 .role-card {
   flex: 1;
-  border-top: 1px solid color-mix(in srgb, var(--resolve-cyan) 35%, var(--resolve-card-border));
-  padding-top: 1.25rem;
   display: flex;
   flex-direction: column;
-}
-
-.role-card[data-tone="rose"] {
-  border-top-color: color-mix(in srgb, var(--resolve-rose) 35%, var(--resolve-card-border));
-}
-
-.role-card[data-tone="emerald"] {
-  border-top-color: color-mix(in srgb, var(--resolve-emerald) 35%, var(--resolve-card-border));
-}
-
-.role-card[data-tone="amber"] {
-  border-top-color: color-mix(in srgb, var(--resolve-amber) 35%, var(--resolve-card-border));
 }
 
 .role-card-top {

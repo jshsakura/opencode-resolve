@@ -173,16 +173,15 @@ const serialized = JSON.stringify(copy);
       <div class="panel panel-roles">
         <div class="panel-title">{copy.roles}</div>
         <div class="panel-tabs-area">
-          <div class="role-tabs" role="tablist">
+          <div class="tabs-container" role="tablist">
             {copy.rolesData.map((role, index) => (
               <button
                 type="button"
-                class={`role-tab ${index === 0 ? "is-active" : ""}`}
+                class={`tab-item ${index === 0 ? "is-active" : ""}`}
                 data-role-tab={role.id}
                 data-tone={role.tone}
               >
-                <span>{role.label}</span>
-                <small>{role.status}</small>
+                {role.label}
               </button>
             ))}
           </div>
@@ -203,11 +202,11 @@ const serialized = JSON.stringify(copy);
       <div class="panel panel-command">
         <div class="panel-title">{copy.commands}</div>
         <div class="panel-tabs-area">
-          <div class="command-tabs" role="tablist">
+          <div class="tabs-container" role="tablist">
             {copy.commandTabs.map((tab, index) => (
               <button
                 type="button"
-                class={`command-tab ${index === 0 ? "is-active" : ""}`}
+                class={`tab-item ${index === 0 ? "is-active" : ""}`}
                 data-command-tab={tab.id}
               >
                 {tab.label}
