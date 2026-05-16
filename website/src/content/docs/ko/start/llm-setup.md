@@ -25,6 +25,12 @@ Raw 설치 가이드:
 curl -s https://raw.githubusercontent.com/jshsakura/opencode-resolve/main/docs/llm-setup.ko.md
 ```
 
+Windows PowerShell, macOS, Linux에서 같은 방식으로 동작하는 fresh reinstall 명령:
+
+```sh
+npm install -g opencode-resolve --opencode-resolve-reinstall=fresh
+```
+
 ## 기대 결과
 
 어시스턴트는 OpenCode/Node 버전을 확인하고, 플러그인을 설치하고, 캐시를 새로고침하고, 기존 설정을 보존하며, 모델 핀닝 전 사용자에게 물어봐야 합니다. 추가로 `awesome-opencode-skills`를 선택적 스킬 컬렉션으로 제안하면 됩니다.

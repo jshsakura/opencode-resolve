@@ -423,10 +423,34 @@ test("non-interactive postinstall preserves existing resolve.json and prints rei
 
     const migrated = await readJson(join(configHome, "resolve.json"))
     assert.match(stdout, /existing .*resolve\.json found; preserving it/)
-    assert.match(stdout, /OPENCODE_RESOLVE_REINSTALL=fresh/)
+    assert.match(stdout, /--opencode-resolve-reinstall=fresh/)
     assert.deepEqual(migrated.enabled, existing.enabled)
     assert.deepEqual(migrated.models, existing.models)
     assert.equal(migrated.autoApprove, true)
+  } finally {
+    await rm(configHome, { recursive: true, force: true })
+  }
+})
+
+test("postinstall accepts cross-platform npm reinstall flag", async () => {
+  const configHome = await mkdtemp(join(tmpdir(), "opencode-resolve-postinstall-"))
+
+  try {
+    await writeJson(join(configHome, "resolve.json"), {
+      enabled: ["coder"],
+      models: { old: "custom/old-model" },
+    })
+
+    runPostinstall(configHome, {
+      npm_config_opencode_resolve_reinstall: "fresh",
+      OPENCODE_RESOLVE_SKIP_COMPANIONS: "1",
+    })
+
+    const resolveConfig = await readJson(join(configHome, "resolve.json"))
+    const files = await readdir(configHome)
+    assert.ok(files.some((name) => name.startsWith("resolve.json.bak.")), "existing resolve.json should be backed up")
+    assert.equal(resolveConfig.models.old, undefined)
+    assert.equal(resolveConfig.profile, "mix")
   } finally {
     await rm(configHome, { recursive: true, force: true })
   }
@@ -497,6 +521,8 @@ test("postinstall can force the interactive mix three-tier prompt", async () => 
     assert.match(stdout, /Pick GPT bronze\/scout/)
     assert.match(stdout, /Pick GLM gold\/reasoner/)
     assert.equal(resolveConfig.profile, "mix")
+    assert.ok(resolveConfig.enabled.includes("gpt"))
+    assert.ok(resolveConfig.enabled.includes("glm"))
     assert.equal(resolveConfig.agents.gpt.enabled, true)
     assert.equal(resolveConfig.agents.glm.enabled, true)
     assert.equal(resolveConfig.models["gpt-bronze"], "openai/gpt-5.3-codex-spark")
@@ -526,6 +552,7 @@ test("postinstall can force the interactive GPT three-tier prompt", async () => 
     assert.match(stdout, /GPT\/Codex model choices/)
     assert.equal(resolveConfig.profile, "gpt")
     assert.equal(resolveConfig.tier, "gold")
+    assert.ok(resolveConfig.enabled.includes("gpt"))
     assert.equal(resolveConfig.agents.gpt.enabled, true)
     assert.equal(resolveConfig.models.coder, "silver")
     assert.equal(resolveConfig.models.planner, "gold")
@@ -549,6 +576,7 @@ test("postinstall can force the interactive GLM three-tier prompt", async () => 
     assert.match(stdout, /coding-plan/)
     assert.equal(resolveConfig.profile, "glm")
     assert.equal(resolveConfig.tier, "gold")
+    assert.ok(resolveConfig.enabled.includes("glm"))
     assert.equal(resolveConfig.agents.glm.enabled, true)
     assert.equal(resolveConfig.models.coder, "gold")
     assert.equal(resolveConfig.models.planner, "gold")

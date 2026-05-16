@@ -25,6 +25,12 @@ Raw setup guide:
 curl -s https://raw.githubusercontent.com/jshsakura/opencode-resolve/main/docs/llm-setup.md
 ```
 
+Fresh reinstall command that works across Windows PowerShell, macOS, and Linux:
+
+```sh
+npm install -g opencode-resolve --opencode-resolve-reinstall=fresh
+```
+
 ## Expected Result
 
 The assistant should:

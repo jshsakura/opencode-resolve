@@ -19,6 +19,22 @@ opencode
 
 OpenCode는 플러그인을 `~/.cache/opencode/packages/` 아래 자체 캐시에서 로드합니다. 설치나 업그레이드 뒤 캐시 새로고침이 필요합니다.
 
+## 재설치 모드
+
+Windows PowerShell, macOS, Linux shell에서 같은 명령으로 동작합니다.
+
+```sh
+npm install -g opencode-resolve --opencode-resolve-reinstall=update
+npm install -g opencode-resolve --opencode-resolve-reinstall=fresh
+```
+
+shell별 환경 변수 방식도 계속 지원합니다.
+
+```sh
+OPENCODE_RESOLVE_REINSTALL=update npm install -g opencode-resolve
+OPENCODE_RESOLVE_REINSTALL=fresh npm install -g opencode-resolve
+```
+
 ## 파일
 
 | 파일 | 용도 |

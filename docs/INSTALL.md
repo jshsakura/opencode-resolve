@@ -77,7 +77,13 @@ opencode
 
 ## Fresh Reinstall
 
-Use this when you want the installer to prompt for a fresh setup:
+Use this when you want the installer to prompt for a fresh setup. This npm flag works the same in Windows PowerShell, macOS, and Linux shells:
+
+```sh
+npm install -g opencode-resolve --opencode-resolve-reinstall=fresh
+```
+
+Shell-specific environment variables are still supported:
 
 ```sh
 OPENCODE_RESOLVE_REINSTALL=fresh npm install -g opencode-resolve
@@ -86,6 +92,7 @@ OPENCODE_RESOLVE_REINSTALL=fresh npm install -g opencode-resolve
 Use this when you want additive migration only:
 
 ```sh
+npm install -g opencode-resolve --opencode-resolve-reinstall=update
 OPENCODE_RESOLVE_REINSTALL=update npm install -g opencode-resolve
 ```
 

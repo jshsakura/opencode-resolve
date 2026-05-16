@@ -17,16 +17,16 @@ const copy = {
     terminalTitle: "resolver session",
     commandTabs: [
       {
+        id: "ai",
+        label: "LLM setup",
+        command: "curl -s https://raw.githubusercontent.com/jshsakura/opencode-resolve/main/docs/llm-setup.md",
+        note: "Give the raw setup guide to an AI coding assistant and let it preserve your config.",
+      },
+      {
         id: "npm",
         label: "Standard",
         command: "npm install -g opencode-resolve\nopencode plugin opencode-resolve --global --force",
         note: "Install once, refresh OpenCode's plugin cache, then restart OpenCode.",
-      },
-      {
-        id: "ai",
-        label: "AI guided",
-        command: "curl -s https://raw.githubusercontent.com/jshsakura/opencode-resolve/main/docs/llm-setup.md",
-        note: "Give the raw setup guide to an AI coding assistant and let it preserve your config.",
       },
       {
         id: "skills",
@@ -90,16 +90,16 @@ const copy = {
     terminalTitle: "resolver session",
     commandTabs: [
       {
+        id: "ai",
+        label: "LLM 설치",
+        command: "curl -s https://raw.githubusercontent.com/jshsakura/opencode-resolve/main/docs/llm-setup.ko.md",
+        note: "Raw 설치 가이드를 AI 코딩 어시스턴트에게 주고 기존 설정을 보존하게 합니다.",
+      },
+      {
         id: "npm",
         label: "표준",
         command: "npm install -g opencode-resolve\nopencode plugin opencode-resolve --global --force",
         note: "한 번 설치하고 OpenCode 플러그인 캐시를 새로고침한 뒤 OpenCode를 재시작합니다.",
-      },
-      {
-        id: "ai",
-        label: "AI 가이드",
-        command: "curl -s https://raw.githubusercontent.com/jshsakura/opencode-resolve/main/docs/llm-setup.ko.md",
-        note: "Raw 설치 가이드를 AI 코딩 어시스턴트에게 주고 기존 설정을 보존하게 합니다.",
       },
       {
         id: "skills",

@@ -51,6 +51,12 @@ rm -rf "$OPENCODE_CACHE_ROOT/packages/opencode-resolve@latest"
 opencode plugin opencode-resolve@latest --global --force
 ```
 
+For a cross-platform fresh reinstall, use npm config flags instead of shell-specific environment-variable syntax:
+
+```sh
+npm install -g opencode-resolve --opencode-resolve-reinstall=fresh
+```
+
 ## Step 3 — Register plugin
 
 Open `~/.config/opencode/opencode.json`. Ensure the top-level `plugin` array contains `"opencode-resolve"`.

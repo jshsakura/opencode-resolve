@@ -45,15 +45,15 @@ async function handleExistingResolveConfig() {
 }
 
 async function chooseExistingResolveConfigAction() {
-  const requested = (process.env.OPENCODE_RESOLVE_REINSTALL ?? "").trim().toLowerCase()
+  const requested = readInstallerOption("reinstall").trim().toLowerCase()
   if (["fresh", "reset", "recreate", "new"].includes(requested)) return "fresh"
   if (["update", "keep", "migrate", "preserve"].includes(requested)) return "update"
   if (requested) {
-    console.warn(`Ignoring unknown OPENCODE_RESOLVE_REINSTALL=${JSON.stringify(requested)}; use "fresh" or "update".`)
+    console.warn(`Ignoring unknown reinstall mode ${JSON.stringify(requested)}; use "fresh" or "update".`)
   }
 
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
-    console.log(`Existing resolve config found; preserving it. Set OPENCODE_RESOLVE_REINSTALL=fresh for a fresh reinstall.`)
+    console.log(`Existing resolve config found; preserving it. Set OPENCODE_RESOLVE_REINSTALL=fresh or npm_config_opencode_resolve_reinstall=fresh for a fresh reinstall.`)
     return "update"
   }
 
@@ -197,4 +197,14 @@ function isMissingFileError(error) {
 
 function isObject(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+function readInstallerOption(name) {
+  const normalized = name.toUpperCase().replace(/-/g, "_")
+  const npmName = name.toLowerCase().replace(/-/g, "_")
+  return (
+    process.env[`OPENCODE_RESOLVE_${normalized}`] ??
+    process.env[`npm_config_opencode_resolve_${npmName}`] ??
+    ""
+  )
 }

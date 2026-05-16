@@ -51,6 +51,12 @@ rm -rf "$OPENCODE_CACHE_ROOT/packages/opencode-resolve@latest"
 opencode plugin opencode-resolve@latest --global --force
 ```
 
+Windows PowerShell, macOS, Linux shell에서 같은 명령으로 fresh reinstall을 실행하려면 shell별 환경 변수 대신 npm config 플래그를 사용하세요.
+
+```sh
+npm install -g opencode-resolve --opencode-resolve-reinstall=fresh
+```
+
 ## 3단계 — 플러그인 등록
 
 `~/.config/opencode/opencode.json`을 열고 최상위 `plugin` 배열에 `"opencode-resolve"`가 있는지 확인합니다.

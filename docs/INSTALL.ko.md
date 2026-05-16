@@ -77,7 +77,13 @@ opencode
 
 ## Fresh reinstall
 
-설치기가 fresh setup을 다시 묻게 하려면:
+설치기가 fresh setup을 다시 묻게 하려면 아래 npm 플래그를 사용하세요. Windows PowerShell, macOS, Linux shell에서 같은 명령으로 동작합니다.
+
+```sh
+npm install -g opencode-resolve --opencode-resolve-reinstall=fresh
+```
+
+shell별 환경 변수 방식도 계속 지원합니다.
 
 ```sh
 OPENCODE_RESOLVE_REINSTALL=fresh npm install -g opencode-resolve
@@ -86,6 +92,7 @@ OPENCODE_RESOLVE_REINSTALL=fresh npm install -g opencode-resolve
 추가적 마이그레이션만 원하면:
 
 ```sh
+npm install -g opencode-resolve --opencode-resolve-reinstall=update
 OPENCODE_RESOLVE_REINSTALL=update npm install -g opencode-resolve
 ```
 

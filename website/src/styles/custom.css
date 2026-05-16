@@ -142,16 +142,20 @@ body {
   box-shadow: var(--resolve-shadow);
 }
 
+.card-grid > .doc-card {
+  margin: 0;
+}
+
 .doc-card h3 {
-  margin-top: 0;
-  margin-bottom: 0.55rem;
+  margin: 0 0 0.55rem;
   font-size: 1rem;
   letter-spacing: 0;
+  line-height: 1.3;
 }
 
 .doc-card p {
   flex: 1;
-  margin-bottom: 0;
+  margin: 0;
   color: var(--resolve-text-soft);
   font-size: 0.94rem;
   line-height: 1.55;
@@ -430,6 +434,11 @@ body {
   border-radius: 0.85rem;
   padding: 1rem;
   background: color-mix(in srgb, var(--resolve-card) 94%, var(--resolve-muted-panel));
+}
+
+.panel-roles,
+.panel-command {
+  min-height: 18.5rem;
 }
 
 .panel-terminal {

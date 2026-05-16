@@ -54,6 +54,15 @@ OpenCode loads plugins from its own cache under `~/.cache/opencode/packages/`. T
 
 ## Reinstall Modes
 
+Works the same in Windows PowerShell, macOS, and Linux shells:
+
+```sh
+npm install -g opencode-resolve --opencode-resolve-reinstall=update
+npm install -g opencode-resolve --opencode-resolve-reinstall=fresh
+```
+
+Shell-specific environment variables are still supported:
+
 ```sh
 OPENCODE_RESOLVE_REINSTALL=update npm install -g opencode-resolve
 OPENCODE_RESOLVE_REINSTALL=fresh npm install -g opencode-resolve

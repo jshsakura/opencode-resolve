@@ -17,6 +17,10 @@ const ADDITIVE_DEFAULTS = {
   autoApprove: true,
 }
 
+const DEFAULT_ENABLED_AGENTS = ["coder", "resolver", "explorer", "reviewer", "deep-reviewer", "planner"]
+const GPT_ENABLED_AGENTS = ["coder", "resolver", "gpt", "explorer", "reviewer", "deep-reviewer", "planner"]
+const GLM_ENABLED_AGENTS = ["coder", "resolver", "glm", "explorer", "reviewer", "planner"]
+
 // ZAI local MCP server bootstrap for GLM users.
 // Do not copy provider secrets from OpenCode's auth store into opencode.json.
 // The MCP process should receive credentials from the user's runtime environment.
@@ -158,18 +162,18 @@ async function handleExistingResolveConfig(opencodeConfig, scriptedAnswers) {
 }
 
 async function chooseExistingResolveConfigAction(scriptedAnswers) {
-  const requested = (process.env.OPENCODE_RESOLVE_REINSTALL ?? "").trim().toLowerCase()
+  const requested = readInstallerOption("reinstall").trim().toLowerCase()
   if (["fresh", "reset", "recreate", "new"].includes(requested)) return "fresh"
   if (["update", "keep", "migrate", "preserve"].includes(requested)) return "update"
   if (requested) {
-    console.warn(`[${packageName}] ignoring unknown OPENCODE_RESOLVE_REINSTALL=${JSON.stringify(requested)}; use "fresh" or "update".`)
+    console.warn(`[${packageName}] ignoring unknown reinstall mode ${JSON.stringify(requested)}; use "fresh" or "update".`)
   }
 
-  const forcePrompt = process.env.OPENCODE_RESOLVE_FORCE_PROMPT === "1"
+  const forcePrompt = readInstallerOption("force_prompt") === "1"
   const canPrompt = Boolean((process.stdin.isTTY && process.stdout.isTTY) || forcePrompt)
   if (!canPrompt) {
     console.log(`[${packageName}] existing ${resolveConfigPath} found; preserving it and applying additive updates.`)
-    console.log(`[${packageName}] for a fresh reinstall, rerun in a TTY or set OPENCODE_RESOLVE_REINSTALL=fresh.`)
+    console.log(`[${packageName}] for a fresh reinstall, run: npm install -g ${packageName} --opencode-resolve-reinstall=fresh`)
     return "update"
   }
 
@@ -202,7 +206,7 @@ async function createAdaptiveResolveConfig(opencodeConfig, scriptedAnswers) {
   const currentModel = detectOpenCodeModel(opencodeConfig)
   const allModels = detectAllModels(opencodeConfig)
   const resolveConfig = { ...example }
-  const forcePrompt = process.env.OPENCODE_RESOLVE_FORCE_PROMPT === "1"
+  const forcePrompt = readInstallerOption("force_prompt") === "1"
   const canPrompt = Boolean(
     (process.stdin.isTTY && process.stdout.isTTY) || forcePrompt,
   )
@@ -421,6 +425,7 @@ async function buildInteractivePreset(currentModel, allModels, scriptedAnswers) 
         label: "gpt-three-tier",
         profile: "gpt",
         tier: "gold",
+        enabled: GPT_ENABLED_AGENTS,
         models: buildGPTThreeTierModels(tiers),
         agents: { gpt: { enabled: true } },
       }
@@ -437,6 +442,7 @@ async function buildInteractivePreset(currentModel, allModels, scriptedAnswers) 
         label: "glm-three-tier",
         profile: "glm",
         tier: "gold",
+        enabled: GLM_ENABLED_AGENTS,
         models: buildGLMThreeTierModels(tiers),
         agents: { glm: { enabled: true } },
       }
@@ -449,6 +455,11 @@ async function buildInteractivePreset(currentModel, allModels, scriptedAnswers) 
     return {
       label: "mix-three-tier",
       profile: "mix",
+      enabled: unique([
+        ...DEFAULT_ENABLED_AGENTS,
+        ...(useGPT ? ["gpt"] : []),
+        ...(useGLM ? ["glm"] : []),
+      ]),
       models: buildMixedThreeTierModels(gptTiers, glmTiers),
       agents: {
         gpt: { enabled: useGPT },
@@ -609,10 +620,20 @@ async function readAllStdin() {
 }
 
 async function readScriptedAnswersIfNeeded() {
-  if (process.env.OPENCODE_RESOLVE_FORCE_PROMPT === "1" && !process.stdin.isTTY) {
+  if (readInstallerOption("force_prompt") === "1" && !process.stdin.isTTY) {
     return (await readAllStdin()).split(/\r?\n/)
   }
   return undefined
+}
+
+function readInstallerOption(name) {
+  const normalized = name.toUpperCase().replace(/-/g, "_")
+  const npmName = name.toLowerCase().replace(/-/g, "_")
+  return (
+    process.env[`OPENCODE_RESOLVE_${normalized}`] ??
+    process.env[`npm_config_opencode_resolve_${npmName}`] ??
+    ""
+  )
 }
 
 function getPresetLabel(currentModel) {
