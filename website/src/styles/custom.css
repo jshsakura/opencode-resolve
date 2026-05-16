@@ -296,11 +296,19 @@ body {
 }
 
 .panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
   background: var(--resolve-card);
   border: 1px solid var(--resolve-card-border);
   border-radius: var(--resolve-radius);
   padding: 1.5rem;
   box-shadow: var(--resolve-shadow);
+}
+
+.panel-roles,
+.panel-command {
+  min-height: 21rem;
 }
 
 .panel-title {
