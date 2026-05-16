@@ -24,7 +24,6 @@ opencode plugin opencode-resolve --global --force
 
 - [What It Adds](#what-it-adds)
 - [Install](#install)
-- [CLI Setup](#cli-setup)
 - [Recommended Skills](#recommended-skills)
 - [Configuration](#configuration)
 - [Model Setup](#model-setup)
@@ -59,50 +58,39 @@ Default enabled agents:
 - Node.js 20 or newer: `node --version`
 - At least one OpenCode model provider configured in `~/.config/opencode/opencode.json`
 
-### From npm
+### Install
 
 ```sh
 npm install -g opencode-resolve
 opencode plugin opencode-resolve --global --force
-```
-
-OpenCode caches plugins under `~/.cache/opencode/packages/`, so refresh the cache after installing or upgrading. Then restart OpenCode:
-
-```sh
 opencode
 ```
 
-The `postinstall` script tries to:
+The npm `postinstall` script registers the plugin in `~/.config/opencode/opencode.json`, creates `~/.config/opencode/resolve.json` if missing, preserves existing model pins (unless you opt out with `--reset-config`), and refreshes the OpenCode plugin cache under `~/.cache/opencode/packages/`.
 
-1. Add `"opencode-resolve"` to `~/.config/opencode/opencode.json`.
-2. Create `~/.config/opencode/resolve.json` if it does not already exist.
-3. Preserve existing model pins unless you explicitly choose `--reset-config`.
+### Re-run setup
 
-Skip postinstall automation when needed:
+Re-run the installer any time with the `opencode-resolve setup` CLI:
+
+| Command | When to use |
+| --- | --- |
+| `opencode-resolve setup --fresh` | Regenerate `resolve.json`; keep existing model pins |
+| `opencode-resolve setup --reset-config` | Regenerate `resolve.json` and reset model pins |
+| `opencode-resolve setup --models` | Re-detect model pins only |
+| `opencode-resolve setup --force-cache` | Refresh OpenCode plugin cache only |
+
+Skip postinstall automation:
 
 ```sh
 OPENCODE_RESOLVE_SKIP_POSTINSTALL=1 npm install -g opencode-resolve
 ```
 
-Run setup again without dropping existing model pins:
+### Optional companion plugins
 
-```sh
-opencode-resolve setup --fresh
-```
+- `@tarquinen/opencode-dcp@latest` — trims obsolete tool output during long loops.
+- `@slkiser/opencode-quota@latest` — shows token/quota usage without polluting context.
 
-Reconfigure only model pins:
-
-```sh
-opencode-resolve setup --models
-```
-
-Force the OpenCode plugin cache to reinstall without touching `resolve.json`:
-
-```sh
-opencode-resolve setup --force-cache
-```
-
-### Manual Setup
+### Manual setup
 
 Add the plugin to `~/.config/opencode/opencode.json`:
 
@@ -146,32 +134,6 @@ export OPENCODE_CACHE_ROOT="${XDG_CACHE_HOME:-$HOME/.cache}/opencode"
 rm -rf "$OPENCODE_CACHE_ROOT/packages/opencode-resolve@latest"
 opencode plugin opencode-resolve@latest --global --force
 ```
-
-## CLI Setup
-
-Install from the shell. The npm postinstall registers the plugin, preserves existing OpenCode config, creates `resolve.json` when missing, and refreshes stale OpenCode plugin cache entries.
-
-```sh
-npm install -g opencode-resolve
-opencode
-```
-
-For a regenerated `resolve.json` that keeps existing model pins:
-
-```sh
-opencode-resolve setup --fresh
-```
-
-To re-detect model pins without replacing the rest of `resolve.json`:
-
-```sh
-opencode-resolve setup --models
-```
-
-Recommended companion plugins, optional:
-
-- `@tarquinen/opencode-dcp@latest` trims obsolete tool output during long loops.
-- `@slkiser/opencode-quota@latest` shows token/quota usage without adding context-window noise.
 
 ## Recommended Skills
 
@@ -366,21 +328,16 @@ Resolvers are instructed to read only relevant context documents.
 ```sh
 npm install -g opencode-resolve@latest
 opencode plugin opencode-resolve@latest --global --force
-opencode
 ```
 
-Pin a version:
+Pin a specific version in `opencode.json` and refresh that exact version:
 
 ```json
-{
-  "plugin": ["opencode-resolve@0.1.13"]
-}
+{ "plugin": ["opencode-resolve@<version>"] }
 ```
 
-Then refresh that version:
-
 ```sh
-opencode plugin opencode-resolve@0.1.13 --global --force
+opencode plugin opencode-resolve@<version> --global --force
 ```
 
 ## Development

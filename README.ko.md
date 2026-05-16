@@ -24,7 +24,6 @@ opencode plugin opencode-resolve --global --force
 
 - [무엇을 추가하나](#무엇을-추가하나)
 - [설치](#설치)
-- [CLI 설정](#cli-설정)
 - [추천 스킬](#추천-스킬)
 - [설정](#설정)
 - [모델 설정](#모델-설정)
@@ -59,24 +58,26 @@ opencode plugin opencode-resolve --global --force
 - Node.js 20 이상: `node --version`
 - `~/.config/opencode/opencode.json`에 최소 하나의 OpenCode 모델 프로바이더 설정
 
-### npm 설치
+### 설치
 
 ```sh
 npm install -g opencode-resolve
 opencode plugin opencode-resolve --global --force
-```
-
-OpenCode는 플러그인을 `~/.cache/opencode/packages/`에 캐시하므로 설치나 업그레이드 뒤 캐시를 새로고침해야 합니다. 그다음 OpenCode를 재시작하세요.
-
-```sh
 opencode
 ```
 
-`postinstall` 스크립트는 다음을 시도합니다.
+npm `postinstall`이 `~/.config/opencode/opencode.json`에 플러그인을 등록하고, 없을 때만 `~/.config/opencode/resolve.json`을 만들고, 기존 모델 핀을 보존하며 (`--reset-config`로 명시 시 초기화), `~/.cache/opencode/packages/` 의 OpenCode 플러그인 캐시를 새로고침합니다.
 
-1. `~/.config/opencode/opencode.json`에 `"opencode-resolve"` 추가
-2. 없을 때만 `~/.config/opencode/resolve.json` 생성
-3. 명시적으로 `--reset-config`를 고르지 않으면 기존 모델 핀 보존
+### 다시 셋업하기
+
+설치 이후 언제든 `opencode-resolve setup` CLI로 다시 실행할 수 있습니다.
+
+| 명령 | 언제 사용 |
+| --- | --- |
+| `opencode-resolve setup --fresh` | `resolve.json` 재생성, 기존 모델 핀 유지 |
+| `opencode-resolve setup --reset-config` | `resolve.json` 재생성 + 모델 핀 초기화 |
+| `opencode-resolve setup --models` | 모델 핀만 다시 감지 |
+| `opencode-resolve setup --force-cache` | OpenCode 플러그인 캐시만 새로고침 |
 
 자동 설정을 건너뛰려면:
 
@@ -84,23 +85,10 @@ opencode
 OPENCODE_RESOLVE_SKIP_POSTINSTALL=1 npm install -g opencode-resolve
 ```
 
-기존 모델 핀을 유지한 채 설정을 다시 생성하려면:
+### 선택적 companion 플러그인
 
-```sh
-opencode-resolve setup --fresh
-```
-
-모델 핀만 다시 잡으려면:
-
-```sh
-opencode-resolve setup --models
-```
-
-`resolve.json`은 건드리지 않고 OpenCode 플러그인 캐시만 강제 재설치하려면:
-
-```sh
-opencode-resolve setup --force-cache
-```
+- `@tarquinen/opencode-dcp@latest` — 긴 루프에서 오래된 tool output을 줄여 토큰 비용을 낮춥니다.
+- `@slkiser/opencode-quota@latest` — 컨텍스트를 오염시키지 않고 토큰/quota 사용량을 보여줍니다.
 
 ### 수동 설정
 
@@ -146,32 +134,6 @@ export OPENCODE_CACHE_ROOT="${XDG_CACHE_HOME:-$HOME/.cache}/opencode"
 rm -rf "$OPENCODE_CACHE_ROOT/packages/opencode-resolve@latest"
 opencode plugin opencode-resolve@latest --global --force
 ```
-
-## CLI 설정
-
-셸에서 직접 설치합니다. npm postinstall이 플러그인을 등록하고, 기존 OpenCode 설정을 보존하며, 없을 때만 `resolve.json`을 만들고, 오래된 OpenCode 플러그인 캐시를 새로고침합니다.
-
-```sh
-npm install -g opencode-resolve
-opencode
-```
-
-기존 모델 핀을 유지한 채 `resolve.json`을 다시 생성하려면:
-
-```sh
-opencode-resolve setup --fresh
-```
-
-`resolve.json` 나머지는 유지하고 모델 핀만 다시 감지하려면:
-
-```sh
-opencode-resolve setup --models
-```
-
-선택적 companion 플러그인:
-
-- `@tarquinen/opencode-dcp@latest`: 긴 루프에서 오래된 tool output을 줄여 토큰 비용을 낮춥니다.
-- `@slkiser/opencode-quota@latest`: 컨텍스트를 오염시키지 않고 토큰/quota 사용량을 보여줍니다.
 
 ## 추천 스킬
 
@@ -366,21 +328,16 @@ resolver는 관련 있는 컨텍스트 문서만 읽도록 지시받습니다.
 ```sh
 npm install -g opencode-resolve@latest
 opencode plugin opencode-resolve@latest --global --force
-opencode
 ```
 
-특정 버전 고정:
+특정 버전을 `opencode.json`에서 고정하고 해당 버전 캐시를 새로고침합니다.
 
 ```json
-{
-  "plugin": ["opencode-resolve@0.1.13"]
-}
+{ "plugin": ["opencode-resolve@<version>"] }
 ```
 
-해당 버전 캐시 새로고침:
-
 ```sh
-opencode plugin opencode-resolve@0.1.13 --global --force
+opencode plugin opencode-resolve@<version> --global --force
 ```
 
 ## 개발
