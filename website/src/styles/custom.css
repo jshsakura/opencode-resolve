@@ -47,6 +47,7 @@ html {
 body {
   word-break: keep-all;
   overflow-wrap: break-word;
+  overflow-x: hidden;
 }
 
 .page {
@@ -91,6 +92,12 @@ body {
   border: 1px solid var(--sl-color-gray-5);
 }
 
+.sl-markdown-content,
+.sl-markdown-content > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
 .sl-markdown-content table:not(:where(.not-content *)) {
   display: table;
   width: 100%;
@@ -107,11 +114,13 @@ body {
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 1rem;
   align-items: stretch;
+  max-width: 100%;
   margin: 2rem 0 0;
 }
 
 .doc-card {
   display: flex;
+  min-width: 0;
   min-height: 10.5rem;
   height: 100%;
   flex-direction: column;
@@ -150,11 +159,13 @@ body {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 1rem;
   align-items: stretch;
+  max-width: 100%;
   margin: 2rem 0 0;
 }
 
 .metric-card {
   display: flex;
+  min-width: 0;
   min-height: 8rem;
   height: 100%;
   flex-direction: column;
@@ -184,6 +195,7 @@ body {
 
 .terminal-demo {
   overflow: hidden;
+  max-width: 100%;
   margin: 2rem 0 0;
   border: 1px solid var(--resolve-terminal-border);
   border-radius: 0.85rem;
@@ -263,6 +275,8 @@ body {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 1rem;
+  max-width: 100%;
+  overflow: hidden;
   min-height: 5.5rem;
   margin-top: 1.25rem;
   border: 1px solid var(--resolve-card-border);
@@ -275,12 +289,14 @@ body {
 .install-panel code {
   display: block;
   min-width: 0;
+  max-width: 100%;
   overflow-x: auto;
   white-space: nowrap;
 }
 
 .install-command {
   margin: 0;
+  max-width: 100%;
   overflow-x: auto;
   background: transparent;
 }
@@ -320,14 +336,9 @@ body {
 }
 
 .resolve-playground {
+  max-width: 100%;
   margin: 1.75rem 0 0;
-  border: 1px solid var(--resolve-card-border);
-  border-radius: 1rem;
-  padding: clamp(1rem, 2vw, 1.25rem);
-  background:
-    linear-gradient(135deg, color-mix(in srgb, var(--resolve-card) 96%, var(--sl-color-accent-low)), var(--resolve-card)),
-    radial-gradient(circle at 10% 0%, color-mix(in srgb, var(--resolve-cyan) 12%, transparent), transparent 28%);
-  box-shadow: var(--resolve-shadow);
+  overflow: clip;
 }
 
 .playground-head {
@@ -392,10 +403,12 @@ body {
   grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
   gap: 1rem;
   align-items: stretch;
+  max-width: 100%;
 }
 
 .panel {
   display: flex;
+  min-width: 0;
   min-height: 100%;
   flex-direction: column;
   border: 1px solid var(--resolve-card-border);
@@ -488,29 +501,25 @@ body {
 .role-card {
   flex: 1;
   margin-top: 0.9rem;
-  border: 1px solid color-mix(in srgb, var(--resolve-cyan) 35%, var(--resolve-card-border));
-  border-radius: 0.75rem;
-  padding: 1rem;
-  background: color-mix(in srgb, var(--resolve-cyan) 7%, var(--resolve-card));
+  border-top: 1px solid color-mix(in srgb, var(--resolve-cyan) 35%, var(--resolve-card-border));
+  padding-top: 0.95rem;
 }
 
 .role-card[data-tone="rose"] {
-  border-color: color-mix(in srgb, var(--resolve-rose) 35%, var(--resolve-card-border));
-  background: color-mix(in srgb, var(--resolve-rose) 7%, var(--resolve-card));
+  border-top-color: color-mix(in srgb, var(--resolve-rose) 35%, var(--resolve-card-border));
 }
 
 .role-card[data-tone="emerald"] {
-  border-color: color-mix(in srgb, var(--resolve-emerald) 35%, var(--resolve-card-border));
-  background: color-mix(in srgb, var(--resolve-emerald) 7%, var(--resolve-card));
+  border-top-color: color-mix(in srgb, var(--resolve-emerald) 35%, var(--resolve-card-border));
 }
 
 .role-card[data-tone="amber"] {
-  border-color: color-mix(in srgb, var(--resolve-amber) 35%, var(--resolve-card-border));
-  background: color-mix(in srgb, var(--resolve-amber) 7%, var(--resolve-card));
+  border-top-color: color-mix(in srgb, var(--resolve-amber) 35%, var(--resolve-card-border));
 }
 
 .role-card-top {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
@@ -547,11 +556,13 @@ body {
 
 .command-tabs {
   display: flex;
+  max-width: 100%;
   gap: 0.5rem;
   margin-bottom: 0.75rem;
 }
 
 .command-tab {
+  min-width: 0;
   min-height: 2.2rem;
   padding: 0.4rem 0.75rem;
   font-size: 0.84rem;
@@ -564,6 +575,8 @@ body {
 }
 
 .command-output {
+  min-width: 0;
+  max-width: 100%;
   min-height: 6.4rem;
   flex: 1;
   margin: 0;
@@ -580,6 +593,7 @@ body {
   background: transparent !important;
   color: inherit !important;
   padding: 0 !important;
+  overflow-wrap: anywhere;
 }
 
 .command-footer {
@@ -597,6 +611,7 @@ body {
 }
 
 .copy-button {
+  min-width: 0;
   min-height: 2.25rem;
   padding: 0.4rem 0.8rem;
   font-size: 0.84rem;
@@ -668,6 +683,24 @@ body {
     grid-template-columns: 1fr;
   }
 
+  .resolve-section {
+    margin-top: 3rem;
+  }
+
+  .resolve-playground {
+    overflow: visible;
+  }
+
+  .panel {
+    padding: 0.8rem;
+  }
+
+  .install-panel code,
+  .install-command code {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
   .terminal-line {
     grid-template-columns: 1fr;
     gap: 0.05rem;
@@ -683,6 +716,10 @@ body {
     align-items: stretch;
   }
 
+  .checkpoint-row {
+    flex-direction: column;
+  }
+
   .status-badge {
     width: fit-content;
   }
@@ -692,22 +729,38 @@ body {
   }
 
   .role-tab {
+    grid-template-columns: 1fr;
+    gap: 0.22rem;
     min-height: 3rem;
     padding-inline: 0.62rem;
   }
 
   .role-tab small {
+    width: fit-content;
+    max-width: 100%;
     font-size: 0.64rem;
     padding-inline: 0.36rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .command-tabs {
-    overflow-x: auto;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .command-tab {
+    padding-inline: 0.45rem;
+    font-size: 0.76rem;
   }
 }
 
 @media (max-width: 24rem) {
   .role-tabs {
+    grid-template-columns: 1fr;
+  }
+
+  .command-tabs {
     grid-template-columns: 1fr;
   }
 }
