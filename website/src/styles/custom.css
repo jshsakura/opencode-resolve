@@ -319,6 +319,10 @@ body {
 }
 
 .role-tab {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.5rem;
+  align-items: center;
   padding: 1rem;
   border: 1px solid var(--resolve-card-border);
   border-radius: 0.75rem;
@@ -326,9 +330,68 @@ body {
   text-align: left;
   transition: all 0.2s ease;
   cursor: pointer;
+  color: var(--sl-color-gray-1);
+}
+
+.role-tab span {
+  min-width: 0;
+  font-family: var(--sl-font-mono);
+  font-weight: 800;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.role-tab small {
+  border: 1px solid var(--resolve-card-border);
+  border-radius: 999px;
+  padding: 0.16rem 0.44rem;
+  color: var(--resolve-text-soft);
+  font-size: 0.68rem;
+  font-weight: 800;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.role-tab:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--resolve-cyan) 55%, var(--resolve-card-border));
 }
 
 .role-tab.is-active {
+  border-color: var(--resolve-cyan);
+  background: color-mix(in srgb, var(--resolve-cyan) 10%, var(--resolve-card));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--resolve-cyan) 20%, transparent);
+}
+
+.command-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  max-width: 100%;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.command-tab {
+  min-width: 0;
+  min-height: 3.25rem;
+  padding: 0.4rem 0.75rem;
+  font-size: 0.84rem;
+  font-weight: 800;
+  border: 1px solid var(--resolve-card-border);
+  border-radius: 0.65rem;
+  background: var(--resolve-muted-panel);
+  color: var(--sl-color-gray-1);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.command-tab:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--resolve-cyan) 55%, var(--resolve-card-border));
+}
+
+.command-tab.is-active {
   border-color: var(--resolve-cyan);
   background: color-mix(in srgb, var(--resolve-cyan) 10%, var(--resolve-card));
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--resolve-cyan) 20%, transparent);
@@ -563,6 +626,10 @@ body {
   }
   
   .role-tabs {
+    grid-template-columns: 1fr;
+  }
+  
+  .command-tabs {
     grid-template-columns: 1fr;
   }
   
