@@ -78,73 +78,73 @@ const copy = {
     ],
   },
   ko: {
-    badge: "Live workflow",
-    title: "끝까지 가는 작업 루프",
-    subtitle: "resolver와 coder가 구현, 검증, 보고를 한 흐름으로 이어 가는 가벼운 작업 경로입니다.",
-    roles: "역할",
+    badge: "실시간 워크플로우",
+    title: "종단간 작업 루프",
+    subtitle: "구현, 검증, 보고가 하나의 흐름으로 이어지는 소규모 resolver/coder 경로입니다.",
+    roles: "에이전트 역할",
     commands: "설치 경로",
     checkpoint: "체크포인트",
     copy: "복사",
     copied: "복사됨",
-    runNext: "다음 체크포인트 실행",
-    terminalTitle: "resolver session",
+    runNext: "다음 단계 실행",
+    terminalTitle: "리졸버 세션",
     commandTabs: [
       {
         id: "npm",
-        label: "표준",
+        label: "표준 설치",
         command: "npm install -g opencode-resolve\nopencode",
-        note: "한 번 설치합니다. postinstall이 플러그인 등록과 오래된 OpenCode 캐시 새로고침을 처리합니다.",
+        note: "한 번만 설치하면 됩니다. 설치 후 자동으로 플러그인이 등록되고 캐시가 갱신됩니다.",
       },
       {
         id: "refresh",
         label: "캐시 갱신",
         command: "opencode plugin opencode-resolve --global --force\nopencode",
-        note: "OpenCode 플러그인 캐시를 강제로 다시 설치하고 싶을 때 사용합니다.",
+        note: "플러그인 캐시를 강제로 다시 설치하고 설정을 초기화하고 싶을 때 사용합니다.",
       },
       {
         id: "skills",
-        label: "스킬",
+        label: "스킬 추가",
         command: "curl -sL https://raw.githubusercontent.com/jshsakura/awesome-opencode-skills/main/install.sh | bash",
-        note: "선택 사항: 도메인별 작업을 위한 OpenCode Skills 컬렉션을 추가합니다.",
+        note: "선택 사항: 특정 도메인 작업에 특화된 OpenCode Skills 모음을 추가합니다.",
       },
     ],
     rolesData: [
       {
         id: "resolver",
-        label: "resolver",
+        label: "리졸버",
         tone: "cyan",
-        title: "작업을 오케스트레이션",
-        body: "관련 컨텍스트만 읽고, 집중된 서브에이전트를 디스패치하고, 체크포인트마다 검증합니다.",
-        status: "primary",
+        title: "작업 전체 조율",
+        body: "관련 컨텍스트만 읽고, 필요한 하위 에이전트를 할당하며, 각 단계를 검증하여 진행을 이끕니다.",
+        status: "메인",
       },
       {
         id: "coder",
-        label: "coder",
+        label: "코더",
         tone: "rose",
-        title: "패치를 적용",
-        body: "구현, 파일 편집, 대상 테스트, diagnostics, 변경 파일 보고를 담당합니다.",
-        status: "subagent",
+        title: "패치 및 구현",
+        body: "코드 수정, 테스트 실행, 진단 확인 및 변경된 파일 보고서 작성을 전담합니다.",
+        status: "서브",
       },
       {
         id: "explorer",
-        label: "explorer",
+        label: "익스플로러",
         tone: "emerald",
-        title: "코드베이스를 탐색",
-        body: "프로젝트를 수정하지 않고 파일, API, 패턴을 빠르게 찾습니다.",
-        status: "read-only",
+        title: "코드베이스 탐색",
+        body: "프로젝트를 수정하지 않고 파일, API, 패턴을 빠르게 찾아냅니다.",
+        status: "읽기 전용",
       },
       {
         id: "reviewer",
-        label: "reviewer",
+        label: "리뷰어",
         tone: "amber",
-        title: "검증 갭을 확인",
-        body: "파일을 쓰지 않고 정확성, 누락 테스트, 보안, 잔여 위험을 검토합니다.",
-        status: "read-only",
+        title: "검증 공백 확인",
+        body: "수정사항의 정확성, 누락된 테스트, 보안 및 잔여 위험을 파일 수정 없이 검토합니다.",
+        status: "읽기 전용",
       },
     ],
     steps: [
-      ["user", "설정 저장 실패를 고치고 검증해줘."],
-      ["resolver", "관련 route를 좁히고 save handler를 찾은 뒤 coder에 정확한 파일을 넘깁니다."],
+      ["user", "설정 저장 로직의 오류를 수정하고 검증해줘."],
+      ["resolver", "Save handler를 찾은 뒤 coder에 정확한 파일을 넘깁니다."],
       ["coder", "validation edge case를 패치하고 대상 테스트와 diagnostics를 확인합니다."],
       ["reviewer", "차단 이슈 없음. 잔여 위험: integration smoke 미실행."],
       ["resolver", "변경 파일, 테스트 증거, 잔여 위험을 보고합니다."],
@@ -169,48 +169,65 @@ const serialized = JSON.stringify(copy);
 
   <div class="playground-grid">
     <div class="playground-grid-row">
-    <div class="panel panel-roles">
-      <div class="panel-title">{copy.roles}</div>
-      <div class="role-tabs" role="tablist">
-        {copy.rolesData.map((role, index) => (
-          <button
-            type="button"
-            class={`role-tab ${index === 0 ? "is-active" : ""}`}
-            data-role-tab={role.id}
-            data-tone={role.tone}
-          >
-            <span>{role.label}</span>
-            <small>{role.status}</small>
-          </button>
-        ))}
-      </div>
-      <div class="role-card" data-role-card>
-        <div class="role-card-top">
-          <span class="role-chip" data-role-chip>{copy.rolesData[0].label}</span>
-          <span class="role-mode" data-role-mode>{copy.rolesData[0].status}</span>
+      <!-- Panel 1: Roles -->
+      <div class="panel panel-roles">
+        <div class="panel-title">{copy.roles}</div>
+        <div class="panel-tabs-area">
+          <div class="role-tabs" role="tablist">
+            {copy.rolesData.map((role, index) => (
+              <button
+                type="button"
+                class={`role-tab ${index === 0 ? "is-active" : ""}`}
+                data-role-tab={role.id}
+                data-tone={role.tone}
+              >
+                <span>{role.label}</span>
+                <small>{role.status}</small>
+              </button>
+            ))}
+          </div>
         </div>
-        <h3 data-role-title>{copy.rolesData[0].title}</h3>
-        <p data-role-body>{copy.rolesData[0].body}</p>
+        <div class="panel-content-area">
+          <div class="role-card" data-role-card>
+            <div class="role-card-top">
+              <span class="role-chip" data-role-chip>{copy.rolesData[0].label}</span>
+              <span class="role-mode" data-role-mode>{copy.rolesData[0].status}</span>
+            </div>
+            <h3 data-role-title>{copy.rolesData[0].title}</h3>
+            <p data-role-body>{copy.rolesData[0].body}</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Panel 2: Setup path -->
+      <div class="panel panel-command">
+        <div class="panel-title">{copy.commands}</div>
+        <div class="panel-tabs-area">
+          <div class="command-tabs" role="tablist">
+            {copy.commandTabs.map((tab, index) => (
+              <button
+                type="button"
+                class={`command-tab ${index === 0 ? "is-active" : ""}`}
+                data-command-tab={tab.id}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div class="panel-content-area">
+          <div class="command-box">
+            <pre class="command-output"><code data-command-output>{copy.commandTabs[0].command}</code></pre>
+            <div class="command-footer">
+              <p data-command-note>{copy.commandTabs[0].note}</p>
+              <button type="button" class="copy-button" data-copy-command>{copy.copy}</button>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
-    <div class="panel panel-command">
-      <div class="panel-title">{copy.commands}</div>
-      <div class="command-tabs" role="tablist">
-        {copy.commandTabs.map((tab, index) => (
-          <button type="button" class={`command-tab ${index === 0 ? "is-active" : ""}`} data-command-tab={tab.id}>
-            {tab.label}
-          </button>
-        ))}
-      </div>
-      <pre class="command-output"><code data-command-output>{copy.commandTabs[0].command}</code></pre>
-      <div class="command-footer">
-        <p data-command-note>{copy.commandTabs[0].note}</p>
-        <button type="button" class="copy-button" data-copy-command>{copy.copy}</button>
-      </div>
-    </div>
-
-    </div>
+    <!-- Terminal Panel -->
     <div class="panel panel-terminal">
       <div class="terminal-demo compact">
         <div class="terminal-bar">
@@ -229,21 +246,21 @@ const serialized = JSON.stringify(copy);
         </div>
       </div>
       <div class="checkpoint-row">
-        <span>{copy.checkpoint} <strong data-step-count>3</strong> / {copy.steps.length}</span>
+        <span>{copy.checkpoint} <strong data-step-count>3</strong> / 5</span>
         <button type="button" class="copy-button secondary" data-next-step>{copy.runNext}</button>
       </div>
     </div>
   </div>
 </section>
 
-<script>
+<script type="module">
   const playgrounds = document.querySelectorAll("[data-resolve-playground]");
-
   for (const playground of playgrounds) {
     const data = JSON.parse(playground.getAttribute("data-copy") || "{}");
-    let command = data.commandTabs?.[0]?.command || "";
+    let currentCommand = data.commandTabs?.[0]?.command || "";
     let visibleSteps = 3;
 
+    // Roles switching
     const roleTabs = playground.querySelectorAll("[data-role-tab]");
     const roleChip = playground.querySelector("[data-role-chip]");
     const roleMode = playground.querySelector("[data-role-mode]");
@@ -255,54 +272,63 @@ const serialized = JSON.stringify(copy);
       tab.addEventListener("click", () => {
         const id = tab.getAttribute("data-role-tab");
         const role = data.rolesData.find((item) => item.id === id);
-        if (!role) return;
-        roleTabs.forEach((item) => item.classList.remove("is-active"));
-        tab.classList.add("is-active");
-        roleCard?.setAttribute("data-tone", role.tone);
-        if (roleChip) roleChip.textContent = role.label;
-        if (roleMode) roleMode.textContent = role.status;
-        if (roleTitle) roleTitle.textContent = role.title;
-        if (roleBody) roleBody.textContent = role.body;
+        if (role) {
+          roleTabs.forEach((t) => t.classList.remove("is-active"));
+          tab.classList.add("is-active");
+          roleCard?.setAttribute("data-tone", role.tone);
+          if (roleChip) roleChip.textContent = role.label;
+          if (roleMode) roleMode.textContent = role.status;
+          if (roleTitle) roleTitle.textContent = role.title;
+          if (roleBody) roleBody.textContent = role.body;
+        }
       });
     }
 
+    // Command switching
     const commandTabs = playground.querySelectorAll("[data-command-tab]");
     const commandOutput = playground.querySelector("[data-command-output]");
     const commandNote = playground.querySelector("[data-command-note]");
-    const copyButton = playground.querySelector("[data-copy-command]");
+    const copyBtn = playground.querySelector("[data-copy-command]");
 
     for (const tab of commandTabs) {
       tab.addEventListener("click", () => {
         const id = tab.getAttribute("data-command-tab");
-        const next = data.commandTabs.find((item) => item.id === id);
-        if (!next) return;
-        commandTabs.forEach((item) => item.classList.remove("is-active"));
-        tab.classList.add("is-active");
-        command = next.command;
-        if (commandOutput) commandOutput.textContent = next.command;
-        if (commandNote) commandNote.textContent = next.note;
+        const item = data.commandTabs.find((t) => t.id === id);
+        if (item) {
+          commandTabs.forEach((t) => t.classList.remove("is-active"));
+          tab.classList.add("is-active");
+          currentCommand = item.command;
+          if (commandOutput) commandOutput.textContent = item.command;
+          if (commandNote) commandNote.textContent = item.note;
+        }
       });
     }
 
-    copyButton?.addEventListener("click", async () => {
-      await navigator.clipboard.writeText(command);
+    // Copying
+    copyBtn?.addEventListener("click", async () => {
+      await navigator.clipboard.writeText(currentCommand);
       const original = data.copy;
-      copyButton.textContent = data.copied;
+      copyBtn.textContent = data.copied;
       setTimeout(() => {
-        copyButton.textContent = original;
+        copyBtn.textContent = original;
       }, 1400);
     });
 
+    // Terminal progression
     const terminalBody = playground.querySelector("[data-terminal-body]");
     const stepCount = playground.querySelector("[data-step-count]");
     const nextStep = playground.querySelector("[data-next-step]");
 
     const renderSteps = () => {
-      if (!terminalBody) return;
-      terminalBody.innerHTML = data.steps
-        .slice(0, visibleSteps)
-        .map(([role, text]) => `<p class="terminal-line"><span class="terminal-role">${role}</span><span class="terminal-text">${text}</span></p>`)
-        .join("");
+      if (terminalBody) {
+        terminalBody.innerHTML = data.steps
+          .slice(0, visibleSteps)
+          .map(
+            ([role, text]) =>
+              `<p class="terminal-line"><span class="terminal-role">${role}</span><span class="terminal-text">${text}</span></p>`
+          )
+          .join("");
+      }
       if (stepCount) stepCount.textContent = String(visibleSteps);
     };
 
