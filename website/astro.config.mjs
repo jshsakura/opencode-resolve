@@ -6,7 +6,7 @@ export default defineConfig({
   base: "/opencode-resolve",
   integrations: [
     starlight({
-      title: "opencode-resolve",
+      title: "Resolve",
       description: "A lightweight resolver/coder harness for OpenCode.",
       favicon: "/favicon.svg",
       customCss: ["./src/styles/custom.css"],
