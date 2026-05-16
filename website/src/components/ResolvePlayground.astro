@@ -259,28 +259,77 @@ const serialized = JSON.stringify(copy);
     let currentCommand = data.commandTabs?.[0]?.command || "";
     let visibleSteps = 3;
 
-    // Roles switching
+    // Roles switching with fade transition and auto-advance
     const roleTabs = playground.querySelectorAll("[data-role-tab]");
     const roleChip = playground.querySelector("[data-role-chip]");
     const roleMode = playground.querySelector("[data-role-mode]");
     const roleTitle = playground.querySelector("[data-role-title]");
     const roleBody = playground.querySelector("[data-role-body]");
     const roleCard = playground.querySelector("[data-role-card]");
+    const rolesPanel = playground.querySelector(".panel-roles");
+
+    const ROLE_SWAP_MS = 180;
+    const ROLE_AUTOPLAY_MS = 3500;
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    let currentRoleIdx = 0;
+    let autoplayPaused = false;
+    let autoplayStopped = reducedMotion;
+    let roleAutoplayTimer = null;
+
+    function applyRole(role, tab) {
+      roleTabs.forEach((t) => t.classList.remove("is-active"));
+      tab.classList.add("is-active");
+      if (!roleCard) return;
+      if (reducedMotion) {
+        roleCard.setAttribute("data-tone", role.tone);
+        if (roleChip) roleChip.textContent = role.label;
+        if (roleMode) roleMode.textContent = role.status;
+        if (roleTitle) roleTitle.textContent = role.title;
+        if (roleBody) roleBody.textContent = role.body;
+        return;
+      }
+      roleCard.classList.add("is-swapping");
+      setTimeout(() => {
+        roleCard.setAttribute("data-tone", role.tone);
+        if (roleChip) roleChip.textContent = role.label;
+        if (roleMode) roleMode.textContent = role.status;
+        if (roleTitle) roleTitle.textContent = role.title;
+        if (roleBody) roleBody.textContent = role.body;
+        roleCard.classList.remove("is-swapping");
+      }, ROLE_SWAP_MS);
+    }
+
+    function selectRole(tab) {
+      const id = tab.getAttribute("data-role-tab");
+      const role = data.rolesData.find((item) => item.id === id);
+      if (!role) return;
+      applyRole(role, tab);
+      currentRoleIdx = Array.from(roleTabs).indexOf(tab);
+    }
 
     for (const tab of roleTabs) {
-      tab.addEventListener("click", () => {
-        const id = tab.getAttribute("data-role-tab");
-        const role = data.rolesData.find((item) => item.id === id);
-        if (role) {
-          roleTabs.forEach((t) => t.classList.remove("is-active"));
-          tab.classList.add("is-active");
-          roleCard?.setAttribute("data-tone", role.tone);
-          if (roleChip) roleChip.textContent = role.label;
-          if (roleMode) roleMode.textContent = role.status;
-          if (roleTitle) roleTitle.textContent = role.title;
-          if (roleBody) roleBody.textContent = role.body;
+      tab.addEventListener("click", (event) => {
+        if (event.isTrusted) {
+          autoplayStopped = true;
+          if (roleAutoplayTimer) {
+            clearInterval(roleAutoplayTimer);
+            roleAutoplayTimer = null;
+          }
         }
+        selectRole(tab);
       });
+    }
+
+    function advanceRole() {
+      if (autoplayStopped || autoplayPaused || roleTabs.length === 0) return;
+      const nextIdx = (currentRoleIdx + 1) % roleTabs.length;
+      selectRole(roleTabs[nextIdx]);
+    }
+
+    if (!reducedMotion && roleTabs.length > 1) {
+      roleAutoplayTimer = setInterval(advanceRole, ROLE_AUTOPLAY_MS);
+      rolesPanel?.addEventListener("mouseenter", () => { autoplayPaused = true; });
+      rolesPanel?.addEventListener("mouseleave", () => { autoplayPaused = false; });
     }
 
     // Command switching
