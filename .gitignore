@@ -41,3 +41,9 @@ Thumbs.db
 *.swo
 .idea/
 .vscode/
+
+# Playwright MCP local artifacts
+.playwright-mcp/
+
+# Local design/screenshot dumps in repo root (committed images live under website/)
+/*.png
