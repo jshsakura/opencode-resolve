@@ -1,4 +1,6 @@
 ---
+import BuildInfo from "./BuildInfo.astro";
+
 type Locale = "en" | "ko";
 
 const { locale = "en" } = Astro.props as { locale?: Locale };
@@ -250,6 +252,7 @@ const serialized = JSON.stringify(copy);
       </div>
     </div>
   </div>
+  <BuildInfo />
 </section>
 
 <script type="module">

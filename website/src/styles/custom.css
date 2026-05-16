@@ -815,3 +815,46 @@ body {
     grid-column: span 1;
   }
 }
+
+.build-info {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 1.5rem auto 0;
+  padding: 0.4rem 0.85rem;
+  width: fit-content;
+  border: 1px solid var(--resolve-card-border);
+  border-radius: 999px;
+  background: var(--resolve-muted-panel);
+  color: var(--resolve-text-soft);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.72rem;
+  letter-spacing: 0.01em;
+  user-select: text;
+}
+
+.build-info-version {
+  color: var(--sl-color-gray-1);
+  font-weight: 700;
+}
+
+.build-info-commit {
+  color: var(--resolve-cyan);
+  text-decoration: none;
+  transition: color 160ms ease;
+}
+
+.build-info-commit:hover {
+  color: var(--sl-color-accent);
+  text-decoration: underline;
+}
+
+.build-info-sep {
+  opacity: 0.45;
+}
+
+.build-info-time {
+  opacity: 0.85;
+}

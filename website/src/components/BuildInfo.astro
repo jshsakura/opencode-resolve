@@ -1,0 +1,40 @@
+---
+import { execSync } from "node:child_process"
+import { readFileSync } from "node:fs"
+import { fileURLToPath } from "node:url"
+import { dirname, resolve as resolvePath } from "node:path"
+
+const here = dirname(fileURLToPath(import.meta.url))
+const repoPkgPath = resolvePath(here, "../../../package.json")
+
+let version = "unknown"
+try {
+  const raw = readFileSync(repoPkgPath, "utf8")
+  const parsed = JSON.parse(raw)
+  if (typeof parsed?.version === "string") version = parsed.version
+} catch {
+  // best-effort
+}
+
+let commit = process.env.GITHUB_SHA ?? ""
+if (!commit) {
+  try {
+    commit = execSync("git rev-parse --short HEAD", { stdio: ["ignore", "pipe", "ignore"] }).toString().trim()
+  } catch {
+    commit = "local"
+  }
+}
+const shortCommit = commit ? commit.slice(0, 7) : "local"
+
+const buildTime = new Date().toISOString().slice(0, 16).replace("T", " ") + " UTC"
+const repoUrl = "https://github.com/jshsakura/opencode-resolve"
+const commitUrl = shortCommit && shortCommit !== "local" ? `${repoUrl}/commit/${commit}` : repoUrl
+---
+
+<div class="build-info" aria-label="build version">
+  <span class="build-info-version">v{version}</span>
+  <span class="build-info-sep">·</span>
+  <a class="build-info-commit" href={commitUrl} target="_blank" rel="noreferrer noopener">#{shortCommit}</a>
+  <span class="build-info-sep">·</span>
+  <span class="build-info-time">built {buildTime}</span>
+</div>
