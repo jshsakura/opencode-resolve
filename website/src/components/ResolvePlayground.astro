@@ -184,7 +184,7 @@ const serialized = JSON.stringify(copy);
           </button>
         ))}
       </div>
-      <div class="role-card" data-role-card>
+      <div class="role-card is-animating" data-role-card>
         <div class="role-card-top">
           <span class="role-chip" data-role-chip>{copy.rolesData[0].label}</span>
           <span class="role-mode" data-role-mode>{copy.rolesData[0].status}</span>
@@ -258,7 +258,15 @@ const serialized = JSON.stringify(copy);
         if (!role) return;
         roleTabs.forEach((item) => item.classList.remove("is-active"));
         tab.classList.add("is-active");
-        roleCard?.setAttribute("data-tone", role.tone);
+        
+        // Re-trigger animation
+        if (roleCard) {
+          roleCard.classList.remove("is-animating");
+          void roleCard.offsetWidth; // trigger reflow
+          roleCard.classList.add("is-animating");
+          roleCard.setAttribute("data-tone", role.tone);
+        }
+
         if (roleChip) roleChip.textContent = role.label;
         if (roleMode) roleMode.textContent = role.status;
         if (roleTitle) roleTitle.textContent = role.title;
