@@ -84,11 +84,41 @@ if (process.env.OPENCODE_RESOLVE_SKIP_POSTINSTALL === "1") {
 const pluginVersion = await readOwnVersion()
 console.log(`[${packageName}] installing v${pluginVersion}`)
 
+async function printSummaryBanner(version) {
+  let resolveSummary = ""
+  try {
+    const raw = await readFile(resolveConfigPath, "utf8")
+    const cfg = JSON.parse(raw)
+    const parts = []
+    if (cfg.profile) parts.push(`profile=${cfg.profile}`)
+    if (cfg.tier) parts.push(`tier=${cfg.tier}`)
+    const enabled = Array.isArray(cfg.enabled) ? cfg.enabled.length : Object.keys(cfg.agents ?? {}).length
+    if (enabled) parts.push(`${enabled} agents`)
+    if (parts.length > 0) resolveSummary = parts.join(", ")
+  } catch { /* file may not exist on partial flows */ }
+
+  const lines = [
+    `✓ opencode-resolve v${version} installed`,
+    `  Config: ${resolveConfigPath}${resolveSummary ? `  (${resolveSummary})` : ""}`,
+    `  Next:   restart OpenCode to load the plugin`,
+    `  Verify: opencode run "list available agents"   (must show resolver + coder)`,
+    `          or inside any session: run resolve-version`,
+  ]
+  const width = Math.max(...lines.map((l) => l.length)) + 2
+  const bar = "═".repeat(Math.min(width, 100))
+  console.log("")
+  console.log(bar)
+  for (const line of lines) console.log(line)
+  console.log(bar)
+  console.log("")
+}
+
 try {
   await registerPlugin()
   await refreshSelfPluginCache(pluginVersion)
   await offerCompanionPlugins()
   console.log(`[${packageName}] v${pluginVersion} install complete — restart OpenCode to load the plugin`)
+  await printSummaryBanner(pluginVersion)
 } catch (error) {
   console.warn(`[${packageName}] automatic OpenCode registration skipped: ${formatError(error)}`)
   console.warn(`[${packageName}] add "${packageName}" to your OpenCode plugin list manually if needed.`)
@@ -359,8 +389,10 @@ async function createAdaptiveResolveConfig(opencodeConfig, scriptedAnswers, opti
   } else if (preservedModels) {
     resolveConfig.models = { ...preservedModels }
   } else {
-    console.log(`[${packageName}] no GPT/GLM models detected in opencode.json — agents inherit the top-level model`)
-    console.log(`[${packageName}] to configure model pinning, rerun setup in a TTY or edit ${resolveConfigPath}`)
+    const providerHint = currentModel ? ` (top-level model: ${currentModel})` : ""
+    console.log(`[${packageName}] no GPT/GLM models detected in opencode.json — agents inherit the top-level model${providerHint}`)
+    console.log(`[${packageName}] to pin role-specific models, edit ${resolveConfigPath} ("models" section)`)
+    console.log(`[${packageName}] or rerun setup in a TTY: ${packageName} setup --models`)
   }
 
   await writeFile(resolveConfigPath, `${JSON.stringify(resolveConfig, null, 2)}\n`)
@@ -563,8 +595,13 @@ async function buildInteractivePreset(currentModel, allModels, scriptedAnswers) 
   const rl = createPromptInterface(scriptedAnswers)
   try {
     console.log("")
-    console.log(`[${packageName}] Choose resolve profile:`)
-    console.log("  1. mix — neutral resolver plus optional Codex and GLM primary agents")
+    console.log("──────────────────────────────────────────────────────────────")
+    console.log(` opencode-resolve setup`)
+    console.log(` Press enter at any prompt to accept the default in [brackets].`)
+    console.log("──────────────────────────────────────────────────────────────")
+    console.log("")
+    console.log(`[${packageName}] Step 1/2 — Choose resolve profile:`)
+    console.log("  1. mix — neutral resolver plus optional Codex and GLM primary agents (recommended)")
     console.log("  2. gpt — GPT/Codex-only, three-tier")
     console.log("  3. glm — GLM-only, three-tier")
     const profileAnswer = await askChoice(rl, "Profile [1=mix, 2=gpt, 3=glm, default 1]: ", ["1", "2", "3"], "1")
