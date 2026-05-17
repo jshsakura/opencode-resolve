@@ -2705,6 +2705,18 @@ test("system.transform suggests architect dispatch after STRATEGY_PIVOT_THRESHOL
   assert.ok(sysText.includes("ARCHITECT"), `should suggest architect intervention, got: ${sysText}`)
 })
 
+test("resolve-version tool reports loaded version and cache path", async () => {
+  const hooks = await getHooks()
+  assert.ok(hooks.tool["resolve-version"], "should expose resolve-version tool")
+  const result = await hooks.tool["resolve-version"].execute(
+    {},
+    { sessionID: "s1", messageID: "m1", agent: "resolver", directory: "/tmp", worktree: "/tmp", abort: new AbortController().signal, metadata() {}, ask: () => ({}) },
+  )
+  const text = typeof result === "string" ? result : result.output
+  assert.match(text, /opencode-resolve v\d+\.\d+\.\d+/, `should include version, got: ${text}`)
+  assert.match(text, /loaded from:/, `should include cache path label, got: ${text}`)
+})
+
 // ── resolve-state tool: session checkpoint persistence ──────────────────────
 
 test("resolve-state tool saves and loads checkpoint", async () => {
