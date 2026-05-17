@@ -16,8 +16,8 @@
 It is not a standalone app, model provider, API key manager, or replacement for `opencode.json`.
 
 ```sh
-npm install -g opencode-resolve
-opencode plugin opencode-resolve --global --force
+npm install -g opencode-resolve@latest
+opencode-resolve setup
 ```
 
 ## Contents

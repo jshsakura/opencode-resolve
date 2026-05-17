@@ -3,7 +3,9 @@ title: Finish OpenCode Tasks End-to-End
 description: A lightweight OpenCode agent loop that keeps moving until the task is verified.
 template: splash
 hero:
-  title: OpenCode Resolve
+  title: |
+    Finish tasks.<br/>
+    <span class="hero-accent">Verified.</span>
   tagline: A lightweight OpenCode agent loop for finishing coding tasks end-to-end, with focused roles and verification built in.
   image:
     file: ../../assets/hero.svg
@@ -47,8 +49,8 @@ import ResolvePlayground from "../../components/ResolvePlayground.astro";
 
   <div class="install-panel">
     <div>
-      <div class="install-label">Install and refresh cache</div>
-      <code>npm install -g opencode-resolve && opencode plugin opencode-resolve --global --force</code>
+      <div class="install-label">One-command install</div>
+      <code>npm install -g opencode-resolve@latest && opencode-resolve setup</code>
     </div>
     <a class="link-pill" href="/opencode-resolve/start/install/">Open guide</a>
   </div>

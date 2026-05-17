@@ -657,12 +657,9 @@ async function buildInteractivePreset(currentModel, allModels, scriptedAnswers, 
     }
 
     if (profile === "glm") {
-      const useCodingPlan = await askYesNo(rl, "Use coding-plan (zai-coding-plan) instead of standard (zai)? [y/N]: ", false)
-      const glmChoices = useCodingPlan
-        ? choices.glm.map((m) => m.replace(/^zai\//, "zai-coding-plan/"))
-        : choices.glm.map((m) => m.replace(/^zai-coding-plan\//, "zai/"))
-      const deduped = unique([...glmChoices.filter((m) => isGLMModel(m)), ...GLM_MODEL_HINTS])
-      const tiers = await askThreeTier(rl, "GLM", deduped)
+      // zai and zai-coding-plan are distinct providers — show whatever the user actually
+      // has configured. No rewriting between them.
+      const tiers = await askThreeTier(rl, "GLM", choices.glm)
       return {
         label: "glm-three-tier",
         profile: "glm",
@@ -816,21 +813,30 @@ function buildGLMThreeTierModels(tiers) {
 
 function collectModelChoices(allModels, predicate, hints, includeFallbackHints = true) {
   const detected = allModels.filter(predicate)
-  const providerIds = new Set(detected.map((model) => model.split("/")[0]).filter(Boolean))
-  const matchingHints = includeFallbackHints
-    ? hints.filter((model) => providerIds.size === 0 || providerIds.has(model.split("/")[0]) || detected.length < 3)
-    : []
-  const choices = unique([...detected, ...matchingHints])
+  if (detected.length > 0) {
+    // Only show the user's own models when they have any — never pollute the picker
+    // with hint IDs they don't actually have configured in opencode.json.
+    return predicate === isGLMModel ? sortGLMModelChoices(unique(detected)) : unique(detected)
+  }
+  // Fallback: user has zero models of this family — show the hint list so the
+  // picker still has something to display.
+  if (!includeFallbackHints) return []
+  const choices = unique(hints)
   return predicate === isGLMModel ? sortGLMModelChoices(choices) : choices
 }
 
-function chooseThreeTier(models, family, includeFallbackHints = true) {
-  const fallback = family === "glm" ? GLM_MODEL_HINTS : OPENAI_MODEL_HINTS
-  const choices = unique(includeFallbackHints ? [...models, ...fallback] : models)
+function chooseThreeTier(models, family) {
+  const choices = unique(models)
+  if (choices.length === 0) {
+    const fallback = family === "glm" ? GLM_MODEL_HINTS : OPENAI_MODEL_HINTS
+    return chooseThreeTier(fallback, family)
+  }
+  // Sort by inferred strength (weak → strong) and pick bronze/silver/gold by position.
+  const sorted = sortModelsByStrength(choices)
   return {
-    bronze: preferModel(choices, family === "glm" ? ["5.1", "4.5", "5"] : ["spark", "mini", "4o-mini"], choices[0]),
-    silver: preferModel(choices, family === "glm" ? ["5.1", "4.5", "5"] : ["codex", "5.3", "5.2"], choices[1] ?? choices[0]),
-    gold: preferModel(choices, family === "glm" ? ["5.1", "5", "4.5"] : ["5.5", "5.4", "gpt-5.3-codex"], choices[2] ?? choices[1] ?? choices[0]),
+    bronze: sorted[0],
+    silver: sorted[Math.min(1, sorted.length - 1)] ?? sorted[0],
+    gold:   sorted[sorted.length - 1],
   }
 }
 

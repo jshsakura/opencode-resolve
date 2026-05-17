@@ -362,6 +362,11 @@ test("postinstall can fresh reinstall an existing resolve.json after backing it 
             "glm-5.1": {},
           },
         },
+        "zai-coding-plan": {
+          models: {
+            "glm-5.1": {},
+          },
+        },
         openai: {
           models: {
             "gpt-5.3-codex-spark": {},
@@ -567,6 +572,12 @@ test("postinstall can force the interactive mix three-tier prompt", async () => 
             "glm-5.1": {},
           },
         },
+        "zai-coding-plan": {
+          models: {
+            "glm-5.1": {},
+            "glm-4.5": {},
+          },
+        },
         openai: {
           models: {
             "gpt-5.3-codex-spark": {},
@@ -584,9 +595,9 @@ test("postinstall can force the interactive mix three-tier prompt", async () => 
         "1", // mix
         "y", // enable gpt primary
         "y", // enable glm primary
-        "1", "2", "3", // GPT bronze/silver/gold
+        "1", "2", "3", // GPT bronze/silver/gold from sortGLMModelChoices order
         "", // confirm GPT picks (default Y)
-        "1", "2", "2", // GLM bronze/silver/gold
+        "1", "2", "2", // GLM bronze/silver/gold from sortGLMModelChoices order
         "", // confirm GLM picks (default Y)
       ].join("\n") + "\n",
     )
@@ -643,7 +654,7 @@ test("postinstall can force the interactive GLM three-tier prompt", async () => 
     const { stdout } = runPostinstall(
       configHome,
       { OPENCODE_RESOLVE_FORCE_PROMPT: "1" },
-      ["3", "n", "", "", "", ""].join("\n") + "\n", // profile=glm, coding-plan no, 3 default picks, confirm
+      ["3", "", "", "", ""].join("\n") + "\n", // profile=glm, 3 default picks, confirm (coding-plan question dropped)
     )
 
     const resolveConfig = await readJson(join(configHome, "resolve.json"))

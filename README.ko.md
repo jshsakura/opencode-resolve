@@ -16,8 +16,8 @@
 독립 실행형 앱, 모델 프로바이더, API 키 관리자, `opencode.json` 대체물이 아닙니다.
 
 ```sh
-npm install -g opencode-resolve
-opencode plugin opencode-resolve --global --force
+npm install -g opencode-resolve@latest
+opencode-resolve setup
 ```
 
 ## 목차

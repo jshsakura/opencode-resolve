@@ -12,12 +12,11 @@ description: opencode-resolve를 설치하고 OpenCode에 등록합니다.
 ## 표준 설치
 
 ```sh
-npm install -g opencode-resolve
-opencode plugin opencode-resolve --global --force
-opencode
+npm install -g opencode-resolve@latest
+opencode-resolve setup
 ```
 
-OpenCode는 플러그인을 `~/.cache/opencode/packages/` 아래 자체 캐시에서 로드합니다. 설치나 업그레이드 뒤 캐시 새로고침이 필요합니다.
+`opencode-resolve setup`이 `opencode.json`에 플러그인 등록, 짧은 Q&A(엔터로 기본값 통과), `resolve.json` 작성, `~/.cache/opencode/packages/` 캐시 새로고침까지 한 번에 처리합니다. 끝나면 OpenCode를 재시작하세요.
 
 > LLM에 설치를 맡기고 싶다면 [LLM-driven Install (Auto)](/opencode-resolve/start/llm-setup/) 참고 — 한 블록만 LLM에 던지면 provider/model을 자동 감지하고 추천 3-tier로 `resolve.json`까지 작성합니다.
 

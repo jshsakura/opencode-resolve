@@ -858,3 +858,40 @@ body {
 .build-info-time {
   opacity: 0.85;
 }
+
+/* Hero typography polish — replaces the chunky "OpenCode Resolve" double-up */
+.hero h1 {
+  font-family: var(--resolve-display-font);
+  font-weight: 800;
+  font-size: clamp(2.3rem, 5vw, 3.6rem);
+  line-height: 1.05;
+  letter-spacing: -0.01em;
+  background: linear-gradient(135deg, var(--sl-color-gray-1) 0%, var(--sl-color-gray-1) 55%, var(--sl-color-accent) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+
+.hero h1 .hero-accent {
+  display: inline-block;
+  background: linear-gradient(135deg, var(--sl-color-accent) 0%, var(--resolve-cyan) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+
+.hero .tagline {
+  font-size: clamp(1rem, 1.6vw, 1.2rem);
+  opacity: 0.82;
+  max-width: 38rem;
+}
+
+/* Tone down the duplicated top-left site title so it doesn't fight the hero */
+:root[data-has-hero] .site-title,
+.site-title {
+  font-weight: 600;
+  letter-spacing: 0.005em;
+}
+

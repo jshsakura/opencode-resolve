@@ -3,7 +3,9 @@ title: 작업을 끝까지 완수하는 OpenCode 에이전트
 description: 구현부터 검증까지 계속 진행하는 가벼운 OpenCode 에이전트 루프.
 template: splash
 hero:
-  title: OpenCode Resolve
+  title: |
+    작업을 끝까지,<br/>
+    <span class="hero-accent">검증된 결과</span>로
   tagline: 코딩 작업을 끝까지 완수하도록 집중된 역할과 검증 흐름을 붙여 주는 가벼운 OpenCode 에이전트 루프.
   image:
     file: ../../../assets/hero.svg
@@ -47,8 +49,8 @@ import ResolvePlayground from "../../../components/ResolvePlayground.astro";
 
   <div class="install-panel">
     <div>
-      <div class="install-label">설치 및 캐시 새로고침</div>
-      <code>npm install -g opencode-resolve && opencode plugin opencode-resolve --global --force</code>
+      <div class="install-label">한 줄 설치</div>
+      <code>npm install -g opencode-resolve@latest && opencode-resolve setup</code>
     </div>
     <a class="link-pill" href="/opencode-resolve/ko/start/install/">설치 가이드</a>
   </div>

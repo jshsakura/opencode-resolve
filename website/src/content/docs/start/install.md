@@ -12,12 +12,11 @@ description: Install opencode-resolve and register it with OpenCode.
 ## Standard Install
 
 ```sh
-npm install -g opencode-resolve
-opencode plugin opencode-resolve --global --force
-opencode
+npm install -g opencode-resolve@latest
+opencode-resolve setup
 ```
 
-OpenCode loads plugins from its own cache under `~/.cache/opencode/packages/`. The cache refresh is required after installing or upgrading.
+`opencode-resolve setup` registers the plugin in `opencode.json`, walks you through a short Q&A (press enter to accept defaults), writes `resolve.json`, and refreshes the OpenCode plugin cache under `~/.cache/opencode/packages/`. Restart OpenCode after setup completes.
 
 ## Files
 
