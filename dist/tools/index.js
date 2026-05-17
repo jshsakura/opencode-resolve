@@ -2,7 +2,9 @@ import { tool } from "@opencode-ai/plugin";
 import { stat, readFile, access } from "node:fs/promises";
 import { resolve, join } from "node:path";
 import { writeFileSync, mkdirSync } from "node:fs";
-import { classifyBashCommand, runCommand, sanitizeShellArg, truncateOutput } from "../utils.js";
+import { fileURLToPath } from "node:url";
+import { dirname } from "node:path";
+import { classifyBashCommand, runCommand, sanitizeShellArg, truncateOutput, PLUGIN_VERSION } from "../utils.js";
 import { DIAGNOSTICS_TTL_MS } from "../state.js";
 import { VALID_PROFILES, VALID_TIERS, VALID_AGENT_NAME_SET, VALID_AGENT_NAMES } from "../agents.js";
 const WRITE_CAPABLE_AGENTS = new Set(["resolver", "codex", "coder", "glm", "gpt-coder", "debugger"]);
@@ -1138,6 +1140,23 @@ export function getTools(sessionState) {
                 catch { /* skip */ }
                 ctx.metadata({ title: `config-check: ${results.length} items` });
                 return results.join("\n");
+            },
+        }),
+        "resolve-version": tool({
+            description: "Report the currently loaded opencode-resolve plugin version and the cache path it was loaded from. Use to confirm whether a recent install/update actually took effect inside OpenCode.",
+            args: {},
+            async execute(_args, ctx) {
+                let loadedFrom = "unknown";
+                try {
+                    loadedFrom = dirname(fileURLToPath(import.meta.url));
+                }
+                catch { /* ignore */ }
+                const lines = [
+                    `opencode-resolve v${PLUGIN_VERSION}`,
+                    `loaded from: ${loadedFrom}`,
+                ];
+                ctx.metadata({ title: `version: v${PLUGIN_VERSION}` });
+                return lines.join("\n");
             },
         }),
         "resolve-state": tool({
