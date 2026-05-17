@@ -20,9 +20,24 @@ const ADDITIVE_DEFAULTS = {
   autoApprove: true,
 }
 
-const DEFAULT_ENABLED_AGENTS = ["coder", "resolver", "explorer", "reviewer", "deep-reviewer", "planner"]
-const GPT_ENABLED_AGENTS = ["coder", "resolver", "gpt", "explorer", "reviewer", "deep-reviewer", "planner"]
-const GLM_ENABLED_AGENTS = ["coder", "resolver", "glm", "explorer", "reviewer", "planner"]
+// Heuristic strength scoring for an arbitrary provider/model id.
+// Higher = "stronger" / more expensive in expected behavior. Heuristic-only.
+const STRENGTH_BOOSTS = [
+  { re: /\b(mini|flash|nano|lite|haiku|air|small)\b/i, score: -3 },
+  { re: /\b(claude-3|gpt-3|gpt-4o-mini|o1-mini|o3-mini|4\.5)\b/i, score: -1 },
+  { re: /\b(gpt-4o|opus|sonnet|gemini-1\.5)\b/i, score: 1 },
+  { re: /\b(o1|o3|o4|reason|reasoning|pro|max|ultra|gold|sota)\b/i, score: 2 },
+  { re: /\b(5\.5|5\.4|5\.3|5\.2|5\.1|sonnet-4|opus-4|opus-5|max-5|next|2026)\b/i, score: 2 },
+  { re: /\b(codex|coder|code|coding)\b/i, score: 1 },
+]
+
+// Provider-neutral agents — safe to enable for everyone (no profile-specific model needed).
+const DEFAULT_ENABLED_AGENTS = [
+  "coder", "resolver", "explorer", "reviewer", "deep-reviewer", "planner",
+  "architect", "debugger", "researcher",
+]
+const GPT_ENABLED_AGENTS = [...DEFAULT_ENABLED_AGENTS, "gpt", "gpt-coder", "codex"]
+const GLM_ENABLED_AGENTS = [...DEFAULT_ENABLED_AGENTS, "glm"]
 
 // ZAI local MCP server bootstrap for GLM users.
 // Do not copy provider secrets from OpenCode's auth store into opencode.json.
@@ -293,11 +308,16 @@ async function chooseExistingResolveConfigAction(scriptedAnswers) {
   const rl = createPromptInterface(scriptedAnswers)
   try {
     console.log("")
-    console.log(`[${packageName}] Existing resolve config found: ${resolveConfigPath}`)
-    console.log("  1. update existing config — preserve your settings and add missing defaults")
-    console.log("  2. reconfigure models — preserve the rest of resolve.json")
-    console.log("  3. fresh reinstall — back up resolve.json and run setup again, preserving model pins")
-    const answer = await askChoice(rl, "Existing config [1=update, 2=models, 3=fresh, default 1]: ", ["1", "2", "3"], "1")
+    console.log("──────────────────────────────────────────────────────────────")
+    console.log(` opencode-resolve — existing config detected`)
+    console.log(`   ${resolveConfigPath}`)
+    console.log("──────────────────────────────────────────────────────────────")
+    console.log("")
+    console.log("How do you want to handle it?")
+    console.log("  1. keep   — preserve existing settings, only add missing defaults  (recommended)")
+    console.log("  2. models — re-pick models only, keep the rest")
+    console.log("  3. reset  — back up the current file and run setup from scratch (model pins preserved)")
+    const answer = await askChoice(rl, "Choice [1=keep, 2=models, 3=reset, default 1]: ", ["1", "2", "3"], "1")
     if (answer === "2") return "models"
     return answer === "3" ? "fresh" : "update"
   } finally {
@@ -337,7 +357,7 @@ async function createAdaptiveResolveConfig(opencodeConfig, scriptedAnswers, opti
     (process.stdin.isTTY && process.stdout.isTTY) || forcePrompt,
   )
   const interactivePreset = canPrompt
-    ? await buildInteractivePreset(currentModel, allModels, scriptedAnswers)
+    ? await buildInteractivePreset(currentModel, allModels, scriptedAnswers, opencodeConfig)
     : undefined
 
   if (interactivePreset) {
@@ -413,7 +433,7 @@ async function reconfigureExistingModels(opencodeConfig, scriptedAnswers) {
   const forcePrompt = readInstallerOption("force_prompt") === "1"
   const canPrompt = Boolean((process.stdin.isTTY && process.stdout.isTTY) || forcePrompt)
   const interactivePreset = canPrompt
-    ? await buildInteractivePreset(currentModel, allModels, scriptedAnswers)
+    ? await buildInteractivePreset(currentModel, allModels, scriptedAnswers, opencodeConfig)
     : undefined
   const preset = interactivePreset ?? {
     label: getPresetLabel(currentModel),
@@ -582,7 +602,7 @@ function buildGPTOnlyPreset(model, gptModels) {
   }
 }
 
-async function buildInteractivePreset(currentModel, allModels, scriptedAnswers) {
+async function buildInteractivePreset(currentModel, allModels, scriptedAnswers, opencodeConfig) {
   const choices = {
     gpt: collectModelChoices(allModels, isGPTModel, OPENAI_MODEL_HINTS),
     glm: collectModelChoices(allModels, isGLMModel, GLM_MODEL_HINTS),
@@ -591,6 +611,11 @@ async function buildInteractivePreset(currentModel, allModels, scriptedAnswers) 
     if (isGPTModel(currentModel)) choices.gpt = unique([currentModel, ...choices.gpt])
     if (isGLMModel(currentModel)) choices.glm = unique([currentModel, ...choices.glm])
   }
+
+  const hasGPTOrGLM = allModels.some((m) => isGPTModel(m) || isGLMModel(m))
+  const providerCount = opencodeConfig ? detectProvidersFromConfig(opencodeConfig).length : 0
+  const offerAuto = !hasGPTOrGLM && providerCount > 0
+  const defaultChoice = offerAuto ? "4" : "1"
 
   const rl = createPromptInterface(scriptedAnswers)
   try {
@@ -601,10 +626,22 @@ async function buildInteractivePreset(currentModel, allModels, scriptedAnswers) 
     console.log("──────────────────────────────────────────────────────────────")
     console.log("")
     console.log(`[${packageName}] Step 1/2 — Choose resolve profile:`)
-    console.log("  1. mix — neutral resolver plus optional Codex and GLM primary agents (recommended)")
+    console.log(`  1. mix — neutral resolver plus optional Codex and GLM primary agents${offerAuto ? "" : " (recommended)"}`)
     console.log("  2. gpt — GPT/Codex-only, three-tier")
     console.log("  3. glm — GLM-only, three-tier")
-    const profileAnswer = await askChoice(rl, "Profile [1=mix, 2=gpt, 3=glm, default 1]: ", ["1", "2", "3"], "1")
+    if (offerAuto) {
+      console.log(`  4. auto — provider-agnostic tier setup from detected providers (recommended)`)
+    }
+    const validChoices = offerAuto ? ["1", "2", "3", "4"] : ["1", "2", "3"]
+    const profileAnswer = await askChoice(rl, `Profile [${validChoices.join(",")}, default ${defaultChoice}]: `, validChoices, defaultChoice)
+
+    if (profileAnswer === "4" && offerAuto) {
+      rl.close()
+      const generic = await buildGenericInteractivePreset(currentModel, opencodeConfig, scriptedAnswers)
+      if (generic) return generic
+      // fall through to mix if generic returned nothing
+    }
+
     const profile = profileAnswer === "2" ? "gpt" : profileAnswer === "3" ? "glm" : "mix"
 
     if (profile === "gpt") {
@@ -675,14 +712,22 @@ function createPromptInterface(scriptedAnswers) {
 
 async function askThreeTier(rl, label, models) {
   const choices = models.length > 0 ? models : (label.toLowerCase().includes("glm") ? GLM_MODEL_HINTS : OPENAI_MODEL_HINTS)
-  console.log("")
-  console.log(`[${packageName}] ${label} model choices:`)
-  choices.forEach((model, index) => console.log(`  ${index + 1}. ${model}`))
   const defaults = chooseThreeTier(choices, label.toLowerCase().includes("glm") ? "glm" : "gpt")
-  const bronze = await askModel(rl, choices, `Pick ${label} bronze/scout [default ${defaults.bronze}]: `, defaults.bronze)
-  const silver = await askModel(rl, choices, `Pick ${label} silver/coder [default ${defaults.silver}]: `, defaults.silver)
-  const gold = await askModel(rl, choices, `Pick ${label} gold/reasoner [default ${defaults.gold}]: `, defaults.gold)
-  return { bronze, silver, gold }
+  while (true) {
+    console.log("")
+    console.log(`[${packageName}] ${label} model choices:`)
+    choices.forEach((model, index) => console.log(`  ${index + 1}. ${model}`))
+    const bronze = await askModel(rl, choices, `Pick ${label} bronze/scout [default ${defaults.bronze}]: `, defaults.bronze)
+    const silver = await askModel(rl, choices, `Pick ${label} silver/coder [default ${defaults.silver}]: `, defaults.silver)
+    const gold = await askModel(rl, choices, `Pick ${label} gold/reasoner [default ${defaults.gold}]: `, defaults.gold)
+    console.log("")
+    console.log(`  → bronze: ${bronze}`)
+    console.log(`  → silver: ${silver}`)
+    console.log(`  → gold:   ${gold}`)
+    const ok = await askYesNo(rl, `Confirm ${label} picks? [Y/n] (n re-asks all three): `, true)
+    if (ok) return { bronze, silver, gold }
+    console.log(`[${packageName}] re-asking ${label} picks…`)
+  }
 }
 
 async function askModel(rl, choices, question, defaultValue) {
@@ -851,6 +896,201 @@ function getPresetLabel(currentModel) {
   if (lower.includes("glm") || lower.includes("zai")) return "glm-only"
   if (lower.includes("openai/") || lower.includes("gpt")) return "gpt-only"
   return "inherited"
+}
+
+function inferModelStrength(modelId) {
+  if (typeof modelId !== "string") return 0
+  let score = 0
+  for (const { re, score: s } of STRENGTH_BOOSTS) {
+    if (re.test(modelId)) score += s
+  }
+  return score
+}
+
+function sortModelsByStrength(models) {
+  return [...models].sort((a, b) => inferModelStrength(a) - inferModelStrength(b))
+}
+
+function detectProvidersFromConfig(config) {
+  const providers = new Map()
+  const note = (providerId, modelId) => {
+    if (!providerId) return
+    const list = providers.get(providerId) ?? []
+    if (modelId && !list.includes(modelId)) list.push(modelId)
+    providers.set(providerId, list)
+  }
+  if (isObject(config.provider)) {
+    for (const [providerId, providerConfig] of Object.entries(config.provider)) {
+      providers.set(providerId, providers.get(providerId) ?? [])
+      if (isObject(providerConfig) && isObject(providerConfig.models)) {
+        for (const [modelKey, modelEntry] of Object.entries(providerConfig.models)) {
+          if (typeof modelKey === "string" && modelKey.length > 0) {
+            note(providerId, qualifyModelId(providerId, modelKey))
+          }
+          if (typeof modelEntry === "string") note(providerId, qualifyModelId(providerId, modelEntry))
+          else if (isObject(modelEntry) && typeof modelEntry.id === "string") {
+            note(providerId, qualifyModelId(providerId, modelEntry.id))
+          }
+        }
+      }
+    }
+  }
+  // Add implicit providers from top-level model and agent overrides
+  const additional = []
+  if (typeof config.model === "string" && config.model.includes("/")) additional.push(config.model)
+  if (isObject(config.agent)) {
+    for (const agent of Object.values(config.agent)) {
+      if (isObject(agent) && typeof agent.model === "string" && agent.model.includes("/")) {
+        additional.push(agent.model)
+      }
+    }
+  }
+  for (const fullId of additional) {
+    const slash = fullId.indexOf("/")
+    if (slash < 0) continue
+    note(fullId.slice(0, slash), fullId)
+  }
+  return [...providers.entries()]
+    .map(([id, models]) => ({ id, models: unique(models) }))
+    .filter((p) => p.models.length > 0)
+}
+
+function pickTierShapeForModelCount(count) {
+  if (count >= 3) return "three"
+  if (count === 2) return "two"
+  return "single"
+}
+
+function buildGenericResolveModels(tiers) {
+  if (tiers.shape === "three") {
+    return {
+      bronze:        tiers.bronze,
+      silver:        tiers.silver,
+      gold:          tiers.gold,
+      explorer:      "bronze",
+      coder:         "silver",
+      resolver:      "gold",
+      reviewer:      "gold",
+      "deep-reviewer": "gold",
+      planner:       "gold",
+      architect:     "gold",
+      debugger:      "silver",
+      researcher:    "bronze",
+    }
+  }
+  if (tiers.shape === "two") {
+    return {
+      silver:        tiers.silver,
+      gold:          tiers.gold,
+      explorer:      "silver",
+      coder:         "silver",
+      resolver:      "gold",
+      reviewer:      "gold",
+      "deep-reviewer": "gold",
+      planner:       "gold",
+      architect:     "gold",
+      debugger:      "silver",
+      researcher:    "silver",
+    }
+  }
+  return {
+    gold:          tiers.gold,
+    explorer:      "gold",
+    coder:         "gold",
+    resolver:      "gold",
+    reviewer:      "gold",
+    "deep-reviewer": "gold",
+    planner:       "gold",
+    architect:     "gold",
+    debugger:      "gold",
+    researcher:    "gold",
+  }
+}
+
+async function buildGenericInteractivePreset(currentModel, opencodeConfig, scriptedAnswers) {
+  const providers = detectProvidersFromConfig(opencodeConfig)
+  if (providers.length === 0) return undefined
+
+  const rl = createPromptInterface(scriptedAnswers)
+  try {
+    console.log("")
+    console.log("──────────────────────────────────────────────────────────────")
+    console.log(` opencode-resolve setup — provider-agnostic mode`)
+    console.log(`   ${providers.length} provider${providers.length === 1 ? "" : "s"} detected in opencode.json`)
+    console.log("──────────────────────────────────────────────────────────────")
+
+    // 1. Pick provider
+    let chosenProvider
+    if (providers.length === 1) {
+      chosenProvider = providers[0]
+      console.log("")
+      console.log(`[${packageName}] only one provider available — using "${chosenProvider.id}"`)
+    } else {
+      console.log("")
+      console.log(`[${packageName}] Step 1/3 — Pick provider:`)
+      providers.forEach((p, i) => {
+        const marker = currentModel?.startsWith(`${p.id}/`) ? " ← top-level model" : ""
+        console.log(`  ${i + 1}. ${p.id}  (${p.models.length} models)${marker}`)
+      })
+      const defaultIdx = Math.max(1, providers.findIndex((p) => currentModel?.startsWith(`${p.id}/`)) + 1)
+      const valid = providers.map((_, i) => String(i + 1))
+      const answer = await askChoice(rl, `Provider [1..${providers.length}, default ${defaultIdx}]: `, valid, String(defaultIdx))
+      chosenProvider = providers[Number.parseInt(answer, 10) - 1]
+    }
+
+    const sorted = sortModelsByStrength(chosenProvider.models)
+    const defaultShape = pickTierShapeForModelCount(sorted.length)
+
+    // 2. Pick tier shape
+    console.log("")
+    console.log(`[${packageName}] Step 2/3 — Choose tier shape:`)
+    console.log(`  1. single — one model for every role  (good for cost simplicity)`)
+    console.log(`  2. two    — fast + strong split  (explorer/coder + resolver/reviewer/…)`)
+    console.log(`  3. three  — bronze + silver + gold full split  (recommended when available)`)
+    const shapeDefault = defaultShape === "three" ? "3" : defaultShape === "two" ? "2" : "1"
+    const shapeAns = await askChoice(rl, `Tier shape [1,2,3, default ${shapeDefault}]: `, ["1", "2", "3"], shapeDefault)
+    const shape = shapeAns === "3" ? "three" : shapeAns === "2" ? "two" : "single"
+
+    // 3. Pick models
+    const weakest = sorted[0]
+    const strongest = sorted[sorted.length - 1]
+    const middle = sorted[Math.floor((sorted.length - 1) / 2)]
+    console.log("")
+    console.log(`[${packageName}] Step 3/3 — Pick models (defaults inferred from name strength):`)
+    sorted.forEach((m, i) => console.log(`  ${i + 1}. ${m}`))
+
+    while (true) {
+      const tiers = { shape }
+      if (shape === "three") {
+        tiers.bronze = await askModel(rl, sorted, `Bronze (scout for explorer/researcher) [default ${weakest}]: `, weakest)
+        tiers.silver = await askModel(rl, sorted, `Silver (coder/debugger) [default ${middle}]: `, middle)
+        tiers.gold   = await askModel(rl, sorted, `Gold (resolver/reviewer/deep-reviewer/planner/architect) [default ${strongest}]: `, strongest)
+      } else if (shape === "two") {
+        tiers.silver = await askModel(rl, sorted, `Silver (fast: coder/explorer/debugger/researcher) [default ${weakest}]: `, weakest)
+        tiers.gold   = await askModel(rl, sorted, `Gold (strong: resolver/reviewer/…/architect) [default ${strongest}]: `, strongest)
+      } else {
+        tiers.gold   = await askModel(rl, sorted, `Model for all roles [default ${strongest}]: `, strongest)
+      }
+      console.log("")
+      for (const [k, v] of Object.entries(tiers)) {
+        if (k === "shape") continue
+        console.log(`  → ${k.padEnd(7)} ${v}`)
+      }
+      const ok = await askYesNo(rl, `Confirm picks? [Y/n] (n re-asks all): `, true)
+      if (ok) {
+        return {
+          label: `generic-${shape}-tier`,
+          profile: "mix",
+          enabled: DEFAULT_ENABLED_AGENTS,
+          models: buildGenericResolveModels(tiers),
+          agents: {},
+        }
+      }
+      console.log(`[${packageName}] re-asking picks…`)
+    }
+  } finally {
+    rl.close()
+  }
 }
 
 function isGLMModel(currentModel) {

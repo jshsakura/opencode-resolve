@@ -340,8 +340,9 @@ test("postinstall asks before updating an existing resolve.json when prompts are
     )
 
     const migrated = await readJson(join(configHome, "resolve.json"))
-    assert.match(stdout, /Existing resolve config found/)
-    assert.match(stdout, /Existing config \[1=update, 2=models, 3=fresh/)
+    assert.match(stdout, /existing config detected/)
+    assert.match(stdout, /How do you want to handle it/)
+    assert.match(stdout, /Choice \[1=keep, 2=models, 3=reset/)
     assert.deepEqual(migrated.models, existing.models, "user models preserved")
     assert.equal(migrated.autoApprove, true, "missing additive default added")
   } finally {
@@ -389,7 +390,9 @@ test("postinstall can fresh reinstall an existing resolve.json after backing it 
         "y", // enable gpt primary
         "y", // enable glm primary
         "1", "2", "3", // GPT bronze/silver/gold
+        "", // confirm GPT picks (default Y)
         "1", "2", "2", // GLM bronze/silver/gold
+        "", // confirm GLM picks (default Y)
       ].join("\n") + "\n",
     )
 
@@ -582,7 +585,9 @@ test("postinstall can force the interactive mix three-tier prompt", async () => 
         "y", // enable gpt primary
         "y", // enable glm primary
         "1", "2", "3", // GPT bronze/silver/gold
+        "", // confirm GPT picks (default Y)
         "1", "2", "2", // GLM bronze/silver/gold
+        "", // confirm GLM picks (default Y)
       ].join("\n") + "\n",
     )
 
@@ -615,7 +620,7 @@ test("postinstall can force the interactive GPT three-tier prompt", async () => 
     const { stdout } = runPostinstall(
       configHome,
       { OPENCODE_RESOLVE_FORCE_PROMPT: "1" },
-      ["2", "", "", ""].join("\n") + "\n",
+      ["2", "", "", "", ""].join("\n") + "\n", // profile=gpt, 3 default model picks, confirm
     )
 
     const resolveConfig = await readJson(join(configHome, "resolve.json"))
@@ -638,7 +643,7 @@ test("postinstall can force the interactive GLM three-tier prompt", async () => 
     const { stdout } = runPostinstall(
       configHome,
       { OPENCODE_RESOLVE_FORCE_PROMPT: "1" },
-      ["3", "n", "", "", ""].join("\n") + "\n",
+      ["3", "n", "", "", "", ""].join("\n") + "\n", // profile=glm, coding-plan no, 3 default picks, confirm
     )
 
     const resolveConfig = await readJson(join(configHome, "resolve.json"))
@@ -650,6 +655,45 @@ test("postinstall can force the interactive GLM three-tier prompt", async () => 
     assert.equal(resolveConfig.agents.glm.enabled, true)
     assert.equal(resolveConfig.models.coder, "gold")
     assert.equal(resolveConfig.models.planner, "gold")
+  } finally {
+    await rm(configHome, { recursive: true, force: true })
+  }
+})
+
+test("postinstall offers the generic auto path for non-GPT/GLM providers", async () => {
+  const configHome = await mkdtemp(join(tmpdir(), "opencode-resolve-postinstall-"))
+  try {
+    await writeJson(join(configHome, "opencode.json"), {
+      model: "anthropic/claude-opus-4",
+      provider: {
+        anthropic: {
+          models: {
+            "claude-haiku-4": {},
+            "claude-sonnet-4": {},
+            "claude-opus-4": {},
+          },
+        },
+      },
+    })
+
+    const { stdout } = runPostinstall(
+      configHome,
+      { OPENCODE_RESOLVE_FORCE_PROMPT: "1", OPENCODE_RESOLVE_SKIP_COMPANIONS: "1" },
+      // profile=4 (auto recommended), tier=3 (three), 3 default model picks, confirm
+      ["4", "3", "", "", "", ""].join("\n") + "\n",
+    )
+
+    const resolveConfig = await readJson(join(configHome, "resolve.json"))
+    assert.match(stdout, /4\. auto/, "should expose 'auto' choice when no GPT/GLM detected")
+    assert.match(stdout, /provider-agnostic mode/, "should announce generic mode")
+    assert.match(stdout, /Tier shape \[1,2,3, default 3\]/, "should propose three-tier by default for 3 models")
+    assert.equal(resolveConfig.models.bronze, "anthropic/claude-haiku-4", "weakest → bronze")
+    assert.equal(resolveConfig.models.gold, "anthropic/claude-opus-4", "strongest → gold")
+    assert.equal(resolveConfig.models.coder, "silver", "coder mapped to silver tier")
+    assert.equal(resolveConfig.models.resolver, "gold", "resolver mapped to gold tier")
+    assert.ok(resolveConfig.enabled.includes("architect"), "architect now enabled by default")
+    assert.ok(resolveConfig.enabled.includes("debugger"), "debugger now enabled by default")
+    assert.ok(resolveConfig.enabled.includes("researcher"), "researcher now enabled by default")
   } finally {
     await rm(configHome, { recursive: true, force: true })
   }
