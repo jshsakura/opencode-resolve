@@ -52,6 +52,22 @@ Default enabled agents:
 
 ## Install
 
+### Drop-in setup (give to an LLM)
+
+Paste the block below into any reasonably capable coding LLM. It will auto-detect the providers and models already configured in your `opencode.json`, pick the recommended three-tier setup (bronze/silver/gold), install the companion plugins, and write `resolve.json` — all without an interactive Q&A unless something is genuinely ambiguous.
+
+```
+Install opencode-resolve on this machine using the auto spec:
+https://jshsakura.github.io/opencode-resolve/start/llm-setup/
+
+Apply the recommended defaults silently. Only ask me a question when one of
+the ambiguity gates trips (no provider configured, multiple providers without
+a top-level model, or resolve.json already exists). Print a one-block summary
+when done and run the verify step.
+```
+
+Full spec: [LLM-driven Install (Auto)](https://jshsakura.github.io/opencode-resolve/start/llm-setup/).
+
 ### Requirements
 
 - OpenCode installed and runnable: `opencode --version`

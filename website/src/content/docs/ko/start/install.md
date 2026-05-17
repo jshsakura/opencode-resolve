@@ -19,6 +19,8 @@ opencode
 
 OpenCode는 플러그인을 `~/.cache/opencode/packages/` 아래 자체 캐시에서 로드합니다. 설치나 업그레이드 뒤 캐시 새로고침이 필요합니다.
 
+> LLM에 설치를 맡기고 싶다면 [LLM-driven Install (Auto)](/opencode-resolve/start/llm-setup/) 참고 — 한 블록만 LLM에 던지면 provider/model을 자동 감지하고 추천 3-tier로 `resolve.json`까지 작성합니다.
+
 ## 모델 설정 / 재설치 모드
 
 npm install script는 대화형 prompt를 안정적으로 보여 주기 어렵습니다. 모델/설정을 다시 고를 때는 패키지 CLI를 사용하세요.

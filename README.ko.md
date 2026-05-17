@@ -52,6 +52,21 @@ opencode plugin opencode-resolve --global --force
 
 ## 설치
 
+### Drop-in 설치 (LLM에 던지기)
+
+아래 블록을 능력 있는 코딩 LLM에 그대로 붙여 넣으면 됩니다. LLM이 `opencode.json`에 이미 설정된 provider/model을 자동 감지하고, 추천 3-tier(bronze/silver/gold)로 매핑하고, companion 플러그인을 같이 설치하고, `resolve.json`을 작성합니다 — 정말 모호한 경우(ambiguity gate)가 아니면 질문 없이 자동으로 진행합니다.
+
+```
+이 기기에 opencode-resolve를 자동 spec으로 설치해 줘:
+https://jshsakura.github.io/opencode-resolve/start/llm-setup/
+
+추천 기본값을 조용히 적용해. ambiguity gate(provider가 하나도 없음 / provider는
+여러 개인데 top-level model이 없음 / resolve.json이 이미 존재)일 때만 질문해.
+끝나면 한 블록 요약을 출력하고 검증 단계를 실행해.
+```
+
+전체 spec: [LLM-driven Install (Auto)](https://jshsakura.github.io/opencode-resolve/start/llm-setup/)
+
 ### 요구 사항
 
 - OpenCode 실행 가능: `opencode --version`

@@ -52,23 +52,36 @@ OpenCode loads plugins from its own cache under `~/.cache/opencode/packages/`. T
 }
 ```
 
-## Model Setup / Reinstall Modes
+> Prefer an LLM to do the install? See [LLM-driven Install (Auto)](/opencode-resolve/start/llm-setup/) — paste one block into your coding LLM and it auto-detects providers/models, applies the recommended three-tier setup, and writes `resolve.json` for you.
 
-npm install scripts are not a reliable place for interactive prompts. Use the package CLI when you want visible model/setup choices:
+## Setup CLI options
 
-```sh
-opencode-resolve setup --models
-opencode-resolve setup --fresh
-opencode-resolve setup --update
-```
-
-Force the OpenCode plugin cache to reinstall without touching `resolve.json`:
+`npm install` runs the postinstall script silently. For interactive choices or re-running setup, use the package CLI:
 
 ```sh
-opencode-resolve setup --force-cache
+opencode-resolve setup [options]
 ```
 
-Skip postinstall automation:
+| Option | What it does |
+| --- | --- |
+| `--fresh` | Back up existing `resolve.json` and run setup again. Preserves model pins. |
+| `--update` | Keep existing `resolve.json` and add only missing defaults. |
+| `--reset-config` | Back up existing `resolve.json` and regenerate everything, including model pins. |
+| `--models` | Reconfigure model pins only. Leaves the rest of `resolve.json` alone. |
+| `--auto-preset` | Non-interactive: pick a model preset from the OpenCode provider you have configured. |
+| `--force-cache` | Force the OpenCode plugin cache to reinstall without touching `resolve.json`. |
+| `--no-companions` | Skip the companion-plugin suggestions at the end of setup. |
+
+## Environment variables
+
+| Variable | Effect |
+| --- | --- |
+| `OPENCODE_RESOLVE_SKIP_POSTINSTALL=1` | Skip postinstall entirely (no config edits, no cache refresh). |
+| `OPENCODE_RESOLVE_SKIP_CACHE_REFRESH=1` | Run postinstall but leave the OpenCode plugin cache as-is. |
+| `OPENCODE_RESOLVE_SKIP_COMPANIONS=1` | Hide the optional companion-plugin suggestions. |
+| `OPENCODE_RESOLVE_QUIET=1` | Silence the `[opencode-resolve] vX.Y.Z loaded` line printed on every plugin load. |
+
+Example:
 
 ```sh
 OPENCODE_RESOLVE_SKIP_POSTINSTALL=1 npm install -g opencode-resolve
