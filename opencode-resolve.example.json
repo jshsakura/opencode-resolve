@@ -4,7 +4,6 @@
   "context7": true,
   "commands": false,
   "autoApprove": true,
-  "autoUpdate": true,
   "language": "auto",
   "models": {},
   "agents": {

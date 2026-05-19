@@ -1,16 +1,12 @@
 import { spawn } from "node:child_process";
 import { stat, readFile, access, readdir } from "node:fs/promises";
 import { resolve, join, dirname, isAbsolute, extname, relative } from "node:path";
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
-import { homedir } from "node:os";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { ProjectContext, ResolveConfig } from "./types.js";
 import { normalizeResolveConfig } from "./config.js";
 
 export const PLUGIN_VERSION = readPluginVersion();
-export const UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
-export const UPDATE_CHECK_FILE = join(homedir(), ".cache", "opencode-resolve", "update-check.json");
-export const PLUGIN_CACHE_DIR = join(homedir(), ".cache", "opencode", "packages", "opencode-resolve@latest");
 
 export function runCommand(command: string, cwd: string, timeoutMs: number): Promise<{ stdout: string; stderr: string; exitCode: number }> {
     return new Promise((resolve) => {
@@ -217,98 +213,13 @@ export function readPluginVersion(): string {
     }
 }
 
-export function readUpdateCheckCache(): { checkedAt: number; latest: string } | undefined {
-    try {
-    const raw = readFileSync(UPDATE_CHECK_FILE, "utf8")
-    const parsed = JSON.parse(raw)
-    if (
-      typeof parsed?.checkedAt === "number" &&
-      typeof parsed?.latest === "string"
-    ) {
-      return { checkedAt: parsed.checkedAt, latest: parsed.latest }
-    }
-    } catch {
-    // file missing or unparseable
-    }
-
-    return undefined
-}
-
-export function isNewerVersion(candidate: string, baseline: string): boolean {
-    const a = candidate.split(".").map((n) => Number.parseInt(n, 10));
-    const b = baseline.split(".").map((n) => Number.parseInt(n, 10));
-    for (let i = 0; i < Math.max(a.length, b.length); i++) {
-    const av = Number.isFinite(a[i]) ? (a[i] as number) : 0
-    const bv = Number.isFinite(b[i]) ? (b[i] as number) : 0
-    if (av > bv) return true
-    if (av < bv) return false
-    }
-
-    return false
-}
-
-export async function maybeAutoUpdate(): Promise<void> {
-    const previous = readUpdateCheckCache()
-    try {
-    if (previous && Date.now() - previous.checkedAt < UPDATE_CHECK_INTERVAL_MS) {
-      if (isNewerVersion(previous.latest, PLUGIN_VERSION)) {
-        refreshPluginCacheInBackground(previous.latest, "cached")
-      }
-      return
-    }
-    } catch {
-    // ignore corrupt cache and re-check
-    }
-
-    let latest: string;
-    try {
-    const response = await fetch("https://registry.npmjs.org/opencode-resolve/latest", {
-      headers: { Accept: "application/json" },
-      signal: AbortSignal.timeout(5000),
-    })
-    if (!response.ok) return
-    const data = (await response.json()) as { version?: unknown }
-    if (typeof data?.version !== "string") return
-    latest = data.version
-    } catch {
-    return
-    }
-
-    try {
-    mkdirSync(dirname(UPDATE_CHECK_FILE), { recursive: true })
-    writeFileSync(UPDATE_CHECK_FILE, JSON.stringify({ checkedAt: Date.now(), latest }))
-    } catch {
-    // best-effort; don't block on cache write failure
-    }
-
-    if (!isNewerVersion(latest, PLUGIN_VERSION)) return
-    refreshPluginCacheInBackground(latest, "registry")
-}
-
-function refreshPluginCacheInBackground(latest: string, source: "cached" | "registry"): void {
-    const sourceLabel = source === "cached" ? "cached latest" : "registry latest"
-    console.log(
-    `[opencode-resolve] new version v${latest} available (${sourceLabel}, current: v${PLUGIN_VERSION}) — refreshing OpenCode plugin cache in background. Restart OpenCode to activate it.`,
-    )
-    try {
-    spawn(
-      "sh",
-      ["-c", `rm -rf "${PLUGIN_CACHE_DIR}" && opencode plugin opencode-resolve@latest --global --force`],
-      {
-        detached: true,
-        stdio: "ignore",
-        env: {
-          ...process.env,
-          OPENCODE_RESOLVE_REFRESHING_CACHE: "1",
-          OPENCODE_RESOLVE_SKIP_POSTINSTALL: "1",
-          OPENCODE_RESOLVE_SKIP_COMPANIONS: "1",
-        },
-      },
-    ).unref()
-    } catch {
-    // If spawn fails, the user already saw the notice and can run the command manually.
-    }
-}
+// Auto-update was removed: it spawned `opencode plugin opencode-resolve@latest
+// --global --force` per `hooks.config()` call, which created hundreds of parallel
+// OpenCode sessions whenever multiple instances loaded the plugin at once (and
+// once flattened the user's server with 177 sessions during a test run).
+// Users update manually: `npm i -g opencode-resolve` or via the install script.
+// The `autoUpdate` config field is still accepted by the schema for backward
+// compatibility, but it is now a no-op.
 
 export async function readFirstJson(paths: string[]): Promise<ResolveConfig | undefined> {
     for (const path of paths) {

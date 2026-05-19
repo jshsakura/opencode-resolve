@@ -203,7 +203,7 @@ Full commented reference: [opencode-resolve.reference.jsonc](./opencode-resolve.
 | `context7` | boolean | `true` | Register Context7 MCP if missing. |
 | `commands` | boolean | `false` | Add `/resolve`, `/resolve-code`, and `/resolve-review`. |
 | `autoApprove` | boolean | `true` | Backward-compatible config flag; current permissions remain explicit. |
-| `autoUpdate` | boolean | `true` | Allow additive config migrations during install/update. |
+| `autoUpdate` | boolean | (no-op) | **Deprecated.** Field is accepted for backward compatibility but ignored. Auto-update spawned `opencode plugin` per `hooks.config()` call, which fanned out into hundreds of parallel installs when multiple OpenCode instances loaded the plugin at once. Update manually with `npm i -g opencode-resolve`. |
 | `language` | `auto` / `en` / `ko` | `auto` | Prompt language preference. |
 | `maxParallelSubagents` | positive integer | unset | Optional prompt-level soft limit for concurrent coder dispatch. |
 

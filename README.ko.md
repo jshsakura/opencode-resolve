@@ -203,7 +203,7 @@ irm https://raw.githubusercontent.com/jshsakura/awesome-opencode-skills/main/ins
 | `context7` | boolean | `true` | 없을 때 Context7 MCP 등록. |
 | `commands` | boolean | `false` | `/resolve`, `/resolve-code`, `/resolve-review` 추가. |
 | `autoApprove` | boolean | `true` | 하위 호환용 플래그. 현재 권한은 명시 설정과 분류기가 제어. |
-| `autoUpdate` | boolean | `true` | 설치/업데이트 시 추가적 설정 마이그레이션 허용. |
+| `autoUpdate` | boolean | (no-op) | **사용 중단.** 하위 호환을 위해 필드는 받되 무시합니다. 기존 auto-update는 `hooks.config()` 호출마다 `opencode plugin`을 spawn했고, 여러 OpenCode 인스턴스가 동시에 플러그인을 로드하면 수백 건의 병렬 설치로 폭주했습니다. 업데이트는 `npm i -g opencode-resolve`로 수동 실행하세요. |
 | `language` | `auto` / `en` / `ko` | `auto` | 프롬프트 언어 선호. |
 | `maxParallelSubagents` | positive integer | 미설정 | 동시 coder 디스패치에 대한 선택적 프롬프트 수준 soft limit. |
 

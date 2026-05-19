@@ -1,8 +1,5 @@
 import { ProjectContext, ResolveConfig } from "./types.js";
 export declare const PLUGIN_VERSION: string;
-export declare const UPDATE_CHECK_INTERVAL_MS: number;
-export declare const UPDATE_CHECK_FILE: string;
-export declare const PLUGIN_CACHE_DIR: string;
 export declare function runCommand(command: string, cwd: string, timeoutMs: number): Promise<{
     stdout: string;
     stderr: string;
@@ -20,12 +17,6 @@ export declare function existsDirectory(path: string): Promise<boolean>;
 export declare function detectProjectContext(directory: string): Promise<ProjectContext>;
 export declare function collectContextFiles(rootDirectory: string, relativeDirectory: string, maxFiles?: number): Promise<string[]>;
 export declare function readPluginVersion(): string;
-export declare function readUpdateCheckCache(): {
-    checkedAt: number;
-    latest: string;
-} | undefined;
-export declare function isNewerVersion(candidate: string, baseline: string): boolean;
-export declare function maybeAutoUpdate(): Promise<void>;
 export declare function readFirstJson(paths: string[]): Promise<ResolveConfig | undefined>;
 export declare const BANNED_COMMANDS: ReadonlyArray<RegExp>;
 export declare const DANGEROUS_BASH_PATTERNS: ReadonlyArray<RegExp>;

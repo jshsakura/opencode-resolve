@@ -1,5 +1,5 @@
 import { DIAGNOSTICS_TTL_MS, FAILURE_PATTERN_TTL_MS, FAILURE_THRESHOLD, STRATEGY_PIVOT_THRESHOLD, EDIT_HOTSPOT_TTL_MS, EDIT_HOTSPOT_THRESHOLD } from "../state.js";
-import { classifyBashCommand, maybeAutoUpdate, detectProjectContext } from "../utils.js";
+import { classifyBashCommand, detectProjectContext } from "../utils.js";
 import { loadResolveConfig, applyResolveConfig } from "../config.js";
 import { contextMessage, narrate, resolveLocale, t, agentDisplayName, PLUGIN_BRAND } from "../messages.js";
 function capTemperature(current, cap) {
@@ -206,9 +206,7 @@ export function getHooks(directory, options, sessionState) {
             sessionState.storedProjectContext = projectContext;
             sessionState.locale = resolveLocale(resolveConfig.language, process.env.LANG);
             applyResolveConfig(config, resolveConfig, projectContext);
-            if (resolveConfig.autoUpdate !== false && process.env.OPENCODE_RESOLVE_NO_AUTO_UPDATE !== "1") {
-                maybeAutoUpdate().catch(() => { });
-            }
+            // Auto-update removed — see src/utils.ts header. Users update manually.
         },
         "shell.env": async (_input, output) => {
             output.env = {

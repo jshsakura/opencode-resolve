@@ -1,3 +1,17 @@
+// HARD GUARD — defense in depth. Auto-update was removed at the source
+// (see src/utils.ts and plugin.test.mjs for the 177-session incident note),
+// but we still block network + set kill-switch env vars so any future
+// regression fails loudly here instead of touching the user's server.
+process.env.OPENCODE_RESOLVE_NO_AUTO_UPDATE = "1"
+process.env.OPENCODE_RESOLVE_SKIP_POSTINSTALL = "1"
+process.env.OPENCODE_RESOLVE_SKIP_CACHE_REFRESH = "1"
+process.env.OPENCODE_RESOLVE_SKIP_COMPANIONS = "1"
+process.env.OPENCODE_RESOLVE_QUIET = "1"
+
+globalThis.fetch = async (input) => {
+  throw new Error(`[test guard] network blocked in tests (fetch ${String(input)})`)
+}
+
 import assert from "node:assert/strict"
 import test from "node:test"
 import {

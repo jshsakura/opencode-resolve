@@ -1,3 +1,19 @@
+// HARD GUARD — must run before importing plugin code.
+// Auto-update was removed at the source (see src/utils.ts), but we still set
+// the kill-switch env vars and stub `fetch` as defense in depth: any future
+// regression that adds network calls or `opencode plugin` spawns from the
+// plugin path will fail loudly here instead of silently fanning out into
+// hundreds of OpenCode sessions on the user's server (177-session incident).
+process.env.OPENCODE_RESOLVE_NO_AUTO_UPDATE = "1"
+process.env.OPENCODE_RESOLVE_SKIP_POSTINSTALL = "1"
+process.env.OPENCODE_RESOLVE_SKIP_CACHE_REFRESH = "1"
+process.env.OPENCODE_RESOLVE_SKIP_COMPANIONS = "1"
+process.env.OPENCODE_RESOLVE_QUIET = "1"
+
+globalThis.fetch = async (input) => {
+  throw new Error(`[test guard] network blocked in tests (fetch ${String(input)})`)
+}
+
 import assert from "node:assert/strict"
 import cp from "node:child_process"
 import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
