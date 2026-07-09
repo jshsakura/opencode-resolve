@@ -115,8 +115,17 @@ export function getHooks(directory, options, sessionState) {
                             : [];
                     const errors = diagnostics.filter((d) => d.severity === 1 || d.severity === "error").length;
                     const warnings = diagnostics.filter((d) => d.severity === 2 || d.severity === "warning").length;
+                    // Phase 1.1: capture error messages + line numbers so resolve-diagnostics
+                    // can show ±3 lines of context, saving the coder a separate read call.
+                    const errorMessages = diagnostics
+                        .filter((d) => d.severity === 1 || d.severity === "error")
+                        .slice(0, 20)
+                        .map((d) => ({
+                        line: d.range?.start?.line ?? d.line ?? 0,
+                        message: String(d.message ?? "").slice(0, 200),
+                    }));
                     if (errors > 0 || warnings > 0) {
-                        sessionState.recentDiagnostics.set(props.path, { errors, warnings, timestamp: Date.now() });
+                        sessionState.recentDiagnostics.set(props.path, { errors, warnings, timestamp: Date.now(), errorMessages });
                     }
                     else {
                         sessionState.recentDiagnostics.delete(props.path);
@@ -330,6 +339,13 @@ export function getHooks(directory, options, sessionState) {
             // Count every completed tool call from the reliable tool.execute.after
             // hook (the message-stream event hook was unreliable + double-counted).
             sessionState.totalToolCalls++;
+            // Phase 1.0: measure cumulative tool output bytes for token-budget
+            // visibility. Only counts text the resolver actually consumes.
+            const _outText = typeof output?.output === "string" ? output.output
+                : typeof output?.output?.output === "string" ? output.output.output
+                    : typeof output === "string" ? output : "";
+            if (_outText)
+                sessionState.totalOutputBytes += Buffer.byteLength(_outText, "utf8");
             if (input.tool === "edit" || input.tool === "write") {
                 sessionState.totalEdits++;
                 const verifyCommands = sessionState.storedProjectContext?.verifyCommands;

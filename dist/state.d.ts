@@ -15,6 +15,10 @@ export interface SessionState {
         errors: number;
         warnings: number;
         timestamp: number;
+        errorMessages?: {
+            line: number;
+            message: string;
+        }[];
     }>;
     failurePatterns: Map<string, {
         count: number;
@@ -29,6 +33,7 @@ export interface SessionState {
     }>;
     totalEdits: number;
     totalToolCalls: number;
+    totalOutputBytes: number;
     sessionStartTime: number;
     loopWarnings: string[];
     lastStrategyHint: string;

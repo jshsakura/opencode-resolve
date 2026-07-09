@@ -21,6 +21,7 @@ import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import test from "node:test"
 import plugin, { OpencodeResolve } from "../dist/index.js"
+import { summarizeTestFailure } from "../dist/tools/index.js"
 
 test("exports plugin functions", () => {
   assert.equal(typeof plugin, "object")
@@ -1415,6 +1416,58 @@ test("resolve-diagnostics returns no active diagnostics when empty", async () =>
   assert.ok(text.includes("No active"), "should report no active diagnostics")
 })
 
+// ── Phase 1.1: resolve-diagnostics error context (net-positive) ──────────
+
+test("resolve-diagnostics returns same output when no errors regardless of context flag", async () => {
+  const hooks = await getHooks()
+  const ctx = { sessionID: "s1", messageID: "m1", agent: "resolver", directory: "/tmp", worktree: "/tmp", abort: new AbortController().signal, metadata() {}, ask: () => ({}) }
+  // Feed warning-only diagnostics into state so it's non-empty but 0 errors
+  hooks["chat.params"]({ agent: "resolver" }, {}).catch(() => {})
+  const r1 = await hooks.tool["resolve-diagnostics"].execute({}, ctx)
+  const r2 = await hooks.tool["resolve-diagnostics"].execute({ context: false }, ctx)
+  const t1 = typeof r1 === "string" ? r1 : r1.output
+  const t2 = typeof r2 === "string" ? r2 : r2.output
+  // No errors → context flag has zero effect (byte-identical behaviour)
+  assert.equal(t1, t2, "context flag must not change output when there are no errors")
+})
+
+test("resolve-diagnostics injects ±3 line context around error lines when errors present", async () => {
+  const project = await createProject({
+    "opencode-resolve.json": {},
+    "src/bug.ts": "line1\nline2\nconst x = broken(\nline4\nline5\nline6\nline7\n",
+  })
+  const previousHome = process.env.HOME
+  const previousUserprofile = process.env.USERPROFILE
+  process.env.HOME = project.path
+  process.env.USERPROFILE = project.path
+  try {
+    const config = { model: "provider/model", agent: {} }
+    const hooks = await OpencodeResolve(
+      { directory: project.path, client: {}, project: {}, worktree: project.path, serverUrl: new URL("http://localhost"), $: {}, experimental_workspace: { register() {} } },
+      {},
+    )
+    await hooks.config(config)
+    await hooks["chat.params"]({ agent: "resolver" }, {})
+    // Seed an LSP error diagnostic for line 3 (0-based index 2)
+    await hooks.event({ event: { type: "lsp.client.diagnostics", properties: { path: "src/bug.ts" }, diagnostics: [{ message: "Unexpected token", severity: "error", range: { start: { line: 2, character: 0 } }, source: "ts" }] } })
+    const ctx = { sessionID: "s1", messageID: "m1", agent: "resolver", directory: project.path, worktree: project.path, abort: new AbortController().signal, metadata() {}, ask: () => ({}) }
+    const withCtx = await hooks.tool["resolve-diagnostics"].execute({ context: true }, ctx)
+    const withoutCtx = await hooks.tool["resolve-diagnostics"].execute({ context: false }, ctx)
+    const withText = typeof withCtx === "string" ? withCtx : withCtx.output
+    const withoutText = typeof withoutCtx === "string" ? withoutCtx : withoutCtx.output
+    assert.ok(withText.includes("broken"), `context should include surrounding lines, got: ${withText}`)
+    assert.ok(withText.length > withoutText.length, "context=true must produce richer output than context=false on errors")
+    // context=false suppresses the snippet
+    assert.ok(!withoutText.includes("3> "), "context=false must not inject line snippets")
+  } finally {
+    if (previousHome === undefined) delete process.env.HOME
+    else process.env.HOME = previousHome
+    if (previousUserprofile === undefined) delete process.env.USERPROFILE
+    else process.env.USERPROFILE = previousUserprofile
+    await project.cleanup()
+  }
+})
+
 // ── New custom tools registration tests ───────────────────────────────────
 
 test("resolve-search tool is registered", async () => {
@@ -1429,6 +1482,51 @@ test("resolve-test tool is registered", async () => {
   assert.ok(hooks.tool["resolve-test"], "should have resolve-test tool")
   assert.equal(typeof hooks.tool["resolve-test"].execute, "function")
   assert.ok(hooks.tool["resolve-test"].description.includes("test file"))
+})
+
+// ── Phase 1.2: summarizeTestFailure parser (net-positive: ≤ raw fallback) ──
+
+test("summarizeTestFailure parses pytest failures", () => {
+  const stderr = [
+    "FAILED tests/test_foo.py::test_add - assert 1 == 2",
+    "E   assert 1 == 2 where 1 = a and 2 = b",
+    "========= 1 failed in 0.01s =========",
+  ].join("\n")
+  const summary = summarizeTestFailure("", stderr, "pytest")
+  assert.ok(summary.includes("tests/test_foo.py::test_add"), `got: ${summary}`)
+  assert.ok(summary.includes("assert 1 == 2"), `got: ${summary}`)
+  assert.ok(summary.length < stderr.length, "summary must be more compact than raw")
+})
+
+test("summarizeTestFailure parses go test failures", () => {
+  const stderr = "--- FAIL: TestFoo (0.00s)\n    foo_test.go:12: expected 5, got 4\nFAIL\n"
+  const summary = summarizeTestFailure("", stderr, "go test ./...")
+  assert.ok(summary.includes("TestFoo"), `got: ${summary}`)
+  assert.ok(summary.includes("foo_test.go:12"), `got: ${summary}`)
+  assert.ok(!summary.includes("12.go:"), "must use filename not line number as prefix")
+})
+
+test("summarizeTestFailure parses vitest failures with expected/received", () => {
+  const out = [
+    "FAIL src/add.test.ts [ src/add.test.ts ]",
+    "× adds two numbers (5)",
+    "  Expected: 5",
+    "  Received: 4",
+    " ❯ src/add.test.ts:3:1",
+  ].join("\n")
+  const summary = summarizeTestFailure(out, "", "vitest")
+  assert.ok(summary.includes("src/add.test.ts"), `got: ${summary}`)
+  assert.ok(summary.includes("adds two numbers"), `got: ${summary}`)
+  assert.ok(summary.includes("Expected: 5"), `got: ${summary}`)
+  assert.ok(summary.includes("Received: 4"), `got: ${summary}`)
+})
+
+test("summarizeTestFailure falls back to raw truncate when nothing parses", () => {
+  const raw = "some unstructured output " + "x".repeat(2000)
+  const summary = summarizeTestFailure(raw, "", "weird-runner")
+  // net-positive: fallback is bounded, never longer than the raw input
+  assert.ok(summary.length < raw.length, `summary must be bounded, got ${summary.length}`)
+  assert.ok(summary.startsWith("some unstructured output"), "fallback should keep head")
 })
 
 test("resolve-pattern tool is registered", async () => {
@@ -2298,6 +2396,49 @@ test("resolve-session tool: shows edit hotspots", async () => {
     assert.ok(text.includes("Edit hotspots"), `should show hotspots, got: ${text}`)
     assert.ok(text.includes("src/hot.ts"), `should mention hotspot file, got: ${text}`)
     assert.ok(text.includes("10 edits"), `should show edit count, got: ${text}`)
+  } finally {
+    if (previousHome === undefined) delete process.env.HOME
+    else process.env.HOME = previousHome
+    if (previousUserprofile === undefined) delete process.env.USERPROFILE
+    else process.env.USERPROFILE = previousUserprofile
+    await project.cleanup()
+  }
+})
+
+// ── Phase 1.6: resolve-session full flag + output byte counter ───────────
+
+test("resolve-session full:true includes git changes and output bytes", async () => {
+  const project = await createProject({
+    "opencode-resolve.json": {},
+    "package.json": { name: "test" },
+  })
+  const previousHome = process.env.HOME
+  const previousUserprofile = process.env.USERPROFILE
+  process.env.HOME = project.path
+  process.env.USERPROFILE = project.path
+  try {
+    const config = { model: "provider/model", agent: {} }
+    const hooks = await OpencodeResolve(
+      { directory: project.path, client: {}, project: {}, worktree: project.path, serverUrl: new URL("http://localhost"), $: {}, experimental_workspace: { register() {} } },
+      {},
+    )
+    await hooks.config(config)
+    await hooks["chat.params"]({ agent: "resolver" }, {})
+    // Accumulate some output bytes via a tool call
+    await hooks["tool.execute.after"](
+      { tool: "resolve-search", args: {}, sessionID: "s1", messageID: "m1", agent: "resolver" },
+      { output: "x".repeat(500), metadata: {} },
+    )
+    const ctx = { sessionID: "s1", messageID: "m1", agent: "resolver", directory: project.path, worktree: project.path, abort: new AbortController().signal, metadata() {}, ask: () => ({}) }
+    const def = await hooks.tool["resolve-session"].execute({}, ctx)
+    const full = await hooks.tool["resolve-session"].execute({ full: true }, ctx)
+    const defText = typeof def === "string" ? def : def.output
+    const fullText = typeof full === "string" ? full : full.output
+    // Output byte counter always present
+    assert.ok(defText.includes("bytes"), `should report output bytes, got: ${defText}`)
+    // full adds git sections; def does not (net-positive: default unchanged)
+    assert.ok(fullText.includes("Uncommitted"), `full should include git status, got: ${fullText}`)
+    assert.ok(!defText.includes("Uncommitted"), "default must not include git status")
   } finally {
     if (previousHome === undefined) delete process.env.HOME
     else process.env.HOME = previousHome

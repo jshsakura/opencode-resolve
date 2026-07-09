@@ -19,7 +19,7 @@ export interface SessionState {
   storedConfig?: ResolveConfig;
   storedProjectContext?: ProjectContext;
 
-  recentDiagnostics: Map<string, { errors: number; warnings: number; timestamp: number }>;
+  recentDiagnostics: Map<string, { errors: number; warnings: number; timestamp: number; errorMessages?: { line: number; message: string }[] }>;
   failurePatterns: Map<string, { count: number; lastMessage: string; timestamp: number }>;
   failureWarnings: string[];
   totalFailures: number;
@@ -27,6 +27,7 @@ export interface SessionState {
   editHotspots: Map<string, { count: number; lastEditTime: number }>;
   totalEdits: number;
   totalToolCalls: number;
+  totalOutputBytes: number;
   sessionStartTime: number;
   loopWarnings: string[];
   lastStrategyHint: string;
@@ -55,6 +56,7 @@ export function createSessionState(): SessionState {
     editHotspots: new Map(),
     totalEdits: 0,
     totalToolCalls: 0,
+    totalOutputBytes: 0,
     sessionStartTime: Date.now(),
     loopWarnings: [],
     lastStrategyHint: "",

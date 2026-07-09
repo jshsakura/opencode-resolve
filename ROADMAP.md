@@ -68,10 +68,10 @@
 
 ### Phase 1: 토큰 절감 즉시 효과 (Short-term)
 **모든 항목 신규 도구 0개. 기본 동작은 기존과 동일, 추가 효과는 옵트인 또는 자동 축소만.**
-- [ ] **0. 측정 베이스라인** — `SessionState`에 누적 출력 바이트 카운터 추가, `resolve-session` 응답에 표시. 신규 필드만 추가, 기존 필드 변경 없음.
-- [ ] 2번 — `resolve-test` 출력 파서. 기본 동작이 기존보다 항상 더 작거나 같음(요약). `raw: true` 플래그로 원본 폴백 보장.
-- [ ] 1번 후반부 — `resolve-diagnostics`: 에러가 존재할 때만 ±3줄 컨텍스트 추가, `context: false`로 끄기 가능. 에러 없는 호출은 출력 변화 0.
-- [ ] 6번 — `resolve-session`에 `full: true` 옵션 추가(기본 false = 기존과 동일).
+- [x] **0. 측정 베이스라인** — `SessionState`에 누적 출력 바이트 카운터 추가, `resolve-session` 응답에 표시. 신규 필드만 추가, 기존 필드 변경 없음.
+- [x] 2번 — `resolve-test` 출력 파서. 기본 동작이 기존보다 항상 더 작거나 같음(요약). `raw: true` 플래그로 원본 폴백 보장.
+- [x] 1번 후반부 — `resolve-diagnostics`: 에러가 존재할 때만 ±3줄 컨텍스트 추가, `context: false`로 끄기 가능. 에러 없는 호출은 출력 변화 0.
+- [x] 6번 — `resolve-session`에 `full: true` 옵션 추가(기본 false = 기존과 동일).
 
 ### Phase 2: 지능화 (Mid-term, 플러그인 API 검증 후)
 - [ ] 1번 전반부 — LSP Quick Fix 자동 적용 (`resolve-quickfix`)

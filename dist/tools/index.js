@@ -23,6 +23,60 @@ function commandExecutionDenied(command) {
     }
     return `Command is not allowlisted for direct tool execution: ${command}. Run it through OpenCode bash so the normal permission flow can decide.`;
 }
+// Phase 1.2: parse Vitest/Jest/Pytest/Go test failures into a compact summary
+// (failing names, expected vs received, 3 stack frames). Always returns output
+// ≤ the previous raw-truncate fallback, so resolve-test is strictly net-positive.
+export function summarizeTestFailure(stdout, stderr, runner) {
+    const raw = stderr || stdout;
+    const cmd = (runner ?? "").toLowerCase();
+    const out = `${stdout}\n${stderr}`;
+    // Pytest: "FAILED file::test_name - msg" + "E   ..." assertion lines
+    if (cmd.includes("pytest") || /FAILED\s+\S+::/.test(raw)) {
+        const failed = [...raw.matchAll(/FAILED\s+(\S+?::\S+)\s+-\s+(.+)/g)].slice(0, 10)
+            .map((m) => `  ✗ ${m[1]}\n    ${m[2].slice(0, 200)}`);
+        const asserts = [...raw.matchAll(/^E\s+(.+)/gm)].slice(0, 5).map((m) => m[1].slice(0, 200));
+        if (failed.length || asserts.length) {
+            const parts = [];
+            if (failed.length)
+                parts.push(`Failed tests:\n${failed.join("\n")}`);
+            if (asserts.length)
+                parts.push(`Assertion errors:\n  ${asserts.join("\n  ")}`);
+            return truncateOutput(parts.join("\n"), 1200);
+        }
+    }
+    // Go test: "--- FAIL: TestName" + "    file.go:NN: msg"
+    if (cmd.includes("go test") || /--- FAIL:/.test(raw)) {
+        const failed = [...raw.matchAll(/--- FAIL:\s+(\S+)/g)].slice(0, 10).map((m) => `  ✗ ${m[1]}`);
+        const errs = [...raw.matchAll(/^\s+(\S+\.go):(\d+):\s+(.+)/gm)].slice(0, 5)
+            .map((m) => `    ${m[1]}:${m[2]}: ${m[3].slice(0, 160)}`);
+        if (failed.length) {
+            return truncateOutput(`Failed tests:\n${failed.join("\n")}\n${errs.join("\n")}`, 1200);
+        }
+    }
+    // Vitest / Jest
+    const failingNames = new Set();
+    for (const m of out.matchAll(/●\s+(.+)/g))
+        failingNames.add(m[1].trim().slice(0, 120)); // Jest suite › test
+    for (const m of out.matchAll(/^\s*×\s+(.+)/gm))
+        failingNames.add(m[1].trim().slice(0, 120)); // Vitest × test
+    const failFiles = [...out.matchAll(/^FAIL\s+(\S+)/gm)].map((m) => m[1]).slice(0, 10);
+    const expected = [...out.matchAll(/Expected[^:\n]*:\s*(.+)/g)].slice(0, 3).map((m) => m[1].slice(0, 150));
+    const received = [...out.matchAll(/Received[^:\n]*:\s*(.+)/g)].slice(0, 3).map((m) => m[1].slice(0, 150));
+    const stack = [...out.matchAll(/^\s+at\s+(.+)/gm)].slice(0, 3).map((m) => m[1].slice(0, 160));
+    const parts = [];
+    if (failFiles.length)
+        parts.push(`Failed files: ${failFiles.join(", ")}`);
+    if (failingNames.size)
+        parts.push(`Failed tests:\n${[...failingNames].slice(0, 10).map((n) => `  ✗ ${n}`).join("\n")}`);
+    if (expected.length || received.length) {
+        parts.push(`Expected: ${expected[0] ?? "-"}\nReceived: ${received[0] ?? "-"}`);
+    }
+    if (stack.length)
+        parts.push(`Stack:\n${stack.map((s) => `  at ${s}`).join("\n")}`);
+    // Parsed something useful → compact summary; otherwise fall back to the
+    // previous raw-truncate behaviour (byte-identical).
+    return parts.length ? truncateOutput(parts.join("\n"), 1200) : truncateOutput(raw, 1500);
+}
 export function getTools(sessionState) {
     return {
         "resolve-verify": tool({
@@ -53,22 +107,53 @@ export function getTools(sessionState) {
             },
         }),
         "resolve-diagnostics": tool({
-            description: "Get current LSP diagnostics snapshot. Returns errors and warnings per file from the language server.",
+            description: "Get current LSP diagnostics snapshot. Returns errors and warnings per file from the language server. When errors are present, includes the message and ±3 lines of source context so the coder can fix without a separate read.",
             args: {
                 path: tool.schema.string().optional().describe("Specific file path to check. If omitted, returns all files with active diagnostics."),
+                context: tool.schema.boolean().optional().describe("Include ±3 lines of source context around each error (default true). Set false for counts only."),
             },
-            async execute(args) {
+            async execute(args, ctx) {
                 if (sessionState.recentDiagnostics.size === 0) {
                     return "No active LSP diagnostics.";
                 }
                 const now = Date.now();
+                const wantContext = args.context !== false;
                 const entries = [];
                 for (const [filePath, diag] of sessionState.recentDiagnostics) {
                     if (now - diag.timestamp > DIAGNOSTICS_TTL_MS)
                         continue;
                     if (args.path && filePath !== args.path)
                         continue;
-                    entries.push(`${filePath}: ${diag.errors} errors, ${diag.warnings} warnings`);
+                    const head = `${filePath}: ${diag.errors} errors, ${diag.warnings} warnings`;
+                    // Net-positive: error-free files and context:false calls are byte-identical to before.
+                    if (!wantContext || diag.errors === 0 || !diag.errorMessages?.length) {
+                        entries.push(head);
+                        continue;
+                    }
+                    // Errors present: show message + ±3 source lines (bounded to 3 errors/file).
+                    const blocks = [head];
+                    let srcLines = null;
+                    for (const e of diag.errorMessages.slice(0, 3)) {
+                        const ln = e.line + 1; // LSP lines are 0-based
+                        if (srcLines === null) {
+                            try {
+                                srcLines = (await readFile(resolve(ctx.directory, filePath), "utf8")).split("\n");
+                            }
+                            catch {
+                                srcLines = []; // unreadable: show message without context
+                            }
+                        }
+                        let snippet = "";
+                        if (srcLines.length > 0) {
+                            const start = Math.max(0, ln - 4);
+                            const end = Math.min(srcLines.length, ln + 3);
+                            snippet = srcLines.slice(start, end)
+                                .map((l, i) => `${start + i + 1}${start + i + 1 === ln ? ">" : ":"} ${l}`)
+                                .join("\n");
+                        }
+                        blocks.push(`  L${ln}: ${e.message}${snippet ? "\n" + snippet : ""}`);
+                    }
+                    entries.push(blocks.join("\n"));
                 }
                 if (entries.length === 0) {
                     return args.path ? `No active diagnostics for ${args.path}.` : "No active LSP diagnostics.";
@@ -177,6 +262,7 @@ export function getTools(sessionState) {
                 file: tool.schema.string().optional().describe("Test file path or glob pattern (e.g. 'test/plugin.test.mjs')."),
                 pattern: tool.schema.string().optional().describe("Test name pattern to filter (e.g. 'GLM profile')."),
                 runner: tool.schema.string().optional().describe("Override test runner command (e.g. 'vitest run', 'jest')."),
+                raw: tool.schema.boolean().optional().describe("Return the raw untruncated log instead of the parsed failure summary."),
             },
             async execute(args, ctx) {
                 const projCtx = sessionState.storedProjectContext;
@@ -215,7 +301,11 @@ export function getTools(sessionState) {
                     if (result.exitCode === 0) {
                         return { output: `✅ Tests passed.\n${truncateOutput(result.stdout, 800)}`, metadata: { exitCode: 0 } };
                     }
-                    return { output: `❌ Tests failed (exit ${result.exitCode}).\n${truncateOutput(result.stderr || result.stdout, 1500)}`, metadata: { exitCode: result.exitCode } };
+                    // Phase 1.2: parse framework output into a compact summary unless raw requested.
+                    const detail = args.raw
+                        ? truncateOutput(result.stderr || result.stdout, 1500)
+                        : summarizeTestFailure(result.stdout, result.stderr, testCmd);
+                    return { output: `❌ Tests failed (exit ${result.exitCode}).\n${detail}`, metadata: { exitCode: result.exitCode } };
                 }
                 catch (err) {
                     return `⚠️ Test runner failed: ${err instanceof Error ? err.message : String(err)}`;
@@ -924,9 +1014,11 @@ export function getTools(sessionState) {
             },
         }),
         "resolve-session": tool({
-            description: "Show current Ralph Loop session state: profile, tier, edit count, tool call count, failure warnings, loop warnings, and elapsed time. Use when you suspect you're going in circles.",
-            args: {},
-            async execute(_args, ctx) {
+            description: "Show current Ralph Loop session state: tier, edit count, tool call count, output bytes, failure warnings, loop warnings, and elapsed time. Use when you suspect you're going in circles.",
+            args: {
+                full: tool.schema.boolean().optional().describe("Include a compact changelog (recent commits + uncommitted count) so you get session + repo state in one call. Default false."),
+            },
+            async execute(args, ctx) {
                 const lines = [];
                 const cfg = sessionState.storedConfig;
                 const projCtx = sessionState.storedProjectContext;
@@ -934,6 +1026,7 @@ export function getTools(sessionState) {
                 lines.push(`Session duration: ${elapsed}s`);
                 lines.push(`Tool calls: ${sessionState.totalToolCalls}`);
                 lines.push(`Edits: ${sessionState.totalEdits}`);
+                lines.push(`Output: ${sessionState.totalOutputBytes} bytes (~${Math.round(sessionState.totalOutputBytes / 1024)}KB)`);
                 if (cfg?.tier)
                     lines.push(`Tier: ${cfg.tier}`);
                 if (projCtx?.hasTypeScript)
@@ -966,6 +1059,25 @@ export function getTools(sessionState) {
                         lines.push(`  🔄 ${w}`);
                 }
                 ctx.metadata({ title: `session: ${sessionState.totalEdits} edits, ${sessionState.totalToolCalls} tools, ${elapsed}s` });
+                // Phase 1.6: opt-in `full` mode folds a compact changelog (recent
+                // commits + uncommitted count) into the same response — 3 calls → 1.
+                // Default (full omitted/false) leaves the output exactly as before.
+                if (args.full) {
+                    try {
+                        const log = await runCommand("git log --oneline -5", ctx.directory, 5_000);
+                        const st = await runCommand("git status --porcelain", ctx.directory, 5_000);
+                        lines.push("Recent changes:");
+                        if (log.stdout.trim()) {
+                            lines.push(log.stdout.trim().split("\n").map((l) => `  ${l}`).join("\n"));
+                        }
+                        else {
+                            lines.push("  (no commits yet)");
+                        }
+                        const uncommitted = st.stdout.trim().split("\n").filter(Boolean).length;
+                        lines.push(`Uncommitted files: ${uncommitted}`);
+                    }
+                    catch { /* not a git repo */ }
+                }
                 return lines.join("\n");
             },
         }),

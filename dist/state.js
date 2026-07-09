@@ -19,6 +19,7 @@ export function createSessionState() {
         editHotspots: new Map(),
         totalEdits: 0,
         totalToolCalls: 0,
+        totalOutputBytes: 0,
         sessionStartTime: Date.now(),
         loopWarnings: [],
         lastStrategyHint: "",

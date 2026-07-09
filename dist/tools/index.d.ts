@@ -1,4 +1,5 @@
 import { SessionState } from "../state.js";
+export declare function summarizeTestFailure(stdout: string, stderr: string, runner: string | undefined): string;
 export declare function getTools(sessionState: SessionState): {
     "resolve-verify": {
         description: string;
@@ -13,9 +14,11 @@ export declare function getTools(sessionState: SessionState): {
         description: string;
         args: {
             path: import("zod").ZodOptional<import("zod").ZodString>;
+            context: import("zod").ZodOptional<import("zod").ZodBoolean>;
         };
         execute(args: {
             path?: string | undefined;
+            context?: boolean | undefined;
         }, context: import("@opencode-ai/plugin").ToolContext): Promise<import("@opencode-ai/plugin").ToolResult>;
     };
     "resolve-context": {
@@ -56,11 +59,13 @@ export declare function getTools(sessionState: SessionState): {
             file: import("zod").ZodOptional<import("zod").ZodString>;
             pattern: import("zod").ZodOptional<import("zod").ZodString>;
             runner: import("zod").ZodOptional<import("zod").ZodString>;
+            raw: import("zod").ZodOptional<import("zod").ZodBoolean>;
         };
         execute(args: {
             file?: string | undefined;
             pattern?: string | undefined;
             runner?: string | undefined;
+            raw?: boolean | undefined;
         }, context: import("@opencode-ai/plugin").ToolContext): Promise<import("@opencode-ai/plugin").ToolResult>;
     };
     "resolve-pattern": {
@@ -219,8 +224,12 @@ export declare function getTools(sessionState: SessionState): {
     };
     "resolve-session": {
         description: string;
-        args: {};
-        execute(args: Record<string, never>, context: import("@opencode-ai/plugin").ToolContext): Promise<import("@opencode-ai/plugin").ToolResult>;
+        args: {
+            full: import("zod").ZodOptional<import("zod").ZodBoolean>;
+        };
+        execute(args: {
+            full?: boolean | undefined;
+        }, context: import("@opencode-ai/plugin").ToolContext): Promise<import("@opencode-ai/plugin").ToolResult>;
     };
     "resolve-audit": {
         description: string;
