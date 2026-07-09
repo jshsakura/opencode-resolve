@@ -29,7 +29,6 @@ opencode-resolve setup
 - [모델 설정](#모델-설정)
 - [에이전트](#에이전트)
 - [권한](#권한)
-- [Context7](#context7)
 - [프로젝트 컨텍스트](#프로젝트-컨텍스트)
 - [업그레이드](#업그레이드)
 - [개발](#개발)
@@ -40,7 +39,6 @@ opencode-resolve setup
 - 작은 패치와 검증 증거를 중시하는 `resolver -> coder` 루프
 - 코드베이스 탐색과 리뷰 갭 점검을 위한 읽기 전용 서브에이전트
 - 선택적 명령어: `/resolve`, `/resolve-code`, `/resolve-review`
-- 선택적 Context7 MCP 자동 등록
 - 엄격한 설정 검증: 알 수 없는 키, 잘못된 모드, 잘못된 에이전트 이름, 잘못된 타입은 즉시 실패
 - 보수적 마이그레이션: 기존 값은 동의 없이 덮어쓰지 않음
 
@@ -94,11 +92,6 @@ npm `postinstall`이 `~/.config/opencode/opencode.json`에 플러그인을 등�
 OPENCODE_RESOLVE_SKIP_POSTINSTALL=1 npm install -g opencode-resolve
 ```
 
-### 선택적 companion 플러그인
-
-- `@tarquinen/opencode-dcp@latest` — 긴 루프에서 오래된 tool output을 줄여 토큰 비용을 낮춥니다.
-- `@slkiser/opencode-quota@latest` — 컨텍스트를 오염시키지 않고 토큰/quota 사용량을 보여줍니다.
-
 ### 수동 설정
 
 `~/.config/opencode/opencode.json`에 플러그인을 추가합니다.
@@ -115,7 +108,6 @@ OPENCODE_RESOLVE_SKIP_POSTINSTALL=1 npm install -g opencode-resolve
 {
   "enabled": ["coder", "resolver", "explorer", "reviewer", "deep-reviewer", "planner"],
   "preserveNative": true,
-  "context7": true,
   "commands": false,
   "models": {},
   "agents": {
@@ -199,12 +191,12 @@ irm https://raw.githubusercontent.com/jshsakura/awesome-opencode-skills/main/ins
 | `models` | object | `{}` | 모델 별칭과 역할별 모델 핀. |
 | `agents` | object | `{}` | 에이전트별 override. |
 | `preserveNative` | boolean | `true` | 명시 override가 없으면 OpenCode 기본 에이전트 보존. |
-| `context7` | boolean | `true` | 없을 때 Context7 MCP 등록. |
 | `commands` | boolean | `false` | `/resolve`, `/resolve-code`, `/resolve-review` 추가. |
 | `autoApprove` | boolean | `true` | 하위 호환용 플래그. 현재 권한은 명시 설정과 분류기가 제어. |
 | `autoUpdate` | boolean | (no-op) | **사용 중단.** 하위 호환을 위해 필드는 받되 무시합니다. 기존 auto-update는 `hooks.config()` 호출마다 `opencode plugin`을 spawn했고, 여러 OpenCode 인스턴스가 동시에 플러그인을 로드하면 수백 건의 병렬 설치로 폭주했습니다. 업데이트는 `npm i -g opencode-resolve`로 수동 실행하세요. |
 | `language` | `auto` / `en` / `ko` | `auto` | 프롬프트 언어 선호. |
 | `maxParallelSubagents` | positive integer | 미설정 | 동시 coder 디스패치에 대한 선택적 프롬프트 수준 soft limit. |
+| `singleAgentMode` | boolean | `false` | `true`면 resolver가 `coder` 서브에이전트를 디스패치하지 않고 모든 편집을 직접 수행합니다. 단순 작업에서 지연과 토큰 비용을 절약합니다. 정보/진단용 서브에이전트(explorer/debugger)는 여전히 사용 가능합니다. |
 
 ### 에이전트 override
 
@@ -289,27 +281,6 @@ resolve 에이전트의 bash는 기본적으로 `ask`입니다. 플러그인의 
 
 값을 설정하면 resolver 프롬프트에 삽입됩니다. 런타임 semaphore는 아닙니다. 변경 후 OpenCode를 재시작하세요. `agents.resolver.prompt`를 직접 지정하면 템플릿된 규칙은 대체됩니다.
 
-## Context7
-
-`context7: true`이면 `mcp.context7`이 없을 때 Context7 MCP를 등록합니다.
-
-```json
-{
-  "mcp": {
-    "context7": {
-      "type": "remote",
-      "url": "https://mcp.context7.com/mcp"
-    }
-  }
-}
-```
-
-끄려면:
-
-```json
-{ "context7": false }
-```
-
 ## 프로젝트 컨텍스트
 
 플러그인은 repo 전체를 프롬프트에 밀어 넣지 않고, 커밋된 프로젝트 컨텍스트 위치만 노출합니다. 감지 대상:
@@ -363,7 +334,7 @@ Git hook:
 npm run hooks:install
 ```
 
-테스트는 에이전트 주입, 설정 로딩, 모델 별칭, 권한, 선택적 명령어, Context7 보존, 네이티브 에이전트 보존, postinstall 동작을 검증합니다.
+테스트는 에이전트 주입, 설정 로딩, 모델 별칭, 권한, 선택적 명령어, 네이티브 에이전트 보존, postinstall 동작을 검증합니다.
 
 ## 릴리스
 

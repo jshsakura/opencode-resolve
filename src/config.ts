@@ -12,6 +12,7 @@ export function applyResolveConfig(config: Config, resolveConfig: ResolveConfig,
     const models = { ...DEFAULT_MODELS, ...resolveConfig.models };
     const defaultModel = typeof config.model === "string" ? config.model : undefined;
     const maxParallelSubagents = resolveConfig.maxParallelSubagents;
+    const singleAgentMode = resolveConfig.singleAgentMode === true;
     const contextInjection = buildContextInjection(projectContext);
     config.agent ??= {}
 
@@ -30,7 +31,7 @@ export function applyResolveConfig(config: Config, resolveConfig: ResolveConfig,
     }
     if (agentOverride.prompt === undefined) {
       if (name === "resolver") {
-        agentConfig.prompt = buildResolverPrompt(maxParallelSubagents)
+        agentConfig.prompt = buildResolverPrompt(maxParallelSubagents, singleAgentMode)
       }
       if (name === "resolver" && contextInjection) {
         agentConfig.prompt = agentConfig.prompt + "\n\n" + contextInjection
@@ -43,14 +44,6 @@ export function applyResolveConfig(config: Config, resolveConfig: ResolveConfig,
     if (permission) agentConfig.permission = permission
     if (model) agentConfig.model = model
     config.agent[name] = agentConfig
-    }
-
-    if (resolveConfig.context7 !== false) {
-    config.mcp ??= {}
-    config.mcp.context7 ??= {
-      type: "remote",
-      url: "https://mcp.context7.com/mcp",
-    }
     }
 
     if (resolveConfig.commands) {
@@ -108,7 +101,6 @@ export function defaultResolveConfig(): ResolveConfig {
     models: {},
     agents: {},
     preserveNative: true,
-    context7: true,
     commands: false,
     autoApprove: true,
     autoUpdate: true,
@@ -122,12 +114,12 @@ export function mergeResolveConfig(...configs: Array<ResolveConfig | undefined>)
     result.tier = config.tier ?? result.tier
     result.enabled = config.enabled ?? result.enabled
     result.preserveNative = config.preserveNative ?? result.preserveNative
-    result.context7 = config.context7 ?? result.context7
     result.commands = config.commands ?? result.commands
     result.autoApprove = config.autoApprove ?? result.autoApprove
     result.maxParallelSubagents = config.maxParallelSubagents ?? result.maxParallelSubagents
     result.autoUpdate = config.autoUpdate ?? result.autoUpdate
     result.language = config.language ?? result.language
+    result.singleAgentMode = config.singleAgentMode ?? result.singleAgentMode
     result.models = { ...result.models, ...config.models }
     result.agents = mergeAgents(result.agents, config.agents)
     }
@@ -221,10 +213,10 @@ export function normalizeResolveConfig(value: unknown, source: string): ResolveP
     }
 
     if (config.preserveNative !== undefined) result.preserveNative = expectBoolean(config.preserveNative, `${source}.preserveNative`)
-    if (config.context7 !== undefined) result.context7 = expectBoolean(config.context7, `${source}.context7`)
     if (config.commands !== undefined) result.commands = expectBoolean(config.commands, `${source}.commands`)
     if (config.autoApprove !== undefined) result.autoApprove = expectBoolean(config.autoApprove, `${source}.autoApprove`)
     if (config.autoUpdate !== undefined) result.autoUpdate = expectBoolean(config.autoUpdate, `${source}.autoUpdate`)
+    if (config.singleAgentMode !== undefined) result.singleAgentMode = expectBoolean(config.singleAgentMode, `${source}.singleAgentMode`)
 
     if (config.tier !== undefined) {
     const tier = expectString(config.tier, `${source}.tier`)
@@ -388,12 +380,12 @@ export const VALID_TOP_LEVEL_KEYS = new Set<string>([
       "models",
       "agents",
       "preserveNative",
-      "context7",
       "commands",
       "autoApprove",
       "maxParallelSubagents",
       "autoUpdate",
       "language",
+      "singleAgentMode",
       "config",
     ]);
 export const VALID_AGENT_KEYS = new Set<string>([

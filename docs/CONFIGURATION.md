@@ -36,7 +36,6 @@ built-in defaults -> first config file found -> inline plugin options
 {
   "enabled": ["coder", "resolver", "explorer", "reviewer", "deep-reviewer", "planner"],
   "preserveNative": true,
-  "context7": true,
   "commands": false,
   "models": {},
   "agents": {
@@ -56,18 +55,17 @@ built-in defaults -> first config file found -> inline plugin options
 
 | Key | Type | Default | Purpose |
 | --- | --- | --- | --- |
-| `profile` | `mix`, `glm`, `gpt` | `mix` | Prompt/profile preset. |
 | `tier` | `bronze`, `silver`, `gold` | unset | Enables the matching tier preset when configured. |
 | `enabled` | array | default agents | Agents to inject. |
 | `models` | object | `{}` | Model aliases and role pins. |
 | `agents` | object | `{}` | Per-agent overrides. |
 | `preserveNative` | boolean | `true` | Preserve native OpenCode agents. |
-| `context7` | boolean | `true` | Register Context7 MCP if missing. |
 | `commands` | boolean | `false` | Add `/resolve`, `/resolve-code`, `/resolve-review`. |
 | `autoApprove` | boolean | `true` | Compatibility flag. Permission behavior is explicit. |
 | `autoUpdate` | boolean | `true` | Allow additive installer migrations. |
 | `language` | `auto`, `en`, `ko` | `auto` | Prompt language preference. |
 | `maxParallelSubagents` | positive integer | unset | Prompt-level soft limit for concurrent coder dispatch. |
+| `singleAgentMode` | boolean | `false` | When true, the resolver edits directly instead of dispatching a coder subagent — lower latency on simple tasks. |
 | `config` | string | unset | Custom config path when used inline. |
 
 Unknown keys fail fast.
@@ -120,9 +118,9 @@ Three-tier example:
 ```json
 {
   "models": {
-    "bronze": "zai-coding-plan/glm-4.5",
-    "silver": "zai-coding-plan/glm-5.1",
-    "gold": "openai/gpt-5.5",
+    "bronze": "zai-coding-plan/glm-5.2",
+    "silver": "zai-coding-plan/glm-5.2",
+    "gold": "zai-coding-plan/glm-5.2",
     "explorer": "bronze",
     "coder": "silver",
     "resolver": "gold",
@@ -136,35 +134,10 @@ Three-tier example:
 Supported alias keys:
 
 ```text
-fast, strong, mini, codex, quick, deep, glm, gpt,
+fast, strong, mini, quick, deep,
 bronze, silver, gold,
-gpt-bronze, gpt-silver, gpt-gold,
-glm-bronze, glm-silver, glm-gold,
 and every supported agent name
 ```
-
-## Context7
-
-Default:
-
-```json
-{ "context7": true }
-```
-
-The plugin adds:
-
-```json
-{
-  "mcp": {
-    "context7": {
-      "type": "remote",
-      "url": "https://mcp.context7.com/mcp"
-    }
-  }
-}
-```
-
-If `mcp.context7` already exists, it is preserved.
 
 ## Full Reference File
 

@@ -13,10 +13,10 @@ To reconfigure model pins without delegating installation to an LLM:
 opencode-resolve setup --models
 ```
 
-For a regenerated `resolve.json` that preserves existing model pins:
+To reset `resolve.json` from scratch (wipes model pins too):
 
 ```sh
-opencode-resolve setup --fresh
+opencode-resolve setup --reset
 ```
 
 Manual cache refresh remains available when needed:

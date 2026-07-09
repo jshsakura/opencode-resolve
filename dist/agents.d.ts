@@ -4,7 +4,7 @@ export declare const DEFAULT_ENABLED: ResolveAgentName[];
 export declare const VALID_AGENT_NAMES: readonly ["coder", "reviewer", "resolver", "architect", "debugger", "researcher", "explorer", "deep-reviewer", "planner"];
 export declare const VALID_AGENT_NAME_SET: Set<string>;
 export declare const DEFAULT_AGENT_CONFIG: Record<ResolveAgentName, Required<Pick<ResolveAgentConfig, "mode" | "description" | "prompt" | "color">> & ResolveAgentConfig>;
-export declare function buildResolverPrompt(maxParallelSubagents: number | undefined): string;
+export declare function buildResolverPrompt(maxParallelSubagents: number | undefined, singleAgentMode?: boolean): string;
 export declare const VALID_MODEL_ALIASES: readonly ["coder", "reviewer", "resolver", "architect", "debugger", "researcher", "explorer", "deep-reviewer", "planner", "quick", "deep", "fast", "strong", "mini", "bronze", "silver", "gold"];
 export declare const VALID_MODEL_ALIAS_SET: Set<string>;
 export declare const VALID_TIERS: Set<string>;

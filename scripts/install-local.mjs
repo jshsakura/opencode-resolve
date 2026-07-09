@@ -56,7 +56,7 @@ async function chooseExistingResolveConfigAction() {
   }
 
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
-    console.log("Existing resolve config found; preserving it. Run `opencode-resolve setup --models` for model setup or `opencode-resolve setup --fresh` to regenerate without dropping model pins.")
+    console.log("Existing resolve config found; preserving it. Run `opencode-resolve setup --models` for model setup or `opencode-resolve setup --reset` to reset from scratch (model pins wiped).")
     return "update"
   }
 
@@ -106,18 +106,8 @@ async function createAdaptiveResolveConfig(options = {}) {
 
   const resolveConfig = { ...example }
   let preset = {}
-  if (process.env.OPENCODE_RESOLVE_AUTO_PRESET === "1") {
-    const currentModel = detectOpenCodeModel(opencodeConfig)
-    preset = buildModelPreset(currentModel)
-  } else {
-    resolveConfig.profile = "mix"
-    resolveConfig.models = {}
-    resolveConfig.agents = {
-      ...resolveConfig.agents,
-      gpt: { ...(resolveConfig.agents?.gpt ?? {}), enabled: true },
-      glm: { ...(resolveConfig.agents?.glm ?? {}), enabled: true },
-    }
-  }
+  const currentModel = detectOpenCodeModel(opencodeConfig)
+  preset = buildModelPreset(currentModel)
   if (preset && Object.keys(preset).length > 0) {
     resolveConfig.models = preservedModels ? { ...preset, ...preservedModels } : preset
   } else if (preservedModels) {

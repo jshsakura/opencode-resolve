@@ -37,7 +37,6 @@ opencode-resolve setup
 {
   "enabled": ["coder", "resolver", "explorer", "reviewer", "deep-reviewer", "planner"],
   "preserveNative": true,
-  "context7": true,
   "commands": false,
   "models": {},
   "agents": {
@@ -63,13 +62,11 @@ opencode-resolve setup [options]
 
 | Option | What it does |
 | --- | --- |
-| `--fresh` | Back up existing `resolve.json` and run setup again. Preserves model pins. |
+| `--reset` | Back up existing `resolve.json` and wipe EVERYTHING (model pins included). Aliases: `--fresh`, `--reset-config`, `--nuke`, `--wipe`, `--full-reset`. |
 | `--update` | Keep existing `resolve.json` and add only missing defaults. |
-| `--reset-config` | Back up existing `resolve.json` and regenerate everything, including model pins. |
 | `--models` | Reconfigure model pins only. Leaves the rest of `resolve.json` alone. |
 | `--auto-preset` | Non-interactive: pick a model preset from the OpenCode provider you have configured. |
 | `--force-cache` | Force the OpenCode plugin cache to reinstall without touching `resolve.json`. |
-| `--no-companions` | Skip the companion-plugin suggestions at the end of setup. |
 
 ## Environment variables
 
@@ -77,7 +74,6 @@ opencode-resolve setup [options]
 | --- | --- |
 | `OPENCODE_RESOLVE_SKIP_POSTINSTALL=1` | Skip postinstall entirely (no config edits, no cache refresh). |
 | `OPENCODE_RESOLVE_SKIP_CACHE_REFRESH=1` | Run postinstall but leave the OpenCode plugin cache as-is. |
-| `OPENCODE_RESOLVE_SKIP_COMPANIONS=1` | Hide the optional companion-plugin suggestions. |
 | `OPENCODE_RESOLVE_QUIET=1` | Silence the `[opencode-resolve] vX.Y.Z loaded` line printed on every plugin load. |
 
 Example:
@@ -92,7 +88,6 @@ After restart:
 
 - `resolver` appears as a primary agent.
 - `coder` appears as a subagent.
-- Context7 is registered unless disabled.
 
 ## Recommended Skills
 

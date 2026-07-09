@@ -53,18 +53,6 @@ opencode plugin opencode-resolve@latest --global --force
 opencode-resolve.reference.jsonc
 ```
 
-## Context7이 보이지 않음
-
-확인:
-
-```json
-{
-  "context7": true
-}
-```
-
-OpenCode 설정에 `mcp.context7`이 이미 있으면 플러그인은 그것을 보존하고 교체하지 않습니다.
-
 ## Bash가 계속 물어봄
 
 알 수 없는 명령에서는 정상입니다. 플러그인은 흔한 안전 명령을 자동 허용하고 위험 패턴을 거부하지만, 모든 bash 명령을 `allow`로 바꾸지는 않습니다.

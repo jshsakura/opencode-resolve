@@ -17,11 +17,7 @@
 
 | Agent | Mode | Purpose |
 | --- | --- | --- |
-| `gpt` | `all` | GPT-optimized primary resolver. |
-| `glm` | `all` | GLM/ZAI-optimized primary resolver. |
-| `codex` | `all` | Legacy Codex-optimized primary resolver. |
 | `architect` | `subagent` | Design/decomposition helper. |
-| `gpt-coder` | `subagent` | Stronger implementation helper. |
 | `debugger` | `subagent` | Failure reproduction and root-cause analysis. |
 | `researcher` | `subagent` | Codebase and documentation research. |
 
@@ -30,8 +26,6 @@ Enable optional agents explicitly:
 ```json
 {
   "agents": {
-    "glm": { "enabled": true },
-    "gpt": { "enabled": true },
     "debugger": { "enabled": true, "mode": "subagent" }
   }
 }

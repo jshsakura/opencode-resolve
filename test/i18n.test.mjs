@@ -5,7 +5,6 @@
 process.env.OPENCODE_RESOLVE_NO_AUTO_UPDATE = "1"
 process.env.OPENCODE_RESOLVE_SKIP_POSTINSTALL = "1"
 process.env.OPENCODE_RESOLVE_SKIP_CACHE_REFRESH = "1"
-process.env.OPENCODE_RESOLVE_SKIP_COMPANIONS = "1"
 process.env.OPENCODE_RESOLVE_QUIET = "1"
 
 globalThis.fetch = async (input) => {

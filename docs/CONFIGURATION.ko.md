@@ -36,7 +36,6 @@
 {
   "enabled": ["coder", "resolver", "explorer", "reviewer", "deep-reviewer", "planner"],
   "preserveNative": true,
-  "context7": true,
   "commands": false,
   "models": {},
   "agents": {
@@ -56,18 +55,17 @@
 
 | 키 | 타입 | 기본값 | 용도 |
 | --- | --- | --- | --- |
-| `profile` | `mix`, `glm`, `gpt` | `mix` | 프롬프트/profile preset. |
 | `tier` | `bronze`, `silver`, `gold` | 미설정 | 설정된 tier preset 활성화. |
 | `enabled` | array | 기본 에이전트 | 주입할 에이전트. |
 | `models` | object | `{}` | 모델 별칭과 역할별 핀. |
 | `agents` | object | `{}` | 에이전트별 override. |
 | `preserveNative` | boolean | `true` | OpenCode 네이티브 에이전트 보존. |
-| `context7` | boolean | `true` | 없을 때 Context7 MCP 등록. |
 | `commands` | boolean | `false` | `/resolve`, `/resolve-code`, `/resolve-review` 추가. |
 | `autoApprove` | boolean | `true` | 하위 호환 플래그. 권한 동작은 명시 설정이 제어. |
 | `autoUpdate` | boolean | `true` | 설치기 추가 마이그레이션 허용. |
 | `language` | `auto`, `en`, `ko` | `auto` | 프롬프트 언어 선호. |
 | `maxParallelSubagents` | positive integer | 미설정 | 동시 coder 디스패치에 대한 프롬프트 수준 soft limit. |
+| `singleAgentMode` | boolean | `false` | true면 resolver가 coder 서브에이전트를 디스패치하지 않고 직접 편집합니다. 단순 작업에서 지연/토큰 비용을 줄입니다. |
 | `config` | string | 미설정 | 인라인 설정에서 사용하는 사용자 지정 config 경로. |
 
 알 수 없는 키는 즉시 실패합니다.
@@ -120,9 +118,9 @@
 ```json
 {
   "models": {
-    "bronze": "zai-coding-plan/glm-4.5",
-    "silver": "zai-coding-plan/glm-5.1",
-    "gold": "openai/gpt-5.5",
+    "bronze": "zai-coding-plan/glm-5.2",
+    "silver": "zai-coding-plan/glm-5.2",
+    "gold": "zai-coding-plan/glm-5.2",
     "explorer": "bronze",
     "coder": "silver",
     "resolver": "gold",
@@ -136,35 +134,10 @@
 지원 별칭:
 
 ```text
-fast, strong, mini, codex, quick, deep, glm, gpt,
+fast, strong, mini, quick, deep,
 bronze, silver, gold,
-gpt-bronze, gpt-silver, gpt-gold,
-glm-bronze, glm-silver, glm-gold,
 모든 지원 에이전트 이름
 ```
-
-## Context7
-
-기본값:
-
-```json
-{ "context7": true }
-```
-
-플러그인은 다음 MCP를 추가합니다.
-
-```json
-{
-  "mcp": {
-    "context7": {
-      "type": "remote",
-      "url": "https://mcp.context7.com/mcp"
-    }
-  }
-}
-```
-
-`mcp.context7`이 이미 있으면 보존합니다.
 
 ## 전체 레퍼런스 파일
 

@@ -35,7 +35,6 @@ if (
 if (args.includes("--update")) env.OPENCODE_RESOLVE_REINSTALL = "update"
 if (args.includes("--models") || args.includes("--configure-models")) env.OPENCODE_RESOLVE_CONFIGURE_MODELS = "1"
 if (args.includes("--auto-preset")) env.OPENCODE_RESOLVE_AUTO_PRESET = "1"
-if (args.includes("--no-companions")) env.OPENCODE_RESOLVE_SKIP_COMPANIONS = "1"
 if (args.includes("--force-cache") || args.includes("--refresh-cache")) env.OPENCODE_RESOLVE_FORCE_CACHE_REFRESH = "1"
 
 const child = spawn(process.execPath, [postinstall], {
@@ -60,7 +59,7 @@ function printHelp() {
   console.log(`opencode-resolve
 
 Usage:
-  opencode-resolve setup [--reset|--update] [--models] [--auto-preset] [--force-cache] [--no-companions]
+  opencode-resolve setup [--reset|--update] [--models] [--auto-preset] [--force-cache]
 
 Commands:
   setup    Register the OpenCode plugin, create or migrate resolve.json, and refresh stale plugin cache.
@@ -71,7 +70,6 @@ Options:
   --models         Reconfigure model pins without replacing the rest of resolve.json.
   --auto-preset    Non-interactive provider-based model preset.
   --force-cache    Force OpenCode plugin cache refresh without deleting resolve.json.
-  --no-companions  Skip companion plugin suggestions.
 
 Examples:
   opencode-resolve setup --reset

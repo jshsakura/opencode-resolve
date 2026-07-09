@@ -26,7 +26,7 @@ npm install script는 대화형 prompt를 안정적으로 보여 주기 어렵�
 
 ```sh
 opencode-resolve setup --models
-opencode-resolve setup --fresh
+opencode-resolve setup --reset
 opencode-resolve setup --update
 ```
 
@@ -49,7 +49,6 @@ opencode-resolve setup --force-cache
 
 - `resolver`가 primary agent로 보여야 합니다.
 - `coder`가 subagent로 보여야 합니다.
-- 비활성화하지 않았다면 Context7이 등록되어야 합니다.
 
 ## 추천 스킬
 

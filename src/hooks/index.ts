@@ -10,6 +10,36 @@ import { VALID_AGENT_NAMES } from "../agents.js";
 // the current turn.
 const RESOLVE_AGENTS = new Set<string>(VALID_AGENT_NAMES);
 
+// Collaborative handoff / question patterns. A turn ending in one of these is a
+// genuine question to the user and must NEVER be rewritten into an autonomous
+// directive — doing so severs the user↔model feedback loop.
+const HANDOFF_PATTERNS: ReadonlyArray<RegExp> = [
+  /\?\s*$/,           // ends with a question mark
+  /\blet me know\b/i,
+  /\bwould you like\b/i,
+  /\bshall i\b/i,
+  /\bdo you want\b/i,
+  /\bwhat do you think\b/i,
+  /\bcan i\b/i,
+];
+
+// Code-file extensions. Only edits to code trigger the verify gate; docs/config
+// (.md/.txt/.json/...) are exempt so trivial doc changes don't force a build.
+const CODE_EXTENSIONS: ReadonlyArray<string> = [
+  "ts", "tsx", "js", "jsx", "mjs", "cjs", "mts", "cts",
+  "py", "go", "rs", "java", "kt", "scala", "rb", "php",
+  "c", "cc", "cpp", "cxx", "h", "hh", "hpp", "hxx",
+  "cs", "swift", "sh", "bash", "zsh", "fish",
+  "vue", "svelte", "astro", "gleam", "ex", "exs", "erl", "lua",
+];
+
+function isCodeFile(filePath: string | undefined): boolean {
+  if (!filePath) return true // unknown target — be conservative, require verify
+  const dot = filePath.lastIndexOf(".")
+  if (dot < 0) return true // no extension — treat as code
+  return CODE_EXTENSIONS.includes(filePath.slice(dot + 1).toLowerCase())
+}
+
 function capTemperature(current: unknown, cap: number): number {
   return typeof current === "number" && Number.isFinite(current)
     ? Math.min(current, cap)
@@ -210,7 +240,10 @@ config: async (config: any) => {
 "shell.env": async (_input: any, output: any) => {
       output.env = {
         ...output.env,
-        CI: "true",
+        // CI=true is intentionally NOT forced — it strips color output from
+        // test/lint runners (jest/vitest/eslint go --no-colors under CI) and
+        // pollutes native usage. Only non-interactive guard vars are set, to
+        // prevent prompts (npm/git/pip/debconf) from hanging the agent.
         DEBIAN_FRONTEND: "noninteractive",
         GIT_TERMINAL_PROMPT: "0",
         GIT_EDITOR: "true",
@@ -376,9 +409,13 @@ config: async (config: any) => {
 
         // Ralph Loop: an edit just happened — mark that verification is now
         // required before the resolver may report completion. Cleared when a
-        // verify command (typecheck/lint/test) runs via bash.
-        sessionState.awaitingVerify = true
-        sessionState.awaitingVerifyFile = editedPath
+        // verify command (typecheck/lint/test) runs via bash. Adaptive: skip
+        // the gate for non-code files (.md/.txt/.json/...) so trivial doc
+        // changes don't force a build/test round-trip.
+        if (isCodeFile(editedPath)) {
+          sessionState.awaitingVerify = true
+          sessionState.awaitingVerifyFile = editedPath
+        }
 
         // Ralph Loop: update sessionState.loopWarnings after every edit/write
         sessionState.loopWarnings = []
@@ -509,12 +546,6 @@ config: async (config: any) => {
         // Regex: "I've completed..." without verification
         [/I('ve| have) (completed|finished|done) (the )?.*\.$/i,
           "Verify your changes pass typecheck/lint/test before reporting completion."],
-        // Regex: passive "Let me know if..."
-        [/let me know if (you|you'd like) .*/i,
-          "Proceed with the next step. If blocked, diagnose and report specifically what failed."],
-        // Regex: "Would you like me to..."
-        [/would you like me to .*/i,
-          "Proceed with the most effective next step autonomously."],
         // Ralph Loop: detect "I'll try again" — encourage different approach, don't stop
         [/I('ll| will) (try again|retry|attempt again|redo)/i,
           "Diagnose the ROOT CAUSE of the failure, then apply a DIFFERENT fix. The Ralph Loop keeps going."],
@@ -531,6 +562,10 @@ config: async (config: any) => {
       for (const msg of output.messages) {
         for (const part of msg.parts) {
           if (part.type !== "text") continue
+          // Preserve collaborative handoffs/questions — never rewrite a turn
+          // that asks the user something. Only rewrite passive/stalled claims
+          // ("this might work", "seems fine", unverified "completed", ...).
+          if (HANDOFF_PATTERNS.some((p) => p.test(part.text.trim()))) continue
           for (const [pattern, replacement] of replacements) {
             if (typeof pattern === "string" ? part.text === pattern : pattern.test(part.text)) {
               part.text = replacement

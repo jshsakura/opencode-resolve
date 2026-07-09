@@ -1,6 +1,6 @@
 ---
 title: Configuration
-description: Config files, options, models, and Context7 behavior.
+description: Config files, options, and models.
 ---
 
 ## Discovery
@@ -22,7 +22,7 @@ Inline plugin options override file config.
 | `models` | `{}` | Model aliases and role pins. |
 | `agents` | `{}` | Per-agent overrides. |
 | `preserveNative` | `true` | Preserve native OpenCode agents. |
-| `context7` | `true` | Register Context7 MCP if missing. |
+| `singleAgentMode` | `false` | When `true`, the resolver edits directly instead of dispatching a `coder` subagent — lower latency and token cost on simple tasks. |
 | `commands` | `false` | Add `/resolve`, `/resolve-code`, `/resolve-review`. |
 | `autoApprove` | `true` | Compatibility flag. |
 | `autoUpdate` | `true` | Allow additive installer migrations. |
@@ -47,27 +47,10 @@ Resolution order:
   "models": {
     "bronze": "zai-coding-plan/glm-4.5",
     "silver": "zai-coding-plan/glm-5.1",
-    "gold": "openai/gpt-5.5",
+    "gold": "zai-coding-plan/glm-5.2",
     "explorer": "bronze",
     "coder": "silver",
     "resolver": "gold"
   }
 }
 ```
-
-## Context7
-
-With `"context7": true`, the plugin registers:
-
-```json
-{
-  "mcp": {
-    "context7": {
-      "type": "remote",
-      "url": "https://mcp.context7.com/mcp"
-    }
-  }
-}
-```
-
-If `mcp.context7` already exists, it is preserved.

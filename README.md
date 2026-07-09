@@ -29,7 +29,6 @@ opencode-resolve setup
 - [Model Setup](#model-setup)
 - [Agents](#agents)
 - [Permissions](#permissions)
-- [Context7](#context7)
 - [Project Context](#project-context)
 - [Upgrade](#upgrade)
 - [Development](#development)
@@ -40,7 +39,6 @@ opencode-resolve setup
 - A verified `resolver -> coder` loop that favors small patches and evidence-backed completion.
 - Read-only scout/review subagents for targeted discovery and verification gaps.
 - Optional command aliases: `/resolve`, `/resolve-code`, `/resolve-review`.
-- Optional Context7 MCP registration for documentation lookup.
 - Strict config validation: unknown keys, bad modes, bad agent names, and invalid types fail early.
 - Conservative migration: generated config is additive and existing values are not overwritten without consent.
 
@@ -94,11 +92,6 @@ Skip postinstall automation:
 OPENCODE_RESOLVE_SKIP_POSTINSTALL=1 npm install -g opencode-resolve
 ```
 
-### Optional companion plugins
-
-- `@tarquinen/opencode-dcp@latest` — trims obsolete tool output during long loops.
-- `@slkiser/opencode-quota@latest` — shows token/quota usage without polluting context.
-
 ### Manual setup
 
 Add the plugin to `~/.config/opencode/opencode.json`:
@@ -115,7 +108,6 @@ Create `~/.config/opencode/resolve.json`:
 {
   "enabled": ["coder", "resolver", "explorer", "reviewer", "deep-reviewer", "planner"],
   "preserveNative": true,
-  "context7": true,
   "commands": false,
   "models": {},
   "agents": {
@@ -199,12 +191,12 @@ Full commented reference: [opencode-resolve.reference.jsonc](./opencode-resolve.
 | `models` | object | `{}` | Model aliases and per-role model pins. |
 | `agents` | object | `{}` | Per-agent overrides. |
 | `preserveNative` | boolean | `true` | Keep native OpenCode agents unless explicitly overridden. |
-| `context7` | boolean | `true` | Register Context7 MCP if missing. |
 | `commands` | boolean | `false` | Add `/resolve`, `/resolve-code`, and `/resolve-review`. |
 | `autoApprove` | boolean | `true` | Backward-compatible config flag; current permissions remain explicit. |
 | `autoUpdate` | boolean | (no-op) | **Deprecated.** Field is accepted for backward compatibility but ignored. Auto-update spawned `opencode plugin` per `hooks.config()` call, which fanned out into hundreds of parallel installs when multiple OpenCode instances loaded the plugin at once. Update manually with `npm i -g opencode-resolve`. |
 | `language` | `auto` / `en` / `ko` | `auto` | Prompt language preference. |
 | `maxParallelSubagents` | positive integer | unset | Optional prompt-level soft limit for concurrent coder dispatch. |
+| `singleAgentMode` | boolean | `false` | When `true`, the resolver makes all edits directly instead of dispatching a `coder` subagent — lower latency and token cost on simple tasks. Information/diagnostic subagents (explorer/debugger) are still available. |
 
 ### Agent Overrides
 
@@ -289,27 +281,6 @@ Use a sandbox or VM for untrusted repositories.
 
 When set, the value is inserted into the resolver prompt. It is not a runtime semaphore. Restart OpenCode after changing it. A custom `agents.resolver.prompt` replaces the templated rule.
 
-## Context7
-
-When `context7: true`, the plugin registers Context7 MCP if `mcp.context7` is not already present:
-
-```json
-{
-  "mcp": {
-    "context7": {
-      "type": "remote",
-      "url": "https://mcp.context7.com/mcp"
-    }
-  }
-}
-```
-
-Disable it with:
-
-```json
-{ "context7": false }
-```
-
 ## Project Context
 
 The plugin exposes committed project context without stuffing the entire repo into prompts. It detects:
@@ -363,7 +334,7 @@ Git hooks:
 npm run hooks:install
 ```
 
-Verification covered by tests includes agent injection, config loading, model aliases, permissions, optional commands, Context7 preservation, native agent preservation, and postinstall behavior.
+Verification covered by tests includes agent injection, config loading, model aliases, permissions, optional commands, native agent preservation, and postinstall behavior.
 
 ## Release
 

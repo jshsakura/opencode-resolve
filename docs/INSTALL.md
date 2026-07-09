@@ -54,7 +54,6 @@ Create `~/.config/opencode/resolve.json`:
 {
   "enabled": ["coder", "resolver", "explorer", "reviewer", "deep-reviewer", "planner"],
   "preserveNative": true,
-  "context7": true,
   "commands": false,
   "models": {},
   "agents": {
@@ -81,7 +80,7 @@ Use the package CLI when you want a visible, interactive setup flow. npm install
 
 ```sh
 opencode-resolve setup --models
-opencode-resolve setup --fresh
+opencode-resolve setup --reset
 ```
 
 For additive migration:
@@ -101,25 +100,6 @@ opencode-resolve setup --force-cache
 ```sh
 OPENCODE_RESOLVE_SKIP_POSTINSTALL=1 npm install -g opencode-resolve
 ```
-
-## Companion Plugins
-
-These are optional:
-
-```json
-{
-  "plugin": [
-    "@tarquinen/opencode-dcp@latest",
-    "@slkiser/opencode-quota@latest",
-    "opencode-resolve"
-  ]
-}
-```
-
-Use them only if you want their behavior:
-
-- `opencode-dcp` reduces stale tool-output pressure during long sessions.
-- `opencode-quota` adds usage/quota visibility in the TUI.
 
 ## Recommended Skills
 
@@ -143,6 +123,5 @@ After restarting OpenCode:
 
 - `resolver` should be available as a primary agent.
 - `coder` should be available as a subagent.
-- Context7 should be registered unless disabled.
 
 For a full reference, see [Configuration](CONFIGURATION.md).

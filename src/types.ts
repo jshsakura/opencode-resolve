@@ -43,12 +43,12 @@ export type ResolveConfig = {
       models?: Partial<Record<ModelAlias, string>>
       agents?: Partial<Record<ResolveAgentName, ResolveAgentConfig>>
       preserveNative?: boolean
-      context7?: boolean
       commands?: boolean
       autoApprove?: boolean
       maxParallelSubagents?: number
       autoUpdate?: boolean
       language?: LanguageSetting
+      singleAgentMode?: boolean
     };
 export type ResolvePluginOptions = ResolveConfig & {
       config?: string

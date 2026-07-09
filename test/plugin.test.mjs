@@ -7,7 +7,6 @@
 process.env.OPENCODE_RESOLVE_NO_AUTO_UPDATE = "1"
 process.env.OPENCODE_RESOLVE_SKIP_POSTINSTALL = "1"
 process.env.OPENCODE_RESOLVE_SKIP_CACHE_REFRESH = "1"
-process.env.OPENCODE_RESOLVE_SKIP_COMPANIONS = "1"
 process.env.OPENCODE_RESOLVE_QUIET = "1"
 
 globalThis.fetch = async (input) => {
@@ -242,21 +241,6 @@ test("omits agent models when no explicit or OpenCode default model exists", asy
   assert.equal("model" in config.agent["deep-reviewer"], false)
 })
 
-test("adds context7 preset without overwriting existing context7 config", async () => {
-  const existingContext7 = {
-    type: "remote",
-    url: "https://example.test/context7",
-    enabled: false,
-  }
-  const { config } = await runPlugin({
-    mcp: {
-      context7: existingContext7,
-    },
-  })
-
-  assert.deepEqual(config.mcp.context7, existingContext7)
-})
-
 test("reads project config and resolves model aliases", async () => {
   const project = await createProject({
     "opencode-resolve.json": {
@@ -273,7 +257,6 @@ test("reads project config and resolves model aliases", async () => {
           maxSteps: 4,
         },
       },
-      context7: false,
     },
   })
 
@@ -295,7 +278,6 @@ test("plugin options override file config", async () => {
   const project = await createProject({
     "opencode-resolve.json": {
       enabled: ["coder", "reviewer", "debugger"],
-      context7: false,
       models: {
         quick: "file/quick",
         coder: "quick",
@@ -306,7 +288,6 @@ test("plugin options override file config", async () => {
   try {
     const { config } = await runPlugin({}, project, {
       enabled: ["reviewer", "resolver"],
-      context7: true,
       models: {
         deep: "option/deep",
         reviewer: "deep",
@@ -316,7 +297,6 @@ test("plugin options override file config", async () => {
     assert.equal(config.agent.coder, undefined)
     assert.equal(config.agent.debugger, undefined)
     assert.equal(config.agent.reviewer.model, "option/deep")
-    assert.equal(config.mcp.context7.url, "https://mcp.context7.com/mcp")
   } finally {
     await project.cleanup()
   }
@@ -577,6 +557,16 @@ test("default resolver prompt enforces loop discipline and internal specialists"
   assert.equal(config.agent.resolver.maxSteps, 25)
   assert.equal(config.agent.coder.maxSteps, 15)
   assert.equal(config.agent["deep-reviewer"].mode, "subagent")
+})
+
+test("singleAgentMode makes the resolver edit directly without dispatching a coder", async () => {
+  const { config } = await runPlugin({ model: "provider/default" }, undefined, { singleAgentMode: true })
+
+  assert.match(config.agent.resolver.prompt, /DIRECT MODE/)
+  assert.match(config.agent.resolver.prompt, /Make ALL edits yourself/)
+  assert.doesNotMatch(config.agent.resolver.prompt, /Serial dispatch: ONE coder/)
+  // Coder subagent is still registered but the resolver must not delegate implementation to it.
+  assert.ok(config.agent.coder, "coder agent still registered for non-resolver use")
 })
 
 test("injects project context: knowledge files + verify commands into resolver prompt", async () => {
@@ -864,11 +854,12 @@ test("permission.ask auto-denies banned interactive commands (vim, nano, less, R
   }
 })
 
-test("shell.env sets non-interactive environment variables", async () => {
+test("shell.env sets non-interactive guard variables without polluting CI/NO_COLOR", async () => {
   const hooks = await getHooks()
   const output = { env: {} }
   await hooks["shell.env"]({ cwd: "/tmp" }, output)
-  assert.equal(output.env.CI, "true")
+  // CI=true is intentionally NOT forced — it strips color from test/lint output.
+  assert.equal(output.env.CI, undefined, "CI must not be forced (kills color output)")
   assert.equal(output.env.DEBIAN_FRONTEND, "noninteractive")
   assert.equal(output.env.GIT_TERMINAL_PROMPT, "0")
   assert.equal(output.env.GIT_EDITOR, "true")
@@ -878,6 +869,35 @@ test("shell.env sets non-interactive environment variables", async () => {
   assert.equal(output.env.npm_config_yes, "true")
   assert.equal(output.env.PIP_NO_INPUT, "1")
 })
+
+// ── Adaptive verification (non-code files skip the verify gate) ──────────────
+
+test("awaitingVerify triggers for code file edits (.ts)", async () => {
+  const hooks = await getHooks()
+  await hooks["tool.execute.after"]({ tool: "edit", args: { filePath: "src/foo.ts" } }, { output: "" })
+  const out = { system: [] }
+  await hooks["experimental.chat.system.transform"]({}, out)
+  const sys = JSON.stringify(out.system).toLowerCase()
+  assert.ok(
+    sys.includes("awaiting") || sys.includes("verif"),
+    "code edit should require verification",
+  )
+})
+
+test("awaitingVerify is skipped for non-code files (.md/.txt/.json)", async () => {
+  const hooks = await getHooks()
+  for (const file of ["README.md", "notes.txt", "config.json", "package.json"]) {
+    await hooks["tool.execute.after"]({ tool: "edit", args: { filePath: file } }, { output: "" })
+  }
+  const out = { system: [] }
+  await hooks["experimental.chat.system.transform"]({}, out)
+  const sys = JSON.stringify(out.system).toLowerCase()
+  assert.ok(
+    !sys.includes("awaiting") && !sys.includes("verif"),
+    "non-code edits should NOT require verification",
+  )
+})
+
 
 test("chat.params caps temperature deterministically for resolve agents", async () => {
   const project = await createProject({
@@ -1941,7 +1961,7 @@ test("messages.transform replaces 'I've completed' without verification", async 
   )
 })
 
-test("messages.transform replaces 'Would you like me to' with autonomous action", async () => {
+test("messages.transform preserves 'Would you like me to' handoffs (no hijack)", async () => {
   const hooks = await getHooks()
   const output = {
     messages: [
@@ -1949,13 +1969,15 @@ test("messages.transform replaces 'Would you like me to' with autonomous action"
     ],
   }
   await hooks["experimental.chat.messages.transform"]({}, output)
+  // Collaborative questions must NOT be rewritten into autonomous directives.
   assert.equal(
     output.messages[0].parts[0].text,
-    "Proceed with the most effective next step autonomously.",
+    "Would you like me to refactor this module?",
+    "handoff questions should be preserved verbatim",
   )
 })
 
-test("messages.transform replaces 'Let me know if' with action-oriented prompt", async () => {
+test("messages.transform preserves 'Let me know if' handoffs (no hijack)", async () => {
   const hooks = await getHooks()
   const output = {
     messages: [
@@ -1963,9 +1985,10 @@ test("messages.transform replaces 'Let me know if' with action-oriented prompt",
     ],
   }
   await hooks["experimental.chat.messages.transform"]({}, output)
-  assert.ok(
-    output.messages[0].parts[0].text.includes("Proceed"),
-    `should replace handoff with action, got: ${output.messages[0].parts[0].text}`,
+  assert.equal(
+    output.messages[0].parts[0].text,
+    "Let me know if you need any further changes.",
+    "handoff text should be preserved verbatim",
   )
 })
 

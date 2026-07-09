@@ -674,52 +674,24 @@ test("postinstall offers the generic auto path for non-GPT/GLM providers", async
   }
 })
 
-test("non-interactive postinstall prints companion-plugin suggestions when companions are missing", async () => {
+test("postinstall never mentions companion plugins (no forced or suggested dependencies)", async () => {
   const configHome = await mkdtemp(join(tmpdir(), "opencode-resolve-postinstall-"))
 
   try {
     const { stdout } = runPostinstall(configHome)
-    assert.match(stdout, /recommended companion plugins not detected/)
-    assert.match(stdout, /@tarquinen\/opencode-dcp/)
-    assert.match(stdout, /@slkiser\/opencode-quota/)
-    assert.match(stdout, /opencode plugin @tarquinen\/opencode-dcp@latest --global --force/)
+    assert.doesNotMatch(stdout, /companion plugins/i, "must not mention companion plugins at all")
+    assert.doesNotMatch(stdout, /@tarquinen\/opencode-dcp/, "must not reference opencode-dcp")
+    assert.doesNotMatch(stdout, /@slkiser\/opencode-quota/, "must not reference opencode-quota")
+    const opencodeConfig = await readJson(join(configHome, "opencode.json"))
+    const pluginList = JSON.stringify(opencodeConfig.plugin ?? [])
+    assert.ok(!pluginList.includes("opencode-dcp"), "companion must NOT be auto-installed")
+    assert.ok(!pluginList.includes("opencode-quota"), "companion must NOT be auto-installed")
   } finally {
     await rm(configHome, { recursive: true, force: true })
   }
 })
 
-test("non-interactive postinstall stays silent about companions already present", async () => {
-  const configHome = await mkdtemp(join(tmpdir(), "opencode-resolve-postinstall-"))
-
-  try {
-    await writeJson(join(configHome, "opencode.json"), {
-      plugin: [
-        "opencode-resolve",
-        "@tarquinen/opencode-dcp@latest",
-        "@slkiser/opencode-quota@latest",
-      ],
-    })
-
-    const { stdout } = runPostinstall(configHome)
-    assert.match(stdout, /recommended companion plugins already present/)
-    assert.doesNotMatch(stdout, /recommended companion plugins not detected/)
-  } finally {
-    await rm(configHome, { recursive: true, force: true })
-  }
-})
-
-test("OPENCODE_RESOLVE_SKIP_COMPANIONS=1 silences the companion suggestion", async () => {
-  const configHome = await mkdtemp(join(tmpdir(), "opencode-resolve-postinstall-"))
-
-  try {
-    const { stdout } = runPostinstall(configHome, { OPENCODE_RESOLVE_SKIP_COMPANIONS: "1" })
-    assert.doesNotMatch(stdout, /recommended companion plugins/)
-  } finally {
-    await rm(configHome, { recursive: true, force: true })
-  }
-})
-
-test("postinstall injects ZAI MCP server without copying API keys", async () => {
+test("postinstall does NOT inject any MCP server, even for GLM models (no forced dependencies)", async () => {
   const configHome = await mkdtemp(join(tmpdir(), "opencode-resolve-postinstall-"))
   const dataHome = await mkdtemp(join(tmpdir(), "opencode-resolve-data-"))
 
@@ -728,33 +700,28 @@ test("postinstall injects ZAI MCP server without copying API keys", async () => 
       model: "zai-coding-plan/glm-5.1",
     })
 
-    // Set up auth.json with ZAI API key
+    // Auth.json with a ZAI API key present — must never leak into opencode.json.
     await mkdir(join(dataHome, "opencode"), { recursive: true })
     await writeJson(join(dataHome, "opencode", "auth.json"), {
       "zai-coding-plan": { type: "api", key: "test-api-key-12345" },
     })
 
-    runPostinstall(configHome, { XDG_DATA_HOME: dataHome })
+    runPostinstall(configHome, { XDG_DATA_HOME: dataHome, Z_AI_API_KEY: "env-fallback-key" })
 
     const opencodeConfig = await readJson(join(configHome, "opencode.json"))
-
-    // Local ZAI MCP server should be present
-    assert.ok(opencodeConfig.mcp, "mcp section should exist")
-    assert.ok(opencodeConfig.mcp["zai-mcp-server"], "zai-mcp-server should be injected")
-    assert.equal(opencodeConfig.mcp["zai-mcp-server"].environment.Z_AI_MODE, "ZAI")
-    assert.equal(opencodeConfig.mcp["zai-mcp-server"].environment.Z_AI_API_KEY, undefined)
-    assert.equal(opencodeConfig.mcp["web-search-prime"], undefined)
-    assert.equal(opencodeConfig.mcp["web-reader"], undefined)
-    assert.equal(opencodeConfig.mcp.zread, undefined)
+    // The plugin must never write MCP servers (zai-mcp-server, web-search-prime, etc.).
+    assert.ok(!opencodeConfig.mcp || Object.keys(opencodeConfig.mcp).length === 0,
+      "no MCP servers should be injected for any model")
+    assert.doesNotMatch(JSON.stringify(opencodeConfig), /test-api-key-12345|env-fallback-key|Z_AI_API_KEY|Authorization/i,
+      "no credentials must ever be copied into opencode.json")
   } finally {
     await rm(configHome, { recursive: true, force: true })
     await rm(dataHome, { recursive: true, force: true })
   }
 })
 
-test("postinstall preserves existing MCP servers and skips already-present ZAI MCPs", async () => {
+test("postinstall preserves existing user MCP servers without modification", async () => {
   const configHome = await mkdtemp(join(tmpdir(), "opencode-resolve-postinstall-"))
-  const dataHome = await mkdtemp(join(tmpdir(), "opencode-resolve-data-"))
 
   try {
     await writeJson(join(configHome, "opencode.json"), {
@@ -764,67 +731,15 @@ test("postinstall preserves existing MCP servers and skips already-present ZAI M
         "zai-mcp-server": { type: "local", command: ["custom-npx"] },
       },
     })
-    await mkdir(join(dataHome, "opencode"), { recursive: true })
-    await writeJson(join(dataHome, "opencode", "auth.json"), {
-      "zai-coding-plan": { type: "api", key: "test-key" },
-    })
-
-    runPostinstall(configHome, { XDG_DATA_HOME: dataHome })
-
-    const opencodeConfig = await readJson(join(configHome, "opencode.json"))
-
-    // Existing custom MCP preserved
-    assert.deepEqual(opencodeConfig.mcp["custom-mcp"], { type: "local", command: ["my-tool"] })
-    // Existing ZAI MCP NOT overwritten
-    assert.deepEqual(opencodeConfig.mcp["zai-mcp-server"], { type: "local", command: ["custom-npx"] })
-    // No API key or remote Authorization headers are copied into config
-    assert.equal(opencodeConfig.mcp["web-search-prime"], undefined)
-    assert.equal(opencodeConfig.mcp["web-reader"], undefined)
-    assert.equal(opencodeConfig.mcp.zread, undefined)
-  } finally {
-    await rm(configHome, { recursive: true, force: true })
-    await rm(dataHome, { recursive: true, force: true })
-  }
-})
-
-test("postinstall does NOT inject ZAI MCP servers for non-GLM models", async () => {
-  const configHome = await mkdtemp(join(tmpdir(), "opencode-resolve-postinstall-"))
-
-  try {
-    await writeJson(join(configHome, "opencode.json"), {
-      model: "openai/gpt-4o",
-    })
 
     runPostinstall(configHome)
 
     const opencodeConfig = await readJson(join(configHome, "opencode.json"))
-    assert.ok(!opencodeConfig.mcp || Object.keys(opencodeConfig.mcp).length === 0,
-      "no ZAI MCPs should be injected for GPT-only setup")
+    // Existing MCPs are left exactly as the user configured them — never overwritten.
+    assert.deepEqual(opencodeConfig.mcp["custom-mcp"], { type: "local", command: ["my-tool"] })
+    assert.deepEqual(opencodeConfig.mcp["zai-mcp-server"], { type: "local", command: ["custom-npx"] })
   } finally {
     await rm(configHome, { recursive: true, force: true })
-  }
-})
-
-test("postinstall does not copy ZAI API key from env into config", async () => {
-  const configHome = await mkdtemp(join(tmpdir(), "opencode-resolve-postinstall-"))
-  const dataHome = await mkdtemp(join(tmpdir(), "opencode-resolve-data-"))
-
-  try {
-    await writeJson(join(configHome, "opencode.json"), {
-      model: "zai-coding-plan/glm-5.1",
-    })
-    runPostinstall(configHome, {
-      XDG_DATA_HOME: dataHome,
-      Z_AI_API_KEY: "env-fallback-key",
-    })
-
-    const opencodeConfig = await readJson(join(configHome, "opencode.json"))
-    assert.ok(opencodeConfig.mcp["zai-mcp-server"])
-    assert.equal(opencodeConfig.mcp["zai-mcp-server"].environment.Z_AI_API_KEY, undefined)
-    assert.doesNotMatch(JSON.stringify(opencodeConfig), /env-fallback-key/)
-  } finally {
-    await rm(configHome, { recursive: true, force: true })
-    await rm(dataHome, { recursive: true, force: true })
   }
 })
 

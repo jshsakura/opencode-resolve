@@ -16,10 +16,10 @@ opencode
 opencode-resolve setup --models
 ```
 
-기존 모델 핀을 유지한 채 `resolve.json`을 다시 생성하려면:
+처음부터 다시 설정하려면(모델 핀도 함께 초기화):
 
 ```sh
-opencode-resolve setup --fresh
+opencode-resolve setup --reset
 ```
 
 필요할 때 수동 캐시 갱신도 가능합니다.

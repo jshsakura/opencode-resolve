@@ -18,11 +18,7 @@ description: Default and optional OpenCode agents injected by opencode-resolve.
 
 | Agent | Purpose |
 | --- | --- |
-| `gpt` | GPT-optimized primary resolver. |
-| `glm` | GLM/ZAI-optimized primary resolver. |
-| `codex` | Legacy Codex-optimized primary resolver. |
 | `architect` | Design/decomposition helper. |
-| `gpt-coder` | Stronger implementation helper. |
 | `debugger` | Reproduction and root-cause helper. |
 | `researcher` | Codebase and documentation research. |
 

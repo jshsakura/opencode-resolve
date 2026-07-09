@@ -23,7 +23,6 @@ npm run coverage
 - 모델 별칭 해석
 - 권한 hook 동작
 - 선택적 명령어
-- Context7 보존
 - OpenCode 네이티브 에이전트 보존
 - postinstall 동작
 

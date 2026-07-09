@@ -53,18 +53,6 @@ Compare your config with:
 opencode-resolve.reference.jsonc
 ```
 
-## Context7 Does Not Appear
-
-Check:
-
-```json
-{
-  "context7": true
-}
-```
-
-If `mcp.context7` already exists in OpenCode config, the plugin preserves it and does not replace it.
-
 ## Bash Still Asks
 
 That is expected for unknown commands. The plugin auto-allows common safe commands and denies known-dangerous patterns, but it does not turn all bash commands into `allow`.

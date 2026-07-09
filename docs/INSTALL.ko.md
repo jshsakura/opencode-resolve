@@ -54,7 +54,6 @@ opencode
 {
   "enabled": ["coder", "resolver", "explorer", "reviewer", "deep-reviewer", "planner"],
   "preserveNative": true,
-  "context7": true,
   "commands": false,
   "models": {},
   "agents": {
@@ -81,7 +80,7 @@ npm install script는 prompt를 안정적으로 보여 주기 어렵습니다. �
 
 ```sh
 opencode-resolve setup --models
-opencode-resolve setup --fresh
+opencode-resolve setup --reset
 ```
 
 추가적 마이그레이션만 원하면:
@@ -101,25 +100,6 @@ opencode-resolve setup --force-cache
 ```sh
 OPENCODE_RESOLVE_SKIP_POSTINSTALL=1 npm install -g opencode-resolve
 ```
-
-## Companion 플러그인
-
-선택 사항입니다.
-
-```json
-{
-  "plugin": [
-    "@tarquinen/opencode-dcp@latest",
-    "@slkiser/opencode-quota@latest",
-    "opencode-resolve"
-  ]
-}
-```
-
-필요할 때만 사용하세요.
-
-- `opencode-dcp`: 긴 세션에서 오래된 tool output 부담을 줄입니다.
-- `opencode-quota`: TUI에서 사용량/quota 가시성을 추가합니다.
 
 ## 추천 스킬
 
@@ -143,6 +123,5 @@ OpenCode 재시작 후:
 
 - `resolver`가 primary agent로 보여야 합니다.
 - `coder`가 subagent로 사용 가능해야 합니다.
-- 비활성화하지 않았다면 Context7이 등록되어야 합니다.
 
 전체 설정은 [설정 레퍼런스](CONFIGURATION.ko.md)를 참고하세요.

@@ -1,6 +1,6 @@
 ---
 title: 설정
-description: 설정 파일, 옵션, 모델, Context7 동작.
+description: 설정 파일, 옵션, 모델.
 ---
 
 ## 탐색 순서
@@ -22,7 +22,7 @@ description: 설정 파일, 옵션, 모델, Context7 동작.
 | `models` | `{}` | 모델 별칭과 역할별 핀 |
 | `agents` | `{}` | 에이전트별 override |
 | `preserveNative` | `true` | OpenCode 네이티브 에이전트 보존 |
-| `context7` | `true` | 없을 때 Context7 MCP 등록 |
+| `singleAgentMode` | `false` | `true`면 resolver가 `coder` subagent를 호출하지 않고 직접 편집합니다 (단순 작업에서 지연·토큰 비용 절감). |
 | `commands` | `false` | `/resolve`, `/resolve-code`, `/resolve-review` 추가 |
 | `maxParallelSubagents` | 미설정 | coder fan-out soft limit |
 

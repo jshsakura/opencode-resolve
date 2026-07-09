@@ -58,13 +58,6 @@
   "preserveNative": true,
 
   // -----------------------------------------------------------------------
-  // context7 (boolean)
-  // When true, registers the Context7 MCP server unless `mcp.context7` is
-  // already configured. Default: true.
-  // -----------------------------------------------------------------------
-  "context7": true,
-
-  // -----------------------------------------------------------------------
   // commands (boolean)
   // When true, adds three optional commands: `resolve`, `resolve-code`,
   // `resolve-review`. Default: false.
@@ -102,6 +95,16 @@
   //   "ko"   — force Korean.
   // -----------------------------------------------------------------------
   "language": "auto",
+
+  // -----------------------------------------------------------------------
+  // singleAgentMode (boolean)
+  // When true, the resolver makes ALL edits itself with edit/write tools and
+  // does NOT dispatch a coder subagent for implementation. Subagents may still
+  // be used to gather information or diagnose (explorer/debugger), but never
+  // to write code. Trades isolation for lower latency and token cost on
+  // simple tasks. Default: false (resolver dispatches a coder subagent).
+  // -----------------------------------------------------------------------
+  // "singleAgentMode": false,
 
   // -----------------------------------------------------------------------
   // models (object)

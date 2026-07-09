@@ -17,11 +17,7 @@
 
 | 에이전트 | 모드 | 목적 |
 | --- | --- | --- |
-| `gpt` | `all` | GPT 최적화 primary resolver. |
-| `glm` | `all` | GLM/ZAI 최적화 primary resolver. |
-| `codex` | `all` | 레거시 Codex 최적화 primary resolver. |
 | `architect` | `subagent` | 설계/분해 보조. |
-| `gpt-coder` | `subagent` | 더 강한 구현 보조. |
 | `debugger` | `subagent` | 실패 재현과 root-cause 분석. |
 | `researcher` | `subagent` | 코드베이스와 문서 리서치. |
 
@@ -30,8 +26,6 @@
 ```json
 {
   "agents": {
-    "glm": { "enabled": true },
-    "gpt": { "enabled": true },
     "debugger": { "enabled": true, "mode": "subagent" }
   }
 }

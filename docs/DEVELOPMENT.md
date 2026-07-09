@@ -23,7 +23,6 @@ The test suite covers:
 - model alias resolution
 - permission hook behavior
 - optional commands
-- Context7 preservation
 - native OpenCode agent preservation
 - postinstall behavior
 
