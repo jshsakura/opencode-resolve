@@ -186,11 +186,7 @@ function buildModelPreset(currentModel) {
 }
 
 function getPresetLabel(currentModel) {
-  if (!currentModel) return "inherited"
-  const lower = currentModel.toLowerCase()
-  if (lower.includes("glm") || lower.includes("zai")) return "glm+gpt"
-  if (lower.includes("openai/") || lower.includes("gpt")) return "gpt-only"
-  return "inherited"
+  return currentModel ? "configured" : "inherited"
 }
 
 async function assertFile(path) {

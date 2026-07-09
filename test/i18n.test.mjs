@@ -27,6 +27,17 @@ import {
 } from "../dist/messages.js"
 import { normalizeResolveConfig } from "../dist/config.js"
 import { OpencodeResolve } from "../dist/index.js"
+import { mkdtempSync, rmSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+
+// Redirect HOME to an empty temp dir so config-load fallbacks never read the
+// developer's real ~/.config/opencode/resolve.json (which references legacy
+// aliases that the current schema rejects).
+const _testHome = mkdtempSync(join(tmpdir(), "opencode-resolve-i18n-"))
+process.env.HOME = _testHome
+process.env.USERPROFILE = _testHome
+process.on("exit", () => { try { rmSync(_testHome, { recursive: true, force: true }) } catch {} })
 
 test("resolveLocale: explicit 'en' wins over any env", () => {
   assert.equal(resolveLocale("en", "ko_KR.UTF-8"), "en")

@@ -1,6 +1,6 @@
 export type PermissionValue = "ask" | "allow" | "deny";
-export type ResolveAgentName = "coder" | "reviewer" | "resolver" | "codex" | "gpt" | "glm" | "architect" | "gpt-coder" | "debugger" | "researcher" | "explorer" | "deep-reviewer" | "planner";
-export type ModelAlias = ResolveAgentName | "glm" | "gpt" | "quick" | "deep" | "fast" | "strong" | "mini" | "codex" | "bronze" | "silver" | "gold" | "gpt-bronze" | "gpt-silver" | "gpt-gold" | "glm-bronze" | "glm-silver" | "glm-gold";
+export type ResolveAgentName = "coder" | "reviewer" | "resolver" | "architect" | "debugger" | "researcher" | "explorer" | "deep-reviewer" | "planner";
+export type ModelAlias = ResolveAgentName | "quick" | "deep" | "fast" | "strong" | "mini" | "bronze" | "silver" | "gold";
 export type AgentMode = "subagent" | "primary" | "all";
 export type ResolveAgentConfig = {
     enabled?: boolean;
@@ -19,11 +19,9 @@ export type ResolveAgentConfig = {
         external_directory?: PermissionValue;
     };
 };
-export type ProfileName = "mix" | "glm" | "gpt";
 export type TierName = "bronze" | "silver" | "gold";
 export type LanguageSetting = "auto" | "en" | "ko";
 export type ResolveConfig = {
-    profile?: ProfileName;
     tier?: TierName;
     enabled?: ResolveAgentName[];
     models?: Partial<Record<ModelAlias, string>>;

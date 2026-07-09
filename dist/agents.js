@@ -4,11 +4,7 @@ export const VALID_AGENT_NAMES = [
     "coder",
     "reviewer",
     "resolver",
-    "codex",
-    "gpt",
-    "glm",
     "architect",
-    "gpt-coder",
     "debugger",
     "researcher",
     "explorer",
@@ -20,7 +16,7 @@ export const DEFAULT_AGENT_CONFIG = {
     coder: {
         mode: "subagent",
         color: "#7CFC00",
-        maxSteps: 20,
+        maxSteps: 15,
         description: "Use for focused implementation, file edits, test runs, and fixing issues until the task is resolved.",
         prompt: [
             "You are Coder, a focused implementation subagent for OpenCode Resolve.",
@@ -45,7 +41,7 @@ export const DEFAULT_AGENT_CONFIG = {
     reviewer: {
         mode: "subagent",
         color: "#8A7CFF",
-        maxSteps: 8,
+        maxSteps: 6,
         description: "Internal read-only verification-gap auditor. Enabled as subagent by default but not part of the core resolver→coder path. Resolver dispatches only when it judges a verification gap exists on non-trivial changes.",
         prompt: [
             "You are Reviewer, a strictly read-only internal review subagent for OpenCode Resolve.",
@@ -65,33 +61,9 @@ export const DEFAULT_AGENT_CONFIG = {
     resolver: {
         mode: "all",
         color: "#FF7AC6",
-        maxSteps: 30,
+        maxSteps: 25,
         description: "Primary orchestrator in the fixed-role verified loop (resolver→coder). Decomposes work into verified checkpoints, dispatches coder, verifies each, and carries forward progress. Internal subagents (explorer, reviewer, deep-reviewer) are available by default but dispatched only when justified.",
         prompt: buildResolverPrompt(undefined),
-        permission: {
-            edit: "allow",
-            bash: "ask",
-            webfetch: "allow",
-        },
-    },
-    codex: {
-        mode: "all",
-        color: "#FFB347",
-        maxSteps: 35,
-        description: "Codex-optimized primary resolver for agentic coding work. Use when a Codex-style OpenAI coding model is pinned and you want a dedicated user-facing route separate from the neutral resolver.",
-        prompt: buildCodexResolverPrompt(),
-        permission: {
-            edit: "allow",
-            bash: "ask",
-            webfetch: "allow",
-        },
-    },
-    gpt: {
-        mode: "all",
-        color: "#FFB347",
-        maxSteps: 35,
-        description: "GPT-optimized primary resolver for agentic coding work. Use when a GPT/OpenAI coding model is pinned and you want a dedicated user-facing route separate from the neutral resolver.",
-        prompt: buildGPTResolverPrompt(),
         permission: {
             edit: "allow",
             bash: "ask",
@@ -111,22 +83,6 @@ export const DEFAULT_AGENT_CONFIG = {
         permission: {
             edit: "deny",
             bash: "deny",
-            webfetch: "allow",
-        },
-    },
-    "gpt-coder": {
-        mode: "subagent",
-        color: "#FFB347",
-        maxSteps: 20,
-        description: "Use for difficult implementation work that needs stronger reasoning than the default coder.",
-        prompt: [
-            "You are GPT Coder, a high-reasoning implementation subagent for difficult tasks.",
-            "Use the same small-change discipline as Coder, but take extra care with design, edge cases, and verification.",
-            "Inspect before editing, implement directly, verify when practical, and report exactly what changed.",
-        ].join("\n"),
-        permission: {
-            edit: "allow",
-            bash: "ask",
             webfetch: "allow",
         },
     },
@@ -165,7 +121,7 @@ export const DEFAULT_AGENT_CONFIG = {
     explorer: {
         mode: "subagent",
         color: "#33CCFF",
-        maxSteps: 6,
+        maxSteps: 5,
         description: "Internal pre-change fast scout for codebase/file/pattern/doc discovery. Enabled as subagent by default but not part of the core path. Read-only; quick model.",
         prompt: [
             "You are Explorer, a fast codebase scout subagent for OpenCode Resolve.",
@@ -203,7 +159,7 @@ export const DEFAULT_AGENT_CONFIG = {
     planner: {
         mode: "subagent",
         color: "#F4A300",
-        maxSteps: 10,
+        maxSteps: 8,
         description: "Internal advanced planner dispatched by the resolver when the user explicitly asks for a plan, decomposition, or implementation strategy. Read-only. Returns a concrete plan; never edits code.",
         prompt: [
             "You are Planner, the advanced planning subagent for OpenCode Resolve.",
@@ -219,139 +175,28 @@ export const DEFAULT_AGENT_CONFIG = {
             webfetch: "allow",
         },
     },
-    glm: {
-        mode: "all",
-        color: "#00FF9F",
-        maxSteps: 30,
-        description: "GLM-optimized orchestrator for ZAI coding-plan. Select this agent when running GLM-only to get maximum performance within session and rate limits. Serial coder dispatch, token-efficient prompts, coding-plan constraints handled automatically.",
-        prompt: buildGLMResolverPrompt(undefined),
-        permission: {
-            edit: "allow",
-            bash: "ask",
-            webfetch: "allow",
-        },
-    },
 };
-export const GLM_CODER_PROMPT = [
-    "You are Coder (GLM profile), a concise implementation subagent for OpenCode Resolve.",
-    "",
-    "Read ONLY files you will edit. Make the SMALLEST correct change.",
-    "Verify immediately: type check or lint on changed files. Full-repo lint is optional; if it fails outside your changes, report that as unrelated. Check LSP diagnostics when available. Report exit code + errors.",
-    "Return: changed files + verification result. No prose.",
-    "",
-    "NO EVIDENCE = INCOMPLETE WORK.",
-    "",
-    "NEVER: as any / @ts-ignore / empty catch / delete failing tests / leave code broken / commit without request / git add . / git add -A / stage unrelated files.",
-].join("\n");
-export const GPT_CODER_PROMPT = [
-    "You are Coder (GPT profile), an implementation subagent for OpenCode Resolve.",
-    "",
-    "Read ONLY files you need. Make the SMALLEST correct change.",
-    "Verify: type check or lint on changed files. Full-repo lint is optional; if it fails outside your changes, report that as unrelated. Check LSP diagnostics when available. Report exit code + errors.",
-    "Return: changed files + verification result. Keep it concise.",
-    "",
-    "NO EVIDENCE = INCOMPLETE WORK.",
-    "",
-    "NEVER: as any / @ts-ignore / empty catch / delete failing tests / leave code broken / commit without request / git add . / git add -A / stage unrelated files.",
-].join("\n");
-export function buildGLMResolverPrompt(maxParallelSubagents) {
+export function buildResolverPrompt(maxParallelSubagents) {
     const limit = typeof maxParallelSubagents === "number" && Number.isFinite(maxParallelSubagents)
         ? Math.max(1, Math.trunc(maxParallelSubagents))
-        : undefined;
-    const parallelRule = limit === undefined
-        ? "No hard cap. Fan out only for genuinely independent work, and back off immediately on rate-limit errors."
-        : limit === 1
-            ? "Dispatch ONE coder at a time. Wait for it to finish."
-            : `Dispatch up to ${limit} coder(s) concurrently. Wait for in-flight coders before dispatching more.`;
-    return [
-        "You are Resolver (GLM profile), the token-efficient orchestrator for OpenCode Resolve.",
-        "ZAI Coding Plan — quota is finite. Minimize unnecessary reads and dispatches.",
-        "",
-        `Parallel: ${parallelRule}`,
-        "Dispatch coder with: TASK (atomic goal), OUTCOME (success criteria), MUST DO, MUST NOT DO, CONTEXT (files/patterns).",
-        "After EVERY coder return: verify it works + follows codebase patterns. If not → re-dispatch with fix.",
-        "INTELLIGENT RECOVERY: On verify failure, dispatch debugger FIRST to diagnose root cause, THEN re-dispatch coder with precise fix. Do NOT blindly retry.",
-        "Trivial fixes → apply yourself. No subagent needed.",
-        "3 consecutive failures → STOP, REVERT, REPORT, ASK user.",
-        "10+ failures on same task → call architect to rethink the approach before continuing.",
-        "",
-        "If piloci MCP available: piloci_recall before inspecting code, piloci_memory after learning something non-obvious.",
-        "",
-        "Verify: type check or lint MUST pass on changed files. Full-repo lint is optional; if it fails outside your changes, report the unrelated failure instead of fixing unrelated files. NO EVIDENCE = NOT COMPLETE.",
-        "After non-trivial work: ask user to capture lesson → HARNESS.md (infra) or AGENTS.md (agent behavior).",
-        "",
-        "NEVER: as any / @ts-ignore / leave code broken / delete failing tests / commit without request / git add . / git add -A / stage unrelated files.",
-        "",
-        "Specialists: explorer (scope unknown), reviewer (verification gap), debugger (verify failure diagnosis), planner (user asks for plan). No deep-reviewer.",
-        "",
-        "CONTINUATION: After context compression or any intermediate step, immediately continue the current task. Do NOT pause, summarize status, or ask the user unless you face a CRITICAL decision requiring their input (destructive action, ambiguous requirement, security concern). Keep moving.",
-    ].join("\n");
-}
-export function buildGPTResolverPrompt() {
-    return [
-        "You are Resolver (GPT profile), the orchestrator for OpenCode Resolve.",
-        "Leverage GPT's reasoning — parallel dispatch, detailed checkpoint plans for deep tasks.",
-        "",
-        "Parallel coder dispatch for independent work. Deep-reviewer available for risky changes.",
-        "Dispatch coder with: TASK (atomic goal), OUTCOME (success criteria), MUST DO, MUST NOT DO, CONTEXT (files/patterns).",
-        "After EVERY coder return: verify it works + follows codebase patterns. If not → re-dispatch with fix.",
-        "INTELLIGENT RECOVERY: On verify failure, dispatch debugger FIRST to diagnose root cause, THEN re-dispatch coder with precise fix. Do NOT blindly retry.",
-        "Trivial fixes → apply yourself. No subagent needed.",
-        "3 consecutive failures → STOP, REVERT, REPORT, ASK user.",
-        "10+ failures on same task → call architect to rethink the approach before continuing.",
-        "",
-        "If piloci MCP available: piloci_recall before inspecting code, piloci_memory after learning something non-obvious.",
-        "",
-        "Verify: type check or lint MUST pass on changed files. Full-repo lint is optional; if it fails outside your changes, report the unrelated failure instead of fixing unrelated files. NO EVIDENCE = NOT COMPLETE.",
-        "After non-trivial work: ask user to capture lesson → HARNESS.md (infra) or AGENTS.md (agent behavior).",
-        "",
-        "NEVER: as any / @ts-ignore / leave code broken / delete failing tests / commit without request / git add . / git add -A / stage unrelated files.",
-        "",
-        "Specialists: explorer (scope unknown), reviewer (verification gap), deep-reviewer (risky/security/architectural), debugger (verify failure diagnosis), planner (user asks for plan).",
-        "",
-        "CONTINUATION: After context compression or any intermediate step, immediately continue the current task. Do NOT pause, summarize status, or ask the user unless you face a CRITICAL decision requiring their input (destructive action, ambiguous requirement, security concern). Keep moving.",
-    ].join("\n");
-}
-export function buildCodexResolverPrompt() {
-    return [
-        "You are Codex Resolver, the OpenAI Codex-optimized primary agent for OpenCode Resolve.",
-        "Use Codex-style software engineering judgment: inspect narrowly, patch directly when trivial, dispatch focused coders when parallel work is useful, and verify before reporting.",
-        "",
-        "Prefer coder for implementation slices, explorer for quick scope discovery, reviewer for verification gaps, deep-reviewer for risky/security/architecture changes, debugger for verify failure diagnosis, planner only when the user asks for a plan.",
-        "Dispatch coder with: TASK (atomic goal), OUTCOME (success criteria), MUST DO, MUST NOT DO, CONTEXT (files/patterns).",
-        "After EVERY coder return: verify it works + follows codebase patterns. If not → re-dispatch with precise fix.",
-        "INTELLIGENT RECOVERY: On verify failure, dispatch debugger FIRST to diagnose root cause, THEN re-dispatch coder with precise fix. Do NOT blindly retry.",
-        "Trivial fixes → apply yourself. No subagent needed.",
-        "3 consecutive failures → STOP, REVERT, REPORT, ASK user.",
-        "",
-        "Verify: type check or lint MUST pass on changed files. Full-repo lint is optional; if it fails outside your changes, report the unrelated failure instead of fixing unrelated files. Check LSP diagnostics when available. NO EVIDENCE = NOT COMPLETE.",
-        "",
-        "NEVER: as any / @ts-ignore / leave code broken / delete failing tests / commit without request / git add . / git add -A / stage unrelated files.",
-        "",
-        "CONTINUATION: After context compression or any intermediate step, immediately continue the current task. Do NOT pause, summarize status, or ask the user unless you face a CRITICAL decision requiring their input (destructive action, ambiguous requirement, security concern). Keep moving.",
-    ].join("\n");
-}
-export function buildResolverPrompt(maxParallelSubagents) {
-    const explicitLimit = typeof maxParallelSubagents === "number" && Number.isFinite(maxParallelSubagents)
-        ? Math.max(1, Math.trunc(maxParallelSubagents))
-        : undefined;
-    const parallelRule = explicitLimit === undefined
-        ? "Fan out for independent work. Back off on rate-limit errors."
-        : explicitLimit === 1
-            ? "Dispatch ONE coder at a time. Wait for it to finish."
-            : `Dispatch up to ${explicitLimit} coders concurrently.`;
+        : 1;
+    const parallelRule = limit <= 1
+        ? "Serial dispatch: ONE coder at a time. Wait for verification before the next dispatch."
+        : `Dispatch up to ${limit} coders concurrently, then WAIT for all to verify before continuing.`;
     return [
         "You are Resolver, the context-efficient orchestrator for OpenCode Resolve.",
-        "Drive tasks to verified resolution with minimal context and fewest LLM calls.",
-        "You and Coder form the verified resolve loop.",
+        "Your single job: drive the task to a VERIFIED resolution and keep the resolve loop closed until it converges.",
+        "Token budget is finite. Minimize unnecessary reads; one focused dispatch beats several exploratory ones.",
         "",
         `Parallel: ${parallelRule}`,
-        "Dispatch coder with: TASK (atomic goal), OUTCOME (success criteria), MUST DO, MUST NOT DO, CONTEXT (files/patterns).",
-        "After EVERY coder return: verify it works + follows codebase patterns. If not → re-dispatch with fix.",
-        "INTELLIGENT RECOVERY: On verify failure, dispatch debugger FIRST to diagnose root cause, THEN re-dispatch coder with precise fix. Do NOT blindly retry.",
-        "Trivial fixes → apply yourself. No subagent needed.",
-        "3 consecutive failures → STOP, REVERT, REPORT, ASK user.",
-        "10+ failures on same task → call architect to rethink the approach before continuing.",
+        "LOOP DISCIPLINE (mandatory):",
+        "  1. dispatch coder with TASK / OUTCOME / MUST DO / MUST NOT DO / CONTEXT",
+        "  2. after EVERY coder return, run the verify command (type check / lint / test) — NO EXCEPTION",
+        "  3. on verify FAIL → re-dispatch coder with the exact error + a precise fix instruction. Do NOT repeat the same change.",
+        "  4. loop steps 1-3 until the change is verified. Only THEN report done.",
+        "  5. trivial fix → apply it yourself (no subagent), then verify.",
+        "INTELLIGENT RECOVERY: On verify failure, dispatch debugger FIRST to diagnose root cause, THEN re-dispatch coder with the precise fix. Never blindly retry the identical change.",
+        "ESCALATION (enforced by the harness, follow it): 3 consecutive dispatch failures → STOP, revert the last change, report to the user. 6 → pivot to architect for a different approach.",
         "",
         "If piloci MCP available: piloci_recall before inspecting code, piloci_memory after learning something non-obvious.",
         "",
@@ -367,47 +212,19 @@ export function buildResolverPrompt(maxParallelSubagents) {
 }
 export const VALID_MODEL_ALIASES = [
     ...VALID_AGENT_NAMES,
-    "glm",
-    "gpt",
     "quick",
     "deep",
     "fast",
     "strong",
     "mini",
-    "codex",
     "bronze",
     "silver",
     "gold",
-    "gpt-bronze",
-    "gpt-silver",
-    "gpt-gold",
-    "glm-bronze",
-    "glm-silver",
-    "glm-gold",
 ];
 export const VALID_MODEL_ALIAS_SET = new Set(VALID_MODEL_ALIASES);
-export const VALID_PROFILES = new Set(["mix", "glm", "gpt"]);
 export const VALID_TIERS = new Set(["bronze", "silver", "gold"]);
-export const GLM_ENABLED = ["coder", "resolver", "glm", "explorer", "reviewer", "planner"];
-export const GPT_ENABLED = ["coder", "resolver", "gpt", "explorer", "reviewer", "deep-reviewer", "planner"];
 export const TIER_ENABLED = {
     bronze: ["coder", "resolver"],
     silver: ["coder", "resolver", "explorer", "reviewer", "planner"],
-    gold: ["coder", "resolver", "codex", "gpt", "glm", "explorer", "reviewer", "deep-reviewer", "planner", "debugger", "researcher"],
-};
-export const GLM_AGENT_OVERRIDES = {
-    coder: { maxSteps: 15 },
-    resolver: { maxSteps: 25 },
-    explorer: { maxSteps: 5 },
-    reviewer: { maxSteps: 6 },
-    planner: { maxSteps: 8 },
-};
-export const GPT_AGENT_OVERRIDES = {
-    coder: { maxSteps: 25 },
-    resolver: { maxSteps: 40 },
-    gpt: { maxSteps: 40 },
-    explorer: { maxSteps: 8 },
-    reviewer: { maxSteps: 10 },
-    "deep-reviewer": { maxSteps: 15 },
-    planner: { maxSteps: 12 },
+    gold: ["coder", "resolver", "explorer", "reviewer", "deep-reviewer", "planner", "architect", "debugger", "researcher"],
 };

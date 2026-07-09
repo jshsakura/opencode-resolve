@@ -20,10 +20,17 @@ if (command !== "setup") {
 }
 
 const env = { ...process.env }
-if (args.includes("--fresh")) env.OPENCODE_RESOLVE_REINSTALL = "fresh"
-if (args.includes("--reset-config")) {
+// All reset flavors collapse into one full wipe — back up resolve.json and run setup
+// from scratch, dropping model pins along with everything else.
+if (
+  args.includes("--reset") ||
+  args.includes("--fresh") ||
+  args.includes("--reset-config") ||
+  args.includes("--nuke") ||
+  args.includes("--wipe") ||
+  args.includes("--full-reset")
+) {
   env.OPENCODE_RESOLVE_REINSTALL = "fresh"
-  env.OPENCODE_RESOLVE_RESET_MODELS = "1"
 }
 if (args.includes("--update")) env.OPENCODE_RESOLVE_REINSTALL = "update"
 if (args.includes("--models") || args.includes("--configure-models")) env.OPENCODE_RESOLVE_CONFIGURE_MODELS = "1"
@@ -53,22 +60,21 @@ function printHelp() {
   console.log(`opencode-resolve
 
 Usage:
-  opencode-resolve setup [--fresh|--update|--reset-config] [--models] [--auto-preset] [--force-cache] [--no-companions]
+  opencode-resolve setup [--reset|--update] [--models] [--auto-preset] [--force-cache] [--no-companions]
 
 Commands:
   setup    Register the OpenCode plugin, create or migrate resolve.json, and refresh stale plugin cache.
 
 Options:
-  --fresh          Back up existing resolve.json and run setup again, preserving existing model pins.
+  --reset          Back up existing resolve.json and wipe EVERYTHING (model pins included). Aliases: --fresh, --reset-config, --nuke, --wipe, --full-reset.
   --update         Preserve existing resolve.json and add missing defaults.
-  --reset-config   Back up existing resolve.json and regenerate it, including model pins.
   --models         Reconfigure model pins without replacing the rest of resolve.json.
   --auto-preset    Non-interactive provider-based model preset.
   --force-cache    Force OpenCode plugin cache refresh without deleting resolve.json.
   --no-companions  Skip companion plugin suggestions.
 
 Examples:
-  opencode-resolve setup --fresh
+  opencode-resolve setup --reset
   opencode-resolve setup --update
   opencode-resolve setup --force-cache
 `)

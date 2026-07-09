@@ -6,6 +6,8 @@ export declare const FAILURE_THRESHOLD = 10;
 export declare const STRATEGY_PIVOT_THRESHOLD = 20;
 export declare const EDIT_HOTSPOT_THRESHOLD = 10;
 export declare const EDIT_HOTSPOT_TTL_MS = 600000;
+export declare const DISPATCH_STOP_THRESHOLD = 3;
+export declare const DISPATCH_PIVOT_THRESHOLD = 6;
 export interface SessionState {
     storedConfig?: ResolveConfig;
     storedProjectContext?: ProjectContext;
@@ -30,6 +32,12 @@ export interface SessionState {
     sessionStartTime: number;
     loopWarnings: string[];
     lastStrategyHint: string;
+    consecutiveDispatchFailures: number;
+    lastDispatchAgent?: string;
+    lastDispatchSucceeded?: boolean;
+    lastDispatchAt?: number;
+    awaitingVerify: boolean;
+    awaitingVerifyFile?: string;
     currentAgent?: string;
     locale: Locale;
 }

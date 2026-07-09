@@ -18,49 +18,27 @@
 
 {
   // -----------------------------------------------------------------------
-  // profile ("mix" | "glm" | "gpt")
-  // Activates provider-specific agent configurations.
-  // Set automatically by postinstall based on detected providers.
-  //
-  // "mix" — explicit mixed/default profile. Uses standard resolver prompts,
-  //         DEFAULT_ENABLED, and whatever model aliases you configure.
-  // "glm" — GLM-only, optimized for ZAI coding-plan: reduced maxSteps,
-  //         token-efficient prompts, no hard concurrency cap by default.
-  //         No deep-reviewer by default.
-  // "gpt" — GPT-only, high-performance: parallel coder dispatch, full agent
-  //         roster, higher maxSteps.
-  //
-  // When omitted, the plugin defaults to "mix".
-  // -----------------------------------------------------------------------
-  "profile": "mix",
-
-  // -----------------------------------------------------------------------
   // tier ("bronze" | "silver" | "gold")
   // Agent roster preset. Overrides the default enabled list when set.
   //
   // "bronze" — Minimum agents: coder + resolver only. Maximum token savings.
   // "silver" — Standard: coder, resolver, explorer, reviewer, planner.
   //            No deep-reviewer. Best balance for most projects.
-  // "gold"   — Full power: all 8 agents including debugger and researcher.
-  //            Maximum capability for complex tasks.
+  // "gold"   — Full power: all 9 agents including deep-reviewer, debugger,
+  //            architect and researcher. Maximum capability for complex tasks.
   //
-  // Postinstall sets this automatically:
-  //   GLM → silver, GPT → gold, Mix/unknown → no tier (DEFAULT_ENABLED applies).
-  //
+  // When omitted, the default enabled list applies (see `enabled` below).
   // Explicit `enabled` array always wins over tier.
   // -----------------------------------------------------------------------
   // "tier": "silver",
 
   // -----------------------------------------------------------------------
   // enabled (string[])
-  // Which resolve agents to inject. When omitted, the tier or profile default
-  // is used. Explicit `enabled` wins over both tier and profile defaults.
+  // Which resolve agents to inject. When omitted, the tier default is used.
+  // Explicit `enabled` wins over tier.
   //
-  // Mix/default (no tier): ["coder", "resolver", "explorer", "reviewer",
+  // Default (no tier): ["coder", "resolver", "explorer", "reviewer",
   //   "deep-reviewer", "planner"].
-  //
-  // GLM profile default: ["coder", "resolver", "explorer", "reviewer",
-  //   "planner"] — deep-reviewer omitted to save tokens.
   //
   // Core path: resolver + coder form the fixed-role verified resolve loop.
   // Internal specialists: explorer, reviewer, deep-reviewer are injected as
@@ -95,26 +73,23 @@
 
   // -----------------------------------------------------------------------
   // autoApprove (boolean)
-  // Documentary flag. The plugin's permission.ask hook automatically
-  // classifies bash commands as safe (allow) / dangerous (deny) / unknown (ask).
-  // Base agent permissions are already set to the correct defaults (allow for
-  // edit/webfetch, ask for bash on write agents, deny for read-only agents).
-  // Changing this flag has no effect on behavior — it exists for config
-  // readability and future compatibility. Default: true.
+  // When true, the plugin's permission.ask hook auto-approves safe bash
+  // commands on resolve agents (read-only probes, verify commands) and
+  // denies dangerous ones. Native OpenCode sessions are untouched — this
+  // only applies while a resolve agent is active. Default: true.
   // -----------------------------------------------------------------------
   "autoApprove": true,
 
   // -----------------------------------------------------------------------
   // maxParallelSubagents (positive integer)
-  // Optional prompt-level cap for how many subagents of the SAME ROLE the
-  // resolver may dispatch concurrently. When omitted, the resolver uses soft
-  // fan-out guidance and backs off on rate-limit errors. GLM profile does not
-  // impose a hard cap unless you set one.
-  //   1 = strict per-role serial
+  // Prompt-level cap for how many subagents of the SAME ROLE the resolver
+  // may dispatch concurrently.
+  //   1 = strict per-role serial (default when omitted — token-efficient,
+  //       avoids rate-limit thrash on quota-bound plans like ZAI coding-plan)
   //   2 = up to two coders in parallel
   //   N = up to N of each role
   // -----------------------------------------------------------------------
-  "maxParallelSubagents": 2,
+  // "maxParallelSubagents": 1,
 
   // -----------------------------------------------------------------------
   // language ("auto" | "en" | "ko")
@@ -125,22 +100,15 @@
   //   "auto" — detect from $LANG (defaults to en if not Korean). Default.
   //   "en"   — force English.
   //   "ko"   — force Korean.
-  //
-  // Examples of what this affects:
-  //   en: "[resolver] Reminder: verify your changes ..."
-  //   ko: "[리졸버] 리마인더: 완료 보고 전에 변경사항을 검증하세요 ..."
   // -----------------------------------------------------------------------
   "language": "auto",
 
   // -----------------------------------------------------------------------
   // models (object)
-// Alias map. Keys are either an agent name (coder, reviewer, resolver,
-// codex, gpt, glm, architect, gpt-coder, debugger, researcher, explorer,
-// deep-reviewer, planner)
-  // OR one of the well-known aliases (`glm`, `gpt`, `quick`, `deep`,
-  // `fast`, `strong`, `mini`, `codex`, `bronze`, `silver`, `gold`,
-  // `gpt-bronze`, `gpt-silver`, `gpt-gold`, `glm-bronze`, `glm-silver`,
-  // `glm-gold`).
+  // Alias map. Keys are either an agent name (coder, reviewer, resolver,
+  // architect, debugger, researcher, explorer, deep-reviewer, planner)
+  // OR one of the well-known aliases (`quick`, `deep`, `fast`, `strong`,
+  // `mini`, `bronze`, `silver`, `gold`).
   // Values are model identifiers OR another alias.
   //
   // Resolution order for a given agent:
@@ -150,26 +118,23 @@
   //   4. OpenCode's own fallback
   //
   // By default the models map is empty — all agents inherit the top-level
-  // OpenCode default model. Pin models only when you have measured a
-  // benefit from role-specific model selection.
+  // OpenCode default model. Pin models only when you want role-specific
+  // selection.
   //
-  // When resolve.json is created for the first time by postinstall, the
-  // plugin inspects your OpenCode model config and writes an adaptive
-  // preset:
-  //   - interactive terminal → always prompts for mix/gpt/glm, three-tier models,
-  //     and optional dedicated codex/glm primary agents
-  //   - non-interactive install → no guessed model pinning; profile mix,
-  //     models {}, and resolver/codex/glm primary routes enabled
-  //   - OPENCODE_RESOLVE_AUTO_PRESET=1 → legacy non-interactive
-  //     provider-adapted presets. GLM presets prefer high-concurrency models
-  //     such as GLM-5.1 / GLM-4.5 over low-concurrency Flash tiers.
+  // When resolve.json is created by postinstall, the plugin inspects your
+  // OpenCode model config and offers to pin a provider/model:
+  //   - interactive terminal → detects providers, asks which one + which
+  //     model(s), pins them. One model for everything is the recommended
+  //     default.
+  //   - non-interactive install → no guessed model pinning; all agents
+  //     inherit the top-level OpenCode model.
   // Existing resolve.json files are never overwritten without consent.
   // Interactive reinstall asks whether to update or back up and run fresh
   // setup. Non-interactive automation can set:
   //   OPENCODE_RESOLVE_REINSTALL=fresh
   //   OPENCODE_RESOLVE_REINSTALL=update
   //
-  // Example — one efficient model for everything (recommended default):
+  // Example — one model for everything (recommended default):
   //   "models": {}
   //
   // Example — pin roles to specific models when needed:
@@ -180,26 +145,22 @@
   //     "resolver": "strong"
   //   }
   //
-  // Example — GLM-only three-tier preset (auto-generated for GLM/ZAI users):
-  //   GLM fills all tiers — no GPT dependency, so token exhaustion on
-  //   third-party providers never blocks agent execution.
+  // Example — GLM-only three-tier preset (GLM fills all tiers, no GPT
+  // dependency, so quota exhaustion on third-party providers never blocks
+  // agent execution):
   //   "models": {
-  //     "glm": "zai-coding-plan/glm-5.1",
-  //     "bronze": "zai-coding-plan/glm-4.5",
-  //     "silver": "zai-coding-plan/glm-5.1",
-  //     "gold": "zai-coding-plan/glm-5.1",
-  //     "fast": "bronze",
+  //     "bronze": "zai-coding-plan/glm-5.2",
+  //     "silver": "zai-coding-plan/glm-5.2",
+  //     "gold":   "zai-coding-plan/glm-5.2",
+  //     "fast":   "bronze",
   //     "strong": "gold",
-  //     "coder": "gold",
+  //     "coder":  "gold",
   //     "resolver": "gold",
   //     "reviewer": "gold",
   //     "deep-reviewer": "gold",
   //     "explorer": "bronze",
   //     "planner": "gold"
   //   }
-  //
-  // Legacy aliases (glm, gpt, quick, deep) remain supported for backward
-  // compatibility. New configs should prefer provider-neutral aliases.
   // -----------------------------------------------------------------------
   "models": {},
 
@@ -219,7 +180,7 @@
     "coder": {
       "enabled": true,
       "mode": "subagent",
-      "maxSteps": 20,
+      "maxSteps": 15,
       "permission": {
         "edit": "allow",
         "bash": "allow",
@@ -230,34 +191,12 @@
     "resolver": {
       "enabled": true,
       "mode": "all",
-      "maxSteps": 30,
+      "maxSteps": 25,
       "permission": {
         "edit": "allow",
         "bash": "allow",
         "webfetch": "allow"
       }
-    },
-
-    // codex — Codex-optimized primary resolver (selectable in agent picker)
-    // Same verified resolve-loop style as resolver, with a Codex-specific
-    // system prompt. Legacy — kept for backward compatibility. New GPT
-    // installs should prefer the "gpt" agent instead.
-    "codex": {
-      "enabled": false,
-      "mode": "all",
-      "maxSteps": 35
-    },
-
-    // -----------------------------------------------------------------
-    // gpt — GPT-optimized primary resolver (selectable in agent picker)
-    // GPT-specific verified resolve-loop with parallel coder dispatch,
-    // full agent roster, and higher maxSteps. Enabled automatically when
-    // GPT profile is selected during install. Uses buildGPTResolverPrompt().
-    // -----------------------------------------------------------------
-    "gpt": {
-      "enabled": false,
-      "mode": "all",
-      "maxSteps": 35
     },
 
     // Internal specialist subagents — enabled by default as subagents only.
@@ -268,7 +207,7 @@
     // dispatches explorer only when scope is genuinely unknown.
     "explorer": {
       "mode": "subagent",
-      "maxSteps": 6,
+      "maxSteps": 5,
       "permission": {
         "edit": "deny",
         "bash": "allow",
@@ -281,9 +220,7 @@
     // non-trivial changes.
     "reviewer": {
       "mode": "subagent",
-      "maxSteps": 8,
-      // Reviewer is read-only by design. edit and bash are denied even when
-      // autoApprove is true.
+      "maxSteps": 6,
       "permission": {
         "edit": "deny",
         "bash": "deny",
@@ -304,17 +241,17 @@
       }
     },
 
+    "planner": {
+      "mode": "subagent",
+      "maxSteps": 8
+    },
+
     // Disabled by default — enable explicitly when needed.
 
     "architect": {
       "enabled": false,
       "mode": "subagent",
       "maxSteps": 10
-    },
-    "gpt-coder": {
-      "enabled": false,
-      "mode": "subagent",
-      "maxSteps": 20
     },
     "debugger": {
       "enabled": false,
@@ -325,20 +262,6 @@
       "enabled": false,
       "mode": "subagent",
       "maxSteps": 8
-    },
-
-    // -----------------------------------------------------------------
-    // glm — GLM-optimized orchestrator (selectable in agent picker)
-    // Disabled by default. Enable to get a standalone GLM agent with
-    // coding-plan optimized prompts: session limit handling,
-    // token-efficient execution, no hard concurrency cap unless configured.
-    // Users pick this from OpenCode's agent picker as an alternative
-    // to the default resolver.
-    // -----------------------------------------------------------------
-    "glm": {
-      "enabled": false,
-      "mode": "all",
-      "maxSteps": 30
     }
   }
 }

@@ -75,7 +75,7 @@ opencode plugin opencode-resolve --global --force
 opencode
 ```
 
-npm `postinstall`이 `~/.config/opencode/opencode.json`에 플러그인을 등록하고, 없을 때만 `~/.config/opencode/resolve.json`을 만들고, 기존 모델 핀을 보존하며 (`--reset-config`로 명시 시 초기화), `~/.cache/opencode/packages/` 의 OpenCode 플러그인 캐시를 새로고침합니다.
+npm `postinstall`이 `~/.config/opencode/opencode.json`에 플러그인을 등록하고, 없을 때만 `~/.config/opencode/resolve.json`을 만들고, 기존 설정을 보존하며 (`--reset`으로 명시 시 완전 초기화), `~/.cache/opencode/packages/` 의 OpenCode 플러그인 캐시를 새로고침합니다.
 
 ### 다시 셋업하기
 
@@ -83,8 +83,8 @@ npm `postinstall`이 `~/.config/opencode/opencode.json`에 플러그인을 등�
 
 | 명령 | 언제 사용 |
 | --- | --- |
-| `opencode-resolve setup --fresh` | `resolve.json` 재생성, 기존 모델 핀 유지 |
-| `opencode-resolve setup --reset-config` | `resolve.json` 재생성 + 모델 핀 초기화 |
+| `opencode-resolve setup --reset` | `resolve.json`을 백업 후 완전히 지우고(모델 핀 포함) 재생성. 별칭: `--fresh`, `--reset-config`, `--nuke`. |
+| `opencode-resolve setup --update` | `resolve.json`을 유지하고 빠진 기본값만 추가. |
 | `opencode-resolve setup --models` | 모델 핀만 다시 감지 |
 | `opencode-resolve setup --force-cache` | OpenCode 플러그인 캐시만 새로고침 |
 
@@ -194,7 +194,6 @@ irm https://raw.githubusercontent.com/jshsakura/awesome-opencode-skills/main/ins
 
 | 키 | 타입 | 기본값 | 용도 |
 | --- | --- | --- | --- |
-| `profile` | `mix` / `glm` / `gpt` | `mix` | 프롬프트/profile preset. |
 | `tier` | `bronze` / `silver` / `gold` | 미설정 | 설정된 tier preset 활성화. |
 | `enabled` | 에이전트 이름 배열 | 기본 에이전트 | 주입할 resolve 에이전트. |
 | `models` | object | `{}` | 모델 별칭과 역할별 모델 핀. |
@@ -241,9 +240,9 @@ irm https://raw.githubusercontent.com/jshsakura/awesome-opencode-skills/main/ins
 ```json
 {
   "models": {
-    "bronze": "zai-coding-plan/glm-4.5",
-    "silver": "zai-coding-plan/glm-5.1",
-    "gold": "openai/gpt-5.5",
+    "bronze": "zai-coding-plan/glm-5.2",
+    "silver": "zai-coding-plan/glm-5.2",
+    "gold": "zai-coding-plan/glm-5.2",
     "explorer": "bronze",
     "coder": "silver",
     "resolver": "gold",
@@ -257,10 +256,8 @@ irm https://raw.githubusercontent.com/jshsakura/awesome-opencode-skills/main/ins
 지원 모델 별칭:
 
 ```text
-fast, strong, mini, codex, quick, deep, glm, gpt,
+fast, strong, mini, quick, deep,
 bronze, silver, gold,
-gpt-bronze, gpt-silver, gpt-gold,
-glm-bronze, glm-silver, glm-gold,
 모든 지원 에이전트 이름
 ```
 
@@ -274,11 +271,7 @@ glm-bronze, glm-silver, glm-gold,
 | `reviewer` | yes | `subagent` | deny | deny | allow | 읽기 전용 검증 갭 리뷰. |
 | `deep-reviewer` | yes | `subagent` | deny | deny | allow | 위험/고영향 변경 리뷰. |
 | `planner` | yes | `subagent` | deny | deny | allow | 필요할 때만 읽기 전용 계획. |
-| `gpt` | no | `all` | allow | ask | allow | GPT 최적화 primary resolver. |
-| `glm` | no | `all` | allow | ask | allow | GLM/ZAI 최적화 primary resolver. |
-| `codex` | no | `all` | allow | ask | allow | 레거시 Codex 최적화 primary resolver. |
 | `architect` | no | `subagent` | deny | deny | allow | 설계/분해 보조. |
-| `gpt-coder` | no | `subagent` | allow | ask | allow | 더 강한 구현 보조. |
 | `debugger` | no | `subagent` | allow | ask | allow | 재현/root-cause 보조. |
 | `researcher` | no | `subagent` | deny | deny | allow | 코드베이스/문서 리서치 보조. |
 

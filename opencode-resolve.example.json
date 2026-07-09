@@ -1,5 +1,4 @@
 {
-  "profile": "mix",
   "preserveNative": true,
   "context7": true,
   "commands": false,
@@ -13,12 +12,6 @@
     },
     "resolver": {
       "enabled": true
-    },
-    "codex": {
-      "enabled": false
-    },
-    "gpt": {
-      "enabled": false
     },
     "explorer": {
       "enabled": true,
@@ -39,16 +32,10 @@
     "architect": {
       "enabled": false
     },
-    "gpt-coder": {
-      "enabled": false
-    },
     "debugger": {
       "enabled": false
     },
     "researcher": {
-      "enabled": false
-    },
-    "glm": {
       "enabled": false
     }
   }

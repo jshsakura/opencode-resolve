@@ -2,17 +2,13 @@ import { join, basename, isAbsolute, resolve } from "node:path";
 import { homedir } from "node:os";
 import { access, readFile } from "node:fs/promises";
 import { Config } from "@opencode-ai/plugin";
-import { ResolveConfig, ProjectContext, ResolveAgentName, ProfileName, TierName, AgentMode, UnknownRecord, ResolvePluginOptions, ResolveAgentConfig, ModelAlias, PermissionValue, LanguageSetting } from "./types.js";
-import { DEFAULT_AGENT_CONFIG, buildGLMResolverPrompt, GLM_CODER_PROMPT, buildGPTResolverPrompt, GPT_CODER_PROMPT, buildResolverPrompt, VALID_AGENT_NAME_SET, DEFAULT_MODELS, DEFAULT_ENABLED, VALID_AGENT_NAMES, GLM_ENABLED, GPT_ENABLED, TIER_ENABLED, GLM_AGENT_OVERRIDES, GPT_AGENT_OVERRIDES, VALID_MODEL_ALIAS_SET, VALID_PROFILES, VALID_TIERS } from "./agents.js";
+import { ResolveConfig, ProjectContext, ResolveAgentName, TierName, AgentMode, UnknownRecord, ResolvePluginOptions, ResolveAgentConfig, ModelAlias, PermissionValue, LanguageSetting } from "./types.js";
+import { DEFAULT_AGENT_CONFIG, buildResolverPrompt, VALID_AGENT_NAME_SET, DEFAULT_MODELS, DEFAULT_ENABLED, VALID_AGENT_NAMES, TIER_ENABLED, VALID_MODEL_ALIAS_SET, VALID_TIERS } from "./agents.js";
 import { readFirstJson } from "./utils.js";
 
 export function applyResolveConfig(config: Config, resolveConfig: ResolveConfig, projectContext: ProjectContext) {
-    const profile = resolveConfig.profile;
-    const isGLM = profile === "glm";
-    const isGPT = profile === "gpt";
-    const profileEnabled = isGLM ? GLM_ENABLED : isGPT ? GPT_ENABLED : undefined;
     const tierEnabled = resolveConfig.tier ? TIER_ENABLED[resolveConfig.tier] : undefined;
-    const enabled = new Set(resolveConfig.enabled ?? tierEnabled ?? (profileEnabled ?? DEFAULT_ENABLED));
+    const enabled = new Set(resolveConfig.enabled ?? tierEnabled ?? DEFAULT_ENABLED);
     const models = { ...DEFAULT_MODELS, ...resolveConfig.models };
     const defaultModel = typeof config.model === "string" ? config.model : undefined;
     const maxParallelSubagents = resolveConfig.maxParallelSubagents;
@@ -25,27 +21,18 @@ export function applyResolveConfig(config: Config, resolveConfig: ResolveConfig,
     if (!isEnabled) continue
 
     const base = DEFAULT_AGENT_CONFIG[name]
-    const profileOverride = isGLM ? GLM_AGENT_OVERRIDES[name] : isGPT ? GPT_AGENT_OVERRIDES[name] : undefined
     const { enabled: _enabled, model: requestedModel, permission: userPermission, ...agentOverride } = override ?? {}
     const model = resolveModel(requestedModel ?? models[name] ?? defaultModel, models)
     const permission = buildPermission(base.permission, userPermission)
     const agentConfig: ResolveAgentConfig = {
       ...base,
-      ...profileOverride,
       ...agentOverride,
     }
     if (agentOverride.prompt === undefined) {
-      if (isGLM) {
-        if (name === "resolver") agentConfig.prompt = buildGLMResolverPrompt(maxParallelSubagents)
-        else if (name === "coder") agentConfig.prompt = GLM_CODER_PROMPT
-      } else if (isGPT) {
-        if (name === "resolver") agentConfig.prompt = buildGPTResolverPrompt()
-        else if (name === "coder") agentConfig.prompt = GPT_CODER_PROMPT
-      } else {
-        if (name === "resolver") agentConfig.prompt = buildResolverPrompt(maxParallelSubagents)
+      if (name === "resolver") {
+        agentConfig.prompt = buildResolverPrompt(maxParallelSubagents)
       }
-      // Inject project context into all resolver-type agents
-      if ((name === "resolver" || name === "codex" || name === "glm") && contextInjection) {
+      if (name === "resolver" && contextInjection) {
         agentConfig.prompt = agentConfig.prompt + "\n\n" + contextInjection
       }
       // Inject verify commands into coder prompts
@@ -118,7 +105,6 @@ export function buildContextInjection(ctx: ProjectContext): string {
 
 export function defaultResolveConfig(): ResolveConfig {
     return {
-    profile: "mix",
     models: {},
     agents: {},
     preserveNative: true,
@@ -133,7 +119,6 @@ export function mergeResolveConfig(...configs: Array<ResolveConfig | undefined>)
     const result: ResolveConfig = {};
     for (const config of configs) {
     if (!config) continue
-    result.profile = config.profile ?? result.profile
     result.tier = config.tier ?? result.tier
     result.enabled = config.enabled ?? result.enabled
     result.preserveNative = config.preserveNative ?? result.preserveNative
@@ -240,13 +225,6 @@ export function normalizeResolveConfig(value: unknown, source: string): ResolveP
     if (config.commands !== undefined) result.commands = expectBoolean(config.commands, `${source}.commands`)
     if (config.autoApprove !== undefined) result.autoApprove = expectBoolean(config.autoApprove, `${source}.autoApprove`)
     if (config.autoUpdate !== undefined) result.autoUpdate = expectBoolean(config.autoUpdate, `${source}.autoUpdate`)
-    if (config.profile !== undefined) {
-    const profile = expectString(config.profile, `${source}.profile`)
-    if (!VALID_PROFILES.has(profile)) {
-      throw new Error(`Unknown profile "${profile}" in ${source}.profile. Valid profiles: ${[...VALID_PROFILES].join(", ")}`)
-    }
-    result.profile = profile as ProfileName
-    }
 
     if (config.tier !== undefined) {
     const tier = expectString(config.tier, `${source}.tier`)
@@ -405,7 +383,6 @@ export async function loadResolveConfig(directory: string, opencodeConfig: Confi
 }
 
 export const VALID_TOP_LEVEL_KEYS = new Set<string>([
-      "profile",
       "tier",
       "enabled",
       "models",

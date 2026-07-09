@@ -75,7 +75,7 @@ opencode plugin opencode-resolve --global --force
 opencode
 ```
 
-The npm `postinstall` script registers the plugin in `~/.config/opencode/opencode.json`, creates `~/.config/opencode/resolve.json` if missing, preserves existing model pins (unless you opt out with `--reset-config`), and refreshes the OpenCode plugin cache under `~/.cache/opencode/packages/`.
+The npm `postinstall` script registers the plugin in `~/.config/opencode/opencode.json`, creates `~/.config/opencode/resolve.json` if missing, preserves existing settings (unless you opt out with `--reset`), and refreshes the OpenCode plugin cache under `~/.cache/opencode/packages/`.
 
 ### Re-run setup
 
@@ -83,8 +83,8 @@ Re-run the installer any time with the `opencode-resolve setup` CLI:
 
 | Command | When to use |
 | --- | --- |
-| `opencode-resolve setup --fresh` | Regenerate `resolve.json`; keep existing model pins |
-| `opencode-resolve setup --reset-config` | Regenerate `resolve.json` and reset model pins |
+| `opencode-resolve setup --reset` | Back up and wipe `resolve.json` completely (model pins included) and regenerate it. Aliases: `--fresh`, `--reset-config`, `--nuke`. |
+| `opencode-resolve setup --update` | Keep `resolve.json` and only add missing defaults. |
 | `opencode-resolve setup --models` | Re-detect model pins only |
 | `opencode-resolve setup --force-cache` | Refresh OpenCode plugin cache only |
 
@@ -194,7 +194,6 @@ Full commented reference: [opencode-resolve.reference.jsonc](./opencode-resolve.
 
 | Key | Type | Default | Purpose |
 | --- | --- | --- | --- |
-| `profile` | `mix` / `glm` / `gpt` | `mix` | Prompt/profile preset. |
 | `tier` | `bronze` / `silver` / `gold` | unset | Enables the matching tier preset when configured. |
 | `enabled` | agent name array | default agents | Which resolve agents to inject. |
 | `models` | object | `{}` | Model aliases and per-role model pins. |
@@ -241,9 +240,9 @@ Example three-tier setup:
 ```json
 {
   "models": {
-    "bronze": "zai-coding-plan/glm-4.5",
-    "silver": "zai-coding-plan/glm-5.1",
-    "gold": "openai/gpt-5.5",
+    "bronze": "zai-coding-plan/glm-5.2",
+    "silver": "zai-coding-plan/glm-5.2",
+    "gold": "zai-coding-plan/glm-5.2",
     "explorer": "bronze",
     "coder": "silver",
     "resolver": "gold",
@@ -257,10 +256,8 @@ Example three-tier setup:
 Supported model alias keys:
 
 ```text
-fast, strong, mini, codex, quick, deep, glm, gpt,
+fast, strong, mini, quick, deep,
 bronze, silver, gold,
-gpt-bronze, gpt-silver, gpt-gold,
-glm-bronze, glm-silver, glm-gold,
 and every supported agent name
 ```
 
@@ -274,11 +271,7 @@ and every supported agent name
 | `reviewer` | yes | `subagent` | deny | deny | allow | Read-only verification-gap review. |
 | `deep-reviewer` | yes | `subagent` | deny | deny | allow | Read-only review for risky/high-impact changes. |
 | `planner` | yes | `subagent` | deny | deny | allow | Read-only planning when explicitly useful. |
-| `gpt` | no | `all` | allow | ask | allow | GPT-optimized primary resolver. |
-| `glm` | no | `all` | allow | ask | allow | GLM/ZAI-optimized primary resolver. |
-| `codex` | no | `all` | allow | ask | allow | Legacy Codex-optimized primary resolver. |
 | `architect` | no | `subagent` | deny | deny | allow | Design/decomposition helper. |
-| `gpt-coder` | no | `subagent` | allow | ask | allow | Stronger implementation helper. |
 | `debugger` | no | `subagent` | allow | ask | allow | Failure reproduction/root-cause helper. |
 | `researcher` | no | `subagent` | deny | deny | allow | Codebase/docs research helper. |
 

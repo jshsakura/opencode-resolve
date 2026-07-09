@@ -39,10 +39,6 @@ const AGENT_DISPLAY = {
         architect: "architect",
         researcher: "researcher",
         debugger: "debugger",
-        codex: "codex",
-        glm: "glm",
-        gpt: "gpt",
-        "gpt-coder": "gpt-coder",
     },
     ko: {
         resolver: "리졸버",
@@ -54,10 +50,6 @@ const AGENT_DISPLAY = {
         architect: "아키텍트",
         researcher: "리서처",
         debugger: "디버거",
-        codex: "코덱스",
-        glm: "GLM",
-        gpt: "GPT",
-        "gpt-coder": "GPT 코더",
     },
 };
 let variantCounter = 0;
@@ -83,6 +75,10 @@ const MESSAGES = {
         "system.ralphKeepGoing": "Keep driving — the Ralph Loop should keep iterating until verified resolution.",
         "system.sessionStats": ({ edits, calls, elapsed }) => `📊 Session stats: ${edits} edits, ${calls} tool calls, ${elapsed}s elapsed.`,
         "system.iterationWarning": "Significant iteration with failures. Consider a fundamentally different approach — but keep going.",
+        "system.dispatchEscalate": ({ count, agent }) => `🔄 Ralph Loop: ${agent ?? "subagent"} dispatch failed ${count} time(s) in a row. Do NOT retry the same way. Diagnose the ROOT CAUSE first (read the error, use resolve-diagnostics), then re-dispatch with a precise fix.`,
+        "system.dispatchStop": ({ count }) => `🛑 Ralph Loop: ${count} consecutive dispatch failures. STOP now — revert your last change or restore a safe state, then report to the user EXACTLY what is blocked. Do not keep retrying.`,
+        "system.dispatchPivot": "🔀 STRATEGY PIVOT: repeated dispatch failure on the same task. Dispatch ARCHITECT to design a fundamentally different approach before continuing.",
+        "system.awaitingVerify": ({ file }) => `⏳ Awaiting verification: ${file ?? "the file you just edited"} has NOT been verified yet. Run typecheck/lint/test before reporting completion. NO EVIDENCE = NOT COMPLETE.`,
         "compaction.contextHeader": ({ body }) => `Project context (preserve): ${body}`,
         "tool.edit": "Read the file first. Make the smallest correct change. Verify after editing.",
         "tool.write": "Only write new files when explicitly needed. Prefer editing existing files.",
@@ -177,26 +173,6 @@ const MESSAGES = {
             ({ goal }) => goal ? `🔦 debugger flashlight on ${goal}` : "🔦 debugger flashlight on the stack",
             ({ goal }) => goal ? `🪤 debugger setting a trap for "${goal}"` : "🪤 debugger setting a trap",
             ({ goal }) => goal ? `🧪 debugger isolating ${goal} in a minimal repro` : "🧪 debugger isolating the failure",
-        ],
-        "dispatch.codex": [
-            ({ goal }) => goal ? `🧠 codex tackles ${goal}` : "🧠 codex tackles a hard reasoning task",
-            ({ goal }) => goal ? `🧠 codex chewing on "${goal}"` : "🧠 codex chewing on a thorny piece",
-            ({ goal }) => goal ? `📚 codex consults its tomes for ${goal}` : "📚 codex consults its tomes",
-        ],
-        "dispatch.glm": [
-            ({ goal }) => goal ? `⚡ glm handles ${goal}` : "⚡ glm handles the next slice",
-            ({ goal }) => goal ? `⚡ glm sprinting through "${goal}"` : "⚡ glm sprinting through the next slice",
-            ({ goal }) => goal ? `🐎 glm fast lane on ${goal}` : "🐎 glm fast lane",
-        ],
-        "dispatch.gpt": [
-            ({ goal }) => goal ? `🚀 gpt drives ${goal}` : "🚀 gpt drives the next slice",
-            ({ goal }) => goal ? `🚀 gpt boosting through "${goal}"` : "🚀 gpt boosting through",
-            ({ goal }) => goal ? `🎯 gpt locked on ${goal}` : "🎯 gpt locked on the target",
-        ],
-        "dispatch.gptCoder": [
-            ({ goal }) => goal ? `🧠 gpt-coder handles a tough patch: ${goal}` : "🧠 gpt-coder handles a tough patch",
-            ({ goal }) => goal ? `🧠 gpt-coder taking the hard one — ${goal}` : "🧠 gpt-coder taking the hard one",
-            ({ goal }) => goal ? `🛠 gpt-coder splicing the gnarly part of "${goal}"` : "🛠 gpt-coder splicing the gnarly part",
         ],
         "dispatch.completed": [
             ({ to }) => `✅ ${to} done — control back to resolver`,
@@ -463,6 +439,10 @@ const MESSAGES = {
         "system.ralphKeepGoing": "계속 진행하세요 — Ralph Loop 는 검증된 해결이 나올 때까지 반복합니다.",
         "system.sessionStats": ({ edits, calls, elapsed }) => `📊 세션 통계: ${edits}회 편집, ${calls}회 도구 호출, ${elapsed}초 경과.`,
         "system.iterationWarning": "실패와 함께 반복이 많아졌어요. 근본적으로 다른 접근을 고려하세요 — 하지만 멈추지는 마세요.",
+        "system.dispatchEscalate": ({ count, agent }) => `🔄 Ralph Loop: 서브에이전트(${agent ?? "subagent"})가 ${count}회 연속 실패했습니다. 같은 방식으로 재시도 금지. 먼저 루트 코즈를 진단하고, 정확한 수정으로 다시 위임하세요.`,
+        "system.dispatchStop": ({ count }) => `🛑 Ralph Loop: ${count}회 연속 dispatch 실패. 여기서 멈추고, 마지막 변경을 되돌리거나 안전 상태로 복구한 뒤, 구체적으로 무엇이 막혔는지 사용자에게 보고하세요.`,
+        "system.dispatchPivot": "🔀 전략 전환: 같은 작업의 dispatch 반복 실패. ARCHITECT 를 위임해 근본적으로 다른 접근을 설계받으세요.",
+        "system.awaitingVerify": ({ file }) => `⏳ 검증 대기: ${file ?? "방금 편집한 파일"} 이(가) 아직 검증되지 않았습니다. 완료 보고 전에 반드시 typecheck/lint/test 를 실행하세요. NO EVIDENCE = NOT COMPLETE.`,
         "compaction.contextHeader": ({ body }) => `프로젝트 컨텍스트 (보존): ${body}`,
         "tool.edit": "먼저 파일을 읽으세요. 가장 작은 정확한 변경을 만드세요. 편집 후 검증하세요.",
         "tool.write": "명시적으로 필요할 때만 새 파일을 만드세요. 기존 파일 편집을 우선합니다.",
@@ -559,26 +539,6 @@ const MESSAGES = {
             ({ goal }) => goal ? `🔦 디버거가 ${goal} 에 손전등을 비춤` : "🔦 디버거가 스택에 손전등을 비추는 중",
             ({ goal }) => goal ? `🪤 디버거가 "${goal}" 함정 설치 중` : "🪤 디버거가 함정을 설치하는 중",
             ({ goal }) => goal ? `🧪 디버거가 ${goal} 를 최소 재현으로 격리` : "🧪 디버거가 최소 재현으로 격리 중",
-        ],
-        "dispatch.codex": [
-            ({ goal }) => goal ? `🧠 코덱스가 ${goal} 처리` : "🧠 코덱스가 까다로운 추론 작업을 받습니다",
-            ({ goal }) => goal ? `🧠 코덱스가 "${goal}" 를 곱씹는 중` : "🧠 코덱스가 까다로운 부분을 곱씹는 중",
-            ({ goal }) => goal ? `📚 코덱스가 ${goal} 의 비전을 들춰보는 중` : "📚 코덱스가 비전을 들춰보는 중",
-        ],
-        "dispatch.glm": [
-            ({ goal }) => goal ? `⚡ GLM 이 ${goal} 처리` : "⚡ GLM 이 다음 슬라이스를 처리합니다",
-            ({ goal }) => goal ? `⚡ GLM 이 "${goal}" 를 빠르게 통과 중` : "⚡ GLM 이 다음 슬라이스를 빠르게 통과 중",
-            ({ goal }) => goal ? `🐎 GLM 패스트레인 — ${goal}` : "🐎 GLM 패스트레인",
-        ],
-        "dispatch.gpt": [
-            ({ goal }) => goal ? `🚀 GPT 가 ${goal} 진행` : "🚀 GPT 가 다음 슬라이스를 끌고 갑니다",
-            ({ goal }) => goal ? `🚀 GPT 가 "${goal}" 부스팅` : "🚀 GPT 가 부스팅 중",
-            ({ goal }) => goal ? `🎯 GPT 가 ${goal} 에 락온` : "🎯 GPT 가 타겟에 락온",
-        ],
-        "dispatch.gptCoder": [
-            ({ goal }) => goal ? `🧠 GPT 코더가 까다로운 패치: ${goal}` : "🧠 GPT 코더가 까다로운 패치를 받습니다",
-            ({ goal }) => goal ? `🧠 GPT 코더가 어려운 거 — ${goal}` : "🧠 GPT 코더가 어려운 거 맡습니다",
-            ({ goal }) => goal ? `🛠 GPT 코더가 "${goal}" 의 까다로운 부분을 봉합` : "🛠 GPT 코더가 까다로운 부분을 봉합 중",
         ],
         "dispatch.completed": [
             ({ to }) => `✅ ${to} 완료 — 리졸버에게 제어 반환`,

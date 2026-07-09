@@ -4,6 +4,12 @@ export const FAILURE_THRESHOLD = 10;
 export const STRATEGY_PIVOT_THRESHOLD = 20;
 export const EDIT_HOTSPOT_THRESHOLD = 10;
 export const EDIT_HOTSPOT_TTL_MS = 600_000;
+// Ralph Loop: dispatch lifecycle thresholds. The resolver→coder loop must
+// close: dispatch → verify → (fail: diagnose+redispatch | pass: done).
+// After DISPATCH_STOP_THRESHOLD consecutive failed dispatches, force a STOP &
+// report. After DISPATCH_PIVOT_THRESHOLD, force an architect rethink.
+export const DISPATCH_STOP_THRESHOLD = 3;
+export const DISPATCH_PIVOT_THRESHOLD = 6;
 export function createSessionState() {
     return {
         recentDiagnostics: new Map(),
@@ -16,6 +22,8 @@ export function createSessionState() {
         sessionStartTime: Date.now(),
         loopWarnings: [],
         lastStrategyHint: "",
+        consecutiveDispatchFailures: 0,
+        awaitingVerify: false,
         locale: "en"
     };
 }

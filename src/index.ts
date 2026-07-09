@@ -26,4 +26,8 @@ export const OpencodeResolve: Plugin = async ({ directory }, options) => {
     tool: getTools(sessionState)
   };
 };
-export default OpencodeResolve;
+
+// V1 plugin format — avoids opencode's legacy getLegacyPlugins fallback path,
+// which iterates Object.values(mod) and throws on non-function exports
+// (DEFAULT_MODELS, VALID_MODES, PLUGIN_VERSION, etc. from the re-exports above).
+export default { id: "opencode-resolve", server: OpencodeResolve };

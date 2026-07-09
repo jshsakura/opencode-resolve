@@ -6,8 +6,8 @@ import { fileURLToPath } from "node:url";
 import { dirname } from "node:path";
 import { classifyBashCommand, runCommand, sanitizeShellArg, truncateOutput, PLUGIN_VERSION } from "../utils.js";
 import { DIAGNOSTICS_TTL_MS } from "../state.js";
-import { VALID_PROFILES, VALID_TIERS, VALID_AGENT_NAME_SET, VALID_AGENT_NAMES } from "../agents.js";
-const WRITE_CAPABLE_AGENTS = new Set(["resolver", "codex", "coder", "glm", "gpt-coder", "debugger"]);
+import { VALID_TIERS, VALID_AGENT_NAME_SET, VALID_AGENT_NAMES } from "../agents.js";
+const WRITE_CAPABLE_AGENTS = new Set(["resolver", "coder", "debugger"]);
 function canWriteFromTool(ctx) {
     return typeof ctx.agent !== "string" || WRITE_CAPABLE_AGENTS.has(ctx.agent);
 }
@@ -480,8 +480,6 @@ export function getTools(sessionState) {
                 }
                 // Build resolve.json content
                 const resolveConfig = {};
-                if (sessionState.storedConfig?.profile)
-                    resolveConfig.profile = sessionState.storedConfig.profile;
                 if (sessionState.storedConfig?.tier)
                     resolveConfig.tier = sessionState.storedConfig.tier;
                 if (projCtx?.verifyCommands.length) {
@@ -936,8 +934,6 @@ export function getTools(sessionState) {
                 lines.push(`Session duration: ${elapsed}s`);
                 lines.push(`Tool calls: ${sessionState.totalToolCalls}`);
                 lines.push(`Edits: ${sessionState.totalEdits}`);
-                if (cfg?.profile)
-                    lines.push(`Profile: ${cfg.profile}`);
                 if (cfg?.tier)
                     lines.push(`Tier: ${cfg.tier}`);
                 if (projCtx?.hasTypeScript)
@@ -1053,17 +1049,17 @@ export function getTools(sessionState) {
                 if (!cfg) {
                     return "No resolve config loaded. Plugin may not be initialized.";
                 }
-                // 1. Profile check
-                if (cfg.profile) {
-                    if (VALID_PROFILES.has(cfg.profile)) {
-                        results.push(`✅ Profile: ${cfg.profile}`);
+                // 1. Tier check
+                if (cfg.tier) {
+                    if (VALID_TIERS.has(cfg.tier)) {
+                        results.push(`✅ Tier: ${cfg.tier}`);
                     }
                     else {
-                        results.push(`🔴 Invalid profile: '${cfg.profile}'. Valid: ${[...VALID_PROFILES].join(", ")}`);
+                        results.push(`🔴 Invalid tier: '${cfg.tier}'. Valid: ${[...VALID_TIERS].join(", ")}`);
                     }
                 }
                 else {
-                    results.push("ℹ️ No profile set (using defaults)");
+                    results.push("ℹ️ No tier set (using defaults)");
                 }
                 // 2. Tier check
                 if (cfg.tier) {
@@ -1190,8 +1186,6 @@ export function getTools(sessionState) {
                     failures: sessionState.totalFailures,
                     elapsedSeconds: Math.round((Date.now() - sessionState.sessionStartTime) / 1000),
                 };
-                if (sessionState.storedConfig?.profile)
-                    state.profile = sessionState.storedConfig.profile;
                 if (sessionState.storedConfig?.tier)
                     state.tier = sessionState.storedConfig.tier;
                 if (sessionState.failureWarnings.length > 0)

@@ -1,7 +1,13 @@
-import { DIAGNOSTICS_TTL_MS, FAILURE_PATTERN_TTL_MS, FAILURE_THRESHOLD, STRATEGY_PIVOT_THRESHOLD, EDIT_HOTSPOT_TTL_MS, EDIT_HOTSPOT_THRESHOLD } from "../state.js";
+import { DIAGNOSTICS_TTL_MS, FAILURE_PATTERN_TTL_MS, FAILURE_THRESHOLD, STRATEGY_PIVOT_THRESHOLD, EDIT_HOTSPOT_THRESHOLD, DISPATCH_STOP_THRESHOLD, DISPATCH_PIVOT_THRESHOLD } from "../state.js";
 import { classifyBashCommand, detectProjectContext } from "../utils.js";
 import { loadResolveConfig, applyResolveConfig } from "../config.js";
-import { contextMessage, narrate, resolveLocale, t, agentDisplayName, PLUGIN_BRAND } from "../messages.js";
+import { contextMessage, narrate, resolveLocale, t, agentDisplayName, brand, PLUGIN_BRAND } from "../messages.js";
+import { VALID_AGENT_NAMES } from "../agents.js";
+// Agents this plugin registers. Hooks that modify chat/tool behavior gate on
+// isActiveResolve() so native opencode agents (build/plan/default chat) pass
+// through unmodified — the plugin only intervenes when a resolve agent drives
+// the current turn.
+const RESOLVE_AGENTS = new Set(VALID_AGENT_NAMES);
 function capTemperature(current, cap) {
     return typeof current === "number" && Number.isFinite(current)
         ? Math.min(current, cap)
@@ -16,10 +22,6 @@ const DISPATCH_KEYS = {
     architect: "dispatch.architect",
     researcher: "dispatch.researcher",
     debugger: "dispatch.debugger",
-    codex: "dispatch.codex",
-    glm: "dispatch.glm",
-    gpt: "dispatch.gpt",
-    "gpt-coder": "dispatch.gptCoder",
 };
 function extractSubagentType(args) {
     if (!args || typeof args !== "object")
@@ -35,6 +37,26 @@ function extractDispatchGoal(args) {
         return "";
     const trimmed = candidate.trim().split("\n")[0] ?? "";
     return trimmed.length > 80 ? trimmed.slice(0, 77) + "…" : trimmed;
+}
+// Ralph Loop: does a bash command run one of the project's verify commands
+// (typecheck / lint / test)? Used to clear the awaitingVerify flag so the
+// loop can tell the resolver the edit was actually checked.
+function isVerifyCommand(cmd, verifyCommands) {
+    if (typeof cmd !== "string" || cmd.length === 0)
+        return false;
+    if (!Array.isArray(verifyCommands) || verifyCommands.length === 0)
+        return false;
+    const normalized = cmd.trim();
+    return verifyCommands.some((vc) => typeof vc === "string" && vc.length > 0 && normalized.includes(vc));
+}
+// Ralph Loop: classify a task (subagent dispatch) result as success/failure.
+// A dispatch is failed if the tool errored or carried an error in metadata.
+function dispatchFailed(output) {
+    if (Boolean(output?.error))
+        return true;
+    if (typeof output?.metadata === "object" && output.metadata?.error)
+        return true;
+    return false;
 }
 export function getHooks(directory, options, sessionState) {
     const narrateToolStart = (input, output) => {
@@ -77,6 +99,9 @@ export function getHooks(directory, options, sessionState) {
             (typeof output?.metadata === "object" && output.metadata?.error);
         narrate(sessionState, errorPresent ? "dispatch.failed" : "dispatch.completed", { to });
     };
+    // Is the current turn driven by an agent this plugin registered? Native
+    // opencode agents (build/plan/default chat) return false → hooks no-op.
+    const isActiveResolve = () => RESOLVE_AGENTS.has(sessionState.currentAgent ?? "");
     return {
         event: async (input) => {
             const evt = input.event;
@@ -131,9 +156,9 @@ export function getHooks(directory, options, sessionState) {
                         // Generate warnings for recurring failures
                         sessionState.totalFailures++;
                         sessionState.failureWarnings = [];
-                        for (const [, v] of sessionState.failurePatterns) {
+                        for (const [k, v] of sessionState.failurePatterns) {
                             if (v.count >= FAILURE_THRESHOLD) {
-                                sessionState.failureWarnings.push(`Tool '${toolName}' failed ${v.count} times. Last: ${v.lastMessage}`);
+                                sessionState.failureWarnings.push(`Tool '${k}' failed ${v.count} times. Last: ${v.lastMessage}`);
                             }
                         }
                     }
@@ -158,42 +183,6 @@ export function getHooks(directory, options, sessionState) {
                     for (const [, v] of sessionState.failurePatterns) {
                         if (v.count >= FAILURE_THRESHOLD) {
                             sessionState.failureWarnings.push(`Session error repeated ${v.count} times: ${v.lastMessage}`);
-                        }
-                    }
-                }
-            }
-            // ── Ralph Loop: track edit tool calls for hotspot detection ────────
-            if (evt.type === "message.part.updated") {
-                const props = evt.properties;
-                const part = props.part;
-                if (part?.type === "tool-invocation" || part?.type === "tool-use") {
-                    sessionState.totalToolCalls++;
-                    const toolName = part.tool ?? part.toolName ?? "";
-                    if (toolName === "edit" || toolName === "write") {
-                        sessionState.totalEdits++;
-                        const filePath = part.args?.filePath ?? part.args?.path ?? "";
-                        if (filePath) {
-                            const existing = sessionState.editHotspots.get(filePath);
-                            if (existing) {
-                                existing.count++;
-                                existing.lastEditTime = Date.now();
-                            }
-                            else {
-                                sessionState.editHotspots.set(filePath, { count: 1, lastEditTime: Date.now() });
-                            }
-                            // Prune stale entries
-                            const now = Date.now();
-                            for (const [k, v] of sessionState.editHotspots) {
-                                if (now - v.lastEditTime > EDIT_HOTSPOT_TTL_MS)
-                                    sessionState.editHotspots.delete(k);
-                            }
-                            // Generate loop warnings
-                            sessionState.loopWarnings = [];
-                            for (const [file, data] of sessionState.editHotspots) {
-                                if (data.count >= EDIT_HOTSPOT_THRESHOLD) {
-                                    sessionState.loopWarnings.push(`File '${file}' edited ${data.count} times — consider a different approach. Keep iterating.`);
-                                }
-                            }
                         }
                     }
                 }
@@ -233,43 +222,43 @@ export function getHooks(directory, options, sessionState) {
                         ? input.pattern.join(" ")
                         : "";
                 const action = classifyBashCommand(cmd);
-                if (action !== "ask")
-                    output.status = action;
+                // Banned/dangerous commands are denied universally (protect everyone).
+                if (action === "deny") {
+                    output.status = "deny";
+                }
+                else if (action === "allow" && isActiveResolve()) {
+                    // Auto-approve safe commands only when a resolve agent drives the turn;
+                    // native agents keep opencode's own permission flow.
+                    output.status = "allow";
+                }
             }
         },
         "chat.params": async (input, output) => {
             if (typeof input.agent === "string" && input.agent.length > 0) {
                 sessionState.currentAgent = input.agent;
             }
-            const profile = sessionState.storedConfig?.profile;
-            if (profile === "glm") {
-                output.temperature = capTemperature(output.temperature, 0.4);
-                if (output.maxOutputTokens === undefined || output.maxOutputTokens > 16384) {
-                    output.maxOutputTokens = 16384;
-                }
-                // GLM: tighter topP for deterministic output
-                if (output.topP === undefined || output.topP > 0.9) {
-                    output.topP = 0.85;
-                }
+            // Only shape params for resolve agents — native opencode agents (build/plan)
+            // pass through so the plugin never alters their model behavior.
+            if (!isActiveResolve())
+                return;
+            // Deterministic params keep the resolve loop on-rails (coding benefits from low temperature).
+            output.temperature = capTemperature(output.temperature, 0.4);
+            if (output.maxOutputTokens === undefined || output.maxOutputTokens > 16384) {
+                output.maxOutputTokens = 16384;
             }
-            else if (profile === "gpt") {
-                output.temperature = capTemperature(output.temperature, 0.7);
-                if (output.maxOutputTokens === undefined) {
-                    output.maxOutputTokens = 32768;
-                }
+            if (output.topP === undefined || output.topP > 0.9) {
+                output.topP = 0.85;
             }
             // Read-only agents: lower temperature always
             const readOnlyAgents = new Set(["reviewer", "deep-reviewer", "explorer", "planner", "researcher", "architect"]);
             if (readOnlyAgents.has(input.agent)) {
                 output.temperature = capTemperature(output.temperature, 0.3);
             }
-            // Write agents: slightly higher temperature for creative problem-solving
-            const writeAgents = new Set(["coder", "resolver", "codex", "glm", "gpt-coder"]);
-            if (writeAgents.has(input.agent) && output.temperature === undefined) {
-                output.temperature = 0.5;
-            }
         },
         "tool.definition": async (input, output) => {
+            // Don't pollute tool descriptions for native agents — resolve agents only.
+            if (!isActiveResolve())
+                return;
             const prefix = `[${PLUGIN_BRAND}]`;
             const hintKeys = {
                 edit: "tool.edit",
@@ -290,6 +279,9 @@ export function getHooks(directory, options, sessionState) {
             }
         },
         "command.execute.before": async (_input, output) => {
+            // Only prepend the discipline reminder when a resolve agent drives the turn.
+            if (!isActiveResolve())
+                return;
             // Prepend a discipline reminder to all command executions.
             // The parts array is typed as Part[] — TextPart requires id/sessionID/messageID.
             // We provide placeholder values; OpenCode replaces them if needed.
@@ -298,10 +290,13 @@ export function getHooks(directory, options, sessionState) {
                 sessionID: "",
                 messageID: "",
                 type: "text",
-                text: contextMessage(sessionState.currentAgent, "system.driveResolution"),
+                text: `[${PLUGIN_BRAND}] ${t("system.driveResolution", "en")}`,
             });
         },
         "tool.execute.before": async (input, output) => {
+            // Native agents get unmodified tool execution — resolve agents only.
+            if (!isActiveResolve())
+                return;
             // For bash: inject hints for common mistakes
             if (input.tool === "bash" && output.args && typeof output.args === "object") {
                 const cmd = output.args.command ?? output.args.cmd;
@@ -329,7 +324,14 @@ export function getHooks(directory, options, sessionState) {
             }
         },
         "tool.execute.after": async (input, output) => {
+            // Only track/count/instrument tool calls driven by resolve agents.
+            if (!isActiveResolve())
+                return;
+            // Count every completed tool call from the reliable tool.execute.after
+            // hook (the message-stream event hook was unreliable + double-counted).
+            sessionState.totalToolCalls++;
             if (input.tool === "edit" || input.tool === "write") {
+                sessionState.totalEdits++;
                 const verifyCommands = sessionState.storedProjectContext?.verifyCommands;
                 const meta = { ...(output.metadata ?? {}) };
                 if (verifyCommands && verifyCommands.length > 0) {
@@ -360,6 +362,11 @@ export function getHooks(directory, options, sessionState) {
                     }
                 }
                 output.metadata = meta;
+                // Ralph Loop: an edit just happened — mark that verification is now
+                // required before the resolver may report completion. Cleared when a
+                // verify command (typecheck/lint/test) runs via bash.
+                sessionState.awaitingVerify = true;
+                sessionState.awaitingVerifyFile = editedPath;
                 // Ralph Loop: update sessionState.loopWarnings after every edit/write
                 sessionState.loopWarnings = [];
                 for (const [file, data] of sessionState.editHotspots) {
@@ -370,8 +377,46 @@ export function getHooks(directory, options, sessionState) {
             }
             // Role-play narration → terminal only. Does NOT enter LLM context.
             narrateToolEnd(input, output);
+            // Ralph Loop: dispatch lifecycle — track resolver→coder results so the
+            // loop closes. A failed dispatch must trigger diagnosis before retry;
+            // repeated failures escalate (diagnose → STOP → architect pivot).
+            if (input.tool === "task") {
+                const sub = extractSubagentType(input?.args);
+                const failed = dispatchFailed(output);
+                sessionState.lastDispatchAgent = sub;
+                sessionState.lastDispatchSucceeded = !failed;
+                sessionState.lastDispatchAt = Date.now();
+                if (failed) {
+                    sessionState.consecutiveDispatchFailures++;
+                }
+                else {
+                    sessionState.consecutiveDispatchFailures = 0;
+                }
+                // Attach a directive the resolver sees in tool metadata.
+                const dmeta = { ...(output.metadata ?? {}) };
+                const c = sessionState.consecutiveDispatchFailures;
+                if (failed) {
+                    if (c >= DISPATCH_PIVOT_THRESHOLD) {
+                        dmeta._resolve_loop_directive = `Ralph Loop: ${c} consecutive dispatch failures. Dispatch ARCHITECT to rethink the approach.`;
+                    }
+                    else if (c >= DISPATCH_STOP_THRESHOLD) {
+                        dmeta._resolve_loop_directive = `Ralph Loop: ${c} consecutive dispatch failures. STOP — revert the last change and report to the user exactly what is blocked.`;
+                    }
+                    else {
+                        dmeta._resolve_loop_directive = `Ralph Loop: ${sub ?? "subagent"} dispatch failed (${c}x). Diagnose the ROOT CAUSE before re-dispatching. Do NOT retry the same way.`;
+                    }
+                }
+                output.metadata = dmeta;
+            }
             // For bash: extract key error lines from failing commands
             if (input.tool === "bash") {
+                // Ralph Loop: running a verify command clears the awaitingVerify flag —
+                // the resolver has now checked the edit it made.
+                const cmd = input.args?.command ?? input.args?.cmd;
+                if (isVerifyCommand(cmd, sessionState.storedProjectContext?.verifyCommands)) {
+                    sessionState.awaitingVerify = false;
+                    sessionState.awaitingVerifyFile = undefined;
+                }
                 const outputText = typeof output.output === "string" ? output.output
                     : output.output?.output ?? "";
                 const exitCode = output.metadata?.exitCode ?? output.output?.metadata?.exitCode;
@@ -388,15 +433,16 @@ export function getHooks(directory, options, sessionState) {
             }
         },
         "experimental.session.compacting": async (_input, output) => {
+            // Only preserve resolve-loop context; native compaction is untouched.
+            if (!isActiveResolve())
+                return;
             narrate(sessionState, "narration.compacting");
             const ctx = sessionState.storedProjectContext;
             const cfg = sessionState.storedConfig;
             if (!ctx && !cfg)
                 return;
             const contextLines = [];
-            // Profile and tier info
-            if (cfg?.profile)
-                contextLines.push(`Profile: ${cfg.profile}.`);
+            // Tier info
             if (cfg?.tier)
                 contextLines.push(`Tier: ${cfg.tier}.`);
             // Project context
@@ -432,6 +478,9 @@ export function getHooks(directory, options, sessionState) {
             }
         },
         "experimental.chat.messages.transform": async (_input, output) => {
+            // Rewrite passive language only within resolve turns — native chat is verbatim.
+            if (!isActiveResolve())
+                return;
             const replacements = [
                 // Exact: default OpenCode "continue" prompt
                 ["Summarize the task tool output above and continue with your task.",
@@ -478,14 +527,23 @@ export function getHooks(directory, options, sessionState) {
             }
         },
         "experimental.compaction.autocontinue": async (_input, output) => {
+            // Only force auto-continue for resolve agents — native agents keep their own cadence.
+            if (!isActiveResolve())
+                return;
             // Always enable auto-continue — the resolver should keep driving
             output.enabled = true;
         },
         "experimental.chat.system.transform": async (_input, output) => {
+            // Inject system context/warnings only into resolve-agent turns — native
+            // agents (build/plan/default chat) get their own system prompt untouched.
+            if (!isActiveResolve())
+                return;
             const ctx = sessionState.storedProjectContext;
             const hasFailures = sessionState.failureWarnings.length > 0;
             const hasLoops = sessionState.loopWarnings.length > 0;
-            if (!ctx && !hasFailures && !hasLoops)
+            const hasDispatchFailures = sessionState.consecutiveDispatchFailures > 0;
+            const needsVerify = sessionState.awaitingVerify;
+            if (!ctx && !hasFailures && !hasLoops && !hasDispatchFailures && !needsVerify)
                 return;
             const lines = [];
             const agent = sessionState.currentAgent;
@@ -550,11 +608,37 @@ export function getHooks(directory, options, sessionState) {
                 }));
                 lines.push(t("system.iterationWarning", "en"));
             }
+            // Ralph Loop: enforced loop closure — dispatch lifecycle escalation.
+            // 1-2 failures: diagnose + retry. 3: STOP. 6+: architect pivot.
+            const dc = sessionState.consecutiveDispatchFailures;
+            if (dc > 0) {
+                if (dc >= DISPATCH_PIVOT_THRESHOLD) {
+                    lines.push(contextMessage(agent, "system.dispatchPivot"));
+                }
+                else if (dc >= DISPATCH_STOP_THRESHOLD) {
+                    lines.push(contextMessage(agent, "system.dispatchStop", { count: dc }));
+                }
+                else {
+                    lines.push(contextMessage(agent, "system.dispatchEscalate", {
+                        count: dc,
+                        agent: sessionState.lastDispatchAgent ?? "subagent",
+                    }));
+                }
+            }
+            // Ralph Loop: a pending edit MUST be verified before reporting done.
+            if (sessionState.awaitingVerify) {
+                lines.push(contextMessage(agent, "system.awaitingVerify", {
+                    file: sessionState.awaitingVerifyFile ?? "",
+                }));
+            }
             if (lines.length > 0) {
-                output.system.push(lines.join("\n"));
+                output.system.push(`${brand(undefined)}\n${lines.join("\n")}`);
             }
         },
         "experimental.text.complete": async (_input, output) => {
+            // Append verify reminders only to resolve-agent completions — native output is verbatim.
+            if (!isActiveResolve())
+                return;
             const text = output.text ?? "";
             if (!text)
                 return;
