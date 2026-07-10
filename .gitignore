@@ -16,6 +16,9 @@ tmp/
 temp/
 .opencode/resolve-state.json
 .opencode/*.local.json
+# Per-machine OpenCode workspace config. The committed config users copy from is
+# opencode-resolve.example.json / .reference.jsonc, not this.
+.opencode/opencode.json
 
 # Environment and secrets
 .env
@@ -47,3 +50,7 @@ Thumbs.db
 
 # Local design/screenshot dumps in repo root (committed images live under website/)
 /*.png
+
+# Local review/analysis scratch in repo root (published docs live under docs/ and website/)
+/adversarial_review_*.md
+/opencode_resolve_improvements.md
