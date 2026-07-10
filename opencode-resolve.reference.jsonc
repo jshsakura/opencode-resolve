@@ -107,6 +107,44 @@
   // "singleAgentMode": false,
 
   // -----------------------------------------------------------------------
+  // permissions (object)
+  // Opt-in relaxations of the universal bash safety policy. Both default to
+  // false, and both apply ONLY to opencode-resolve's own agents — native
+  // opencode agents (build/plan/chat) keep the unconditional deny.
+  //
+  //   allowGitReset — permits `git reset --hard`
+  //   allowGitClean — permits `git clean -f` (and -fd, -df, ...)
+  //
+  // `git clean -x` / `-X` stays denied no matter what: it deletes gitignored
+  // files, and the checkpoint below snapshots via `git add -A`, which honours
+  // .gitignore. A `-x` clean would destroy files (.env, local secrets) the
+  // checkpoint cannot bring back.
+  //
+  // Without these, an agent that tangles the worktree mid-debug has no way to
+  // return to a clean state and stalls. With them, the agent can recover.
+  //
+  // Before either command runs, the plugin snapshots the ENTIRE worktree —
+  // tracked edits and untracked files — into a git ref:
+  //
+  //     refs/resolve-checkpoint/<timestamp>-<reset|clean>
+  //
+  // The snapshot uses a throwaway index, so your real index, working tree,
+  // branches and HEAD are never touched. Nothing is staged or committed.
+  // If the snapshot cannot be written, the destructive command is blocked.
+  //
+  // To recover after a rollback you regret:
+  //     git for-each-ref refs/resolve-checkpoint    # list checkpoints
+  //     git restore --source=<ref> -- .             # bring everything back
+  //
+  // Checkpoints are also taken when you approve one of these commands at the
+  // permission prompt, even with both flags left false.
+  // -----------------------------------------------------------------------
+  // "permissions": {
+  //   "allowGitReset": true,
+  //   "allowGitClean": true
+  // },
+
+  // -----------------------------------------------------------------------
   // models (object)
   // Alias map. Keys are either an agent name (coder, reviewer, resolver,
   // architect, debugger, researcher, explorer, deep-reviewer, planner)

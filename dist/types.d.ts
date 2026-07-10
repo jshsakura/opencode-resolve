@@ -21,6 +21,14 @@ export type ResolveAgentConfig = {
 };
 export type TierName = "bronze" | "silver" | "gold";
 export type LanguageSetting = "auto" | "en" | "ko";
+/** Opt-in relaxations of the universal bash safety policy. Off by default. */
+export type ResolvePermissions = {
+    /** Let resolve agents run `git reset --hard` (a checkpoint ref is written first). */
+    allowGitReset?: boolean;
+    /** Let resolve agents run `git clean -f...` (a checkpoint ref is written first). */
+    allowGitClean?: boolean;
+};
+export type RollbackKind = "reset" | "clean";
 export type ResolveConfig = {
     tier?: TierName;
     enabled?: ResolveAgentName[];
@@ -33,6 +41,7 @@ export type ResolveConfig = {
     autoUpdate?: boolean;
     language?: LanguageSetting;
     singleAgentMode?: boolean;
+    permissions?: ResolvePermissions;
 };
 export type ResolvePluginOptions = ResolveConfig & {
     config?: string;

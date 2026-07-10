@@ -94,6 +94,7 @@ export function defaultResolveConfig() {
         commands: false,
         autoApprove: true,
         autoUpdate: true,
+        permissions: {},
     };
 }
 export function mergeResolveConfig(...configs) {
@@ -110,6 +111,7 @@ export function mergeResolveConfig(...configs) {
         result.autoUpdate = config.autoUpdate ?? result.autoUpdate;
         result.language = config.language ?? result.language;
         result.singleAgentMode = config.singleAgentMode ?? result.singleAgentMode;
+        result.permissions = { ...result.permissions, ...config.permissions };
         result.models = { ...result.models, ...config.models };
         result.agents = mergeAgents(result.agents, config.agents);
     }
@@ -223,8 +225,24 @@ export function normalizeResolveConfig(value, source) {
         }
         result.maxParallelSubagents = limit;
     }
+    if (config.permissions !== undefined)
+        result.permissions = normalizePermissions(config.permissions, `${source}.permissions`);
     if (config.config !== undefined)
         result.config = expectString(config.config, `${source}.config`);
+    return result;
+}
+export function normalizePermissions(value, source) {
+    const permissions = expectObject(value, source);
+    const result = {};
+    for (const key of Object.keys(permissions)) {
+        if (!VALID_PERMISSIONS_KEYS.has(key)) {
+            throw new Error(`Unknown permissions key "${key}" in ${source}. Valid: ${[...VALID_PERMISSIONS_KEYS].join(", ")}`);
+        }
+    }
+    if (permissions.allowGitReset !== undefined)
+        result.allowGitReset = expectBoolean(permissions.allowGitReset, `${source}.allowGitReset`);
+    if (permissions.allowGitClean !== undefined)
+        result.allowGitClean = expectBoolean(permissions.allowGitClean, `${source}.allowGitClean`);
     return result;
 }
 export function normalizeAgentConfig(value, source) {
@@ -359,8 +377,10 @@ export const VALID_TOP_LEVEL_KEYS = new Set([
     "autoUpdate",
     "language",
     "singleAgentMode",
+    "permissions",
     "config",
 ]);
+export const VALID_PERMISSIONS_KEYS = new Set(["allowGitReset", "allowGitClean"]);
 export const VALID_AGENT_KEYS = new Set([
     "enabled",
     "model",

@@ -15,6 +15,10 @@ function readOnlyToolWriteDenied(ctx, action) {
     return `Permission denied: agent '${ctx.agent ?? "unknown"}' is read-only and cannot ${action}. Dispatch resolver/coder for workspace writes.`;
 }
 function commandExecutionDenied(command) {
+    // Deliberately called without `permissions` — this path executes directly and
+    // never reaches `tool.execute.before`, so a rollback here would run without a
+    // checkpoint. `permissions.allowGitReset`/`allowGitClean` only relax the
+    // OpenCode bash tool, which is checkpointed.
     const action = classifyBashCommand(command);
     if (action === "allow")
         return undefined;

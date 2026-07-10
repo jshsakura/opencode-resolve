@@ -2,7 +2,7 @@ import { join, basename, isAbsolute, resolve } from "node:path";
 import { homedir } from "node:os";
 import { access, readFile } from "node:fs/promises";
 import { Config } from "@opencode-ai/plugin";
-import { ResolveConfig, ProjectContext, ResolveAgentName, TierName, AgentMode, UnknownRecord, ResolvePluginOptions, ResolveAgentConfig, ModelAlias, PermissionValue, LanguageSetting } from "./types.js";
+import { ResolveConfig, ProjectContext, ResolveAgentName, TierName, AgentMode, UnknownRecord, ResolvePluginOptions, ResolveAgentConfig, ModelAlias, PermissionValue, LanguageSetting, ResolvePermissions } from "./types.js";
 import { DEFAULT_AGENT_CONFIG, buildResolverPrompt, VALID_AGENT_NAME_SET, DEFAULT_MODELS, DEFAULT_ENABLED, VALID_AGENT_NAMES, TIER_ENABLED, VALID_MODEL_ALIAS_SET, VALID_TIERS } from "./agents.js";
 import { readFirstJson } from "./utils.js";
 
@@ -104,6 +104,7 @@ export function defaultResolveConfig(): ResolveConfig {
     commands: false,
     autoApprove: true,
     autoUpdate: true,
+    permissions: {},
     }
 }
 
@@ -120,6 +121,7 @@ export function mergeResolveConfig(...configs: Array<ResolveConfig | undefined>)
     result.autoUpdate = config.autoUpdate ?? result.autoUpdate
     result.language = config.language ?? result.language
     result.singleAgentMode = config.singleAgentMode ?? result.singleAgentMode
+    result.permissions = { ...result.permissions, ...config.permissions }
     result.models = { ...result.models, ...config.models }
     result.agents = mergeAgents(result.agents, config.agents)
     }
@@ -242,7 +244,23 @@ export function normalizeResolveConfig(value: unknown, source: string): ResolveP
     result.maxParallelSubagents = limit
     }
 
+    if (config.permissions !== undefined) result.permissions = normalizePermissions(config.permissions, `${source}.permissions`)
+
     if (config.config !== undefined) result.config = expectString(config.config, `${source}.config`)
+    return result
+}
+
+export function normalizePermissions(value: unknown, source: string): ResolvePermissions {
+    const permissions = expectObject(value, source);
+    const result: ResolvePermissions = {};
+    for (const key of Object.keys(permissions)) {
+    if (!VALID_PERMISSIONS_KEYS.has(key)) {
+      throw new Error(`Unknown permissions key "${key}" in ${source}. Valid: ${[...VALID_PERMISSIONS_KEYS].join(", ")}`)
+    }
+    }
+
+    if (permissions.allowGitReset !== undefined) result.allowGitReset = expectBoolean(permissions.allowGitReset, `${source}.allowGitReset`)
+    if (permissions.allowGitClean !== undefined) result.allowGitClean = expectBoolean(permissions.allowGitClean, `${source}.allowGitClean`)
     return result
 }
 
@@ -386,8 +404,10 @@ export const VALID_TOP_LEVEL_KEYS = new Set<string>([
       "autoUpdate",
       "language",
       "singleAgentMode",
+      "permissions",
       "config",
     ]);
+export const VALID_PERMISSIONS_KEYS = new Set<string>(["allowGitReset", "allowGitClean"]);
 export const VALID_AGENT_KEYS = new Set<string>([
       "enabled",
       "model",

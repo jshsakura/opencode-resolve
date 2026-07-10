@@ -1,5 +1,6 @@
 import { DIAGNOSTICS_TTL_MS, FAILURE_PATTERN_TTL_MS, FAILURE_THRESHOLD, STRATEGY_PIVOT_THRESHOLD, EDIT_HOTSPOT_THRESHOLD, DISPATCH_STOP_THRESHOLD, DISPATCH_PIVOT_THRESHOLD } from "../state.js";
-import { classifyBashCommand, detectProjectContext } from "../utils.js";
+import { classifyBashCommand, detectRollbackCommand, formatError, detectProjectContext } from "../utils.js";
+import { createRollbackCheckpoint, isGitRepository } from "../checkpoint.js";
 import { loadResolveConfig, applyResolveConfig } from "../config.js";
 import { contextMessage, narrate, resolveLocale, t, agentDisplayName, brand, PLUGIN_BRAND } from "../messages.js";
 import { VALID_AGENT_NAMES } from "../agents.js";
@@ -36,6 +37,43 @@ function isCodeFile(filePath) {
     if (dot < 0)
         return true; // no extension — treat as code
     return CODE_EXTENSIONS.includes(filePath.slice(dot + 1).toLowerCase());
+}
+// Harness boilerplate — not the model's words, so rewriting them wholesale
+// costs nothing and buys a sharper instruction.
+const HARNESS_BOILERPLATE_REWRITES = [
+    ["Summarize the task tool output above and continue with your task.",
+        "Analyze the subtask result above. If it succeeded, continue. If it failed, diagnose and retry. Report completion only when verified."],
+    [/Summarize the .+ output above and continue/i,
+        "Analyze the result above. If it succeeded, continue to the next step. If it failed, diagnose root cause and retry with a fix."],
+    [/continue with your task\.$/i,
+        "continue driving toward verified completion."],
+];
+// Marker on every appended nudge. Also the idempotency key: a part that already
+// carries it is never nudged again.
+const NUDGE_MARKER = `[${PLUGIN_BRAND}] self-check:`;
+// The model's own words — uncertainty, low confidence, retry intent. Overwriting
+// these erases the reasoning trace the model needs to notice it is going in
+// circles, so the original text stays and a nudge is appended after it.
+const SELF_REVIEW_NUDGES = [
+    [/I('ve| have) (completed|finished|done) (the )?.*\.$/i,
+        "Before this counts as complete: did typecheck/lint/test actually run and pass? Verify, then report."],
+    [/I('ll| will) (try again|retry|attempt again|redo)/i,
+        "Name the ROOT CAUSE before retrying — a retry that repeats the same fix fails the same way."],
+    [/I('m| am) (not sure|unsure|uncertain) .*/i,
+        "The uncertainty is worth stating. Now settle it with evidence: read the code, check resolve-diagnostics, or search."],
+    [/this (might|should|could|may) work/i,
+        "CONFIRM it works by running verification before moving on. Do not assume."],
+    [/it (seems|appears|looks) to (be )?(working|fine|correct)/i,
+        "VERIFY with typecheck/lint/test — 'seems to work' is not evidence."],
+];
+// Edit-hotspot feedback. Repeatedly editing one file is often the *correct*
+// path through a hard bug — the failure mode is not the repetition itself but
+// re-applying the same change blind. So the nudge asks the model to inspect its
+// own diff, never to go edit some other file (that spreads the damage).
+function hotspotDiffPrompt(filePath, count) {
+    return `'${filePath}' has been edited ${count} times. Before the next edit, run \`git diff -- ${filePath}\` ` +
+        `and check whether recent edits repeat the same substitution or undo each other. ` +
+        `If the root cause is genuinely in this file, keep working here.`;
 }
 function capTemperature(current, cap) {
     return typeof current === "number" && Number.isFinite(current)
@@ -262,7 +300,11 @@ export function getHooks(directory, options, sessionState) {
                     : Array.isArray(input.pattern)
                         ? input.pattern.join(" ")
                         : "";
-                const action = classifyBashCommand(cmd);
+                // `permissions.allowGitReset` / `allowGitClean` only relax the policy for
+                // resolve agents — they are the ones `tool.execute.before` checkpoints.
+                // Native agents keep the universal deny.
+                const permissions = isActiveResolve() ? sessionState.storedConfig?.permissions : undefined;
+                const action = classifyBashCommand(cmd, permissions);
                 // Banned/dangerous commands are denied universally (protect everyone).
                 if (action === "deny") {
                     output.status = "deny";
@@ -344,6 +386,30 @@ export function getHooks(directory, options, sessionState) {
                 if (typeof cmd === "string" && cmd.includes("git commit") && !cmd.includes("-m")) {
                     output.args = { ...output.args, _resolve_hint: "Use 'git commit -m \"message\"' — interactive commit is blocked." };
                 }
+                // Rollback safety net: snapshot the worktree before `git reset --hard` /
+                // `git clean -f` destroys uncommitted work. Runs whenever the command is
+                // about to execute — whether it was un-gated by `permissions.allow*` or
+                // approved by the user at the prompt. If the snapshot cannot be written
+                // in a git repo, abort rather than run the command unprotected.
+                if (typeof cmd === "string") {
+                    const rollback = detectRollbackCommand(cmd);
+                    if (rollback && await isGitRepository(directory)) {
+                        let checkpoint;
+                        try {
+                            checkpoint = await createRollbackCheckpoint(directory, rollback);
+                        }
+                        catch (error) {
+                            throw new Error(`[${PLUGIN_BRAND}] refused to run '${cmd}': could not create a rollback checkpoint (${formatError(error)}). ` +
+                                `Commit or stash your work first.`);
+                        }
+                        narrate(sessionState, "narration.checkpoint");
+                        output.args = {
+                            ...output.args,
+                            _resolve_checkpoint_ref: checkpoint.ref,
+                            _resolve_checkpoint_restore: checkpoint.restoreCommand,
+                        };
+                    }
+                }
             }
             // For write: warn about overwriting existing files
             if (input.tool === "write" && output.args && typeof output.args === "object") {
@@ -406,7 +472,7 @@ export function getHooks(directory, options, sessionState) {
                     // Ralph Loop: inject loop warning into metadata
                     const hotspot = sessionState.editHotspots.get(editedPath);
                     if (hotspot && hotspot.count >= EDIT_HOTSPOT_THRESHOLD) {
-                        meta._resolve_loop_warning = `This file has been edited ${hotspot.count} times. Consider a different approach.`;
+                        meta._resolve_loop_warning = hotspotDiffPrompt(editedPath, hotspot.count);
                     }
                 }
                 output.metadata = meta;
@@ -423,7 +489,7 @@ export function getHooks(directory, options, sessionState) {
                 sessionState.loopWarnings = [];
                 for (const [file, data] of sessionState.editHotspots) {
                     if (data.count >= EDIT_HOTSPOT_THRESHOLD) {
-                        sessionState.loopWarnings.push(`File '${file}' edited ${data.count} times — consider a different approach for this file. Keep iterating.`);
+                        sessionState.loopWarnings.push(hotspotDiffPrompt(file, data.count));
                     }
                 }
             }
@@ -533,47 +599,26 @@ export function getHooks(directory, options, sessionState) {
             // Rewrite passive language only within resolve turns — native chat is verbatim.
             if (!isActiveResolve())
                 return;
-            const replacements = [
-                // Exact: default OpenCode "continue" prompt
-                ["Summarize the task tool output above and continue with your task.",
-                    "Analyze the subtask result above. If it succeeded, continue. If it failed, diagnose and retry. Report completion only when verified."],
-                // Regex: any "Summarize ... and continue" variant
-                [/Summarize the .+ output above and continue/i,
-                    "Analyze the result above. If it succeeded, continue to the next step. If it failed, diagnose root cause and retry with a fix."],
-                // Regex: generic "continue with your task" ending
-                [/continue with your task\.$/i,
-                    "continue driving toward verified completion."],
-                // Regex: "I've completed..." without verification
-                [/I('ve| have) (completed|finished|done) (the )?.*\.$/i,
-                    "Verify your changes pass typecheck/lint/test before reporting completion."],
-                // Ralph Loop: detect "I'll try again" — encourage different approach, don't stop
-                [/I('ll| will) (try again|retry|attempt again|redo)/i,
-                    "Diagnose the ROOT CAUSE of the failure, then apply a DIFFERENT fix. The Ralph Loop keeps going."],
-                // Regex: "I'm not sure" — uncertainty without action
-                [/I('m| am) (not sure|unsure|uncertain) .*/i,
-                    "Resolve uncertainty by reading the code, checking diagnostics, or using resolve-search. Keep driving."],
-                // Regex: "This might work" — low confidence
-                [/this (might|should|could|may) work/i,
-                    "CONFIRM it works by running verification. Do not assume."],
-                // Regex: "It seems to be working" — unverified claim
-                [/it (seems|appears|looks) to (be )?(working|fine|correct)/i,
-                    "VERIFY with typecheck/lint/test. 'Seems to work' is not evidence."],
-            ];
             for (const msg of output.messages) {
                 for (const part of msg.parts) {
                     if (part.type !== "text")
                         continue;
-                    // Preserve collaborative handoffs/questions — never rewrite a turn
-                    // that asks the user something. Only rewrite passive/stalled claims
-                    // ("this might work", "seems fine", unverified "completed", ...).
+                    // Preserve collaborative handoffs/questions — never touch a turn that
+                    // asks the user something.
                     if (HANDOFF_PATTERNS.some((p) => p.test(part.text.trim())))
                         continue;
-                    for (const [pattern, replacement] of replacements) {
-                        if (typeof pattern === "string" ? part.text === pattern : pattern.test(part.text)) {
-                            part.text = replacement;
-                            break; // first match wins
-                        }
+                    const boilerplate = HARNESS_BOILERPLATE_REWRITES.find(([pattern]) => typeof pattern === "string" ? part.text === pattern : pattern.test(part.text));
+                    if (boilerplate) {
+                        part.text = boilerplate[1];
+                        continue;
                     }
+                    // transform() sees the whole message list every turn, so an appended
+                    // nudge would compound. One nudge per part, ever.
+                    if (part.text.includes(NUDGE_MARKER))
+                        continue;
+                    const nudge = SELF_REVIEW_NUDGES.find(([pattern]) => pattern.test(part.text));
+                    if (nudge)
+                        part.text = `${part.text}\n\n${NUDGE_MARKER} ${nudge[1]}`;
                 }
             }
         },
@@ -631,7 +676,10 @@ export function getHooks(directory, options, sessionState) {
                 for (const w of sessionState.loopWarnings.slice(0, 3)) {
                     lines.push(`  - ${w}`);
                 }
+                // Self-observation first — reading your own diff is the cheapest way out
+                // of a hotspot, and the only one that cannot pollute an unrelated file.
                 const strategyKeys = [
+                    "strategy.reviewDiff",
                     "strategy.rereadFile",
                     "strategy.tryDifferent",
                     "strategy.useDiagnostics",

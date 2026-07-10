@@ -197,6 +197,33 @@ Full commented reference: [opencode-resolve.reference.jsonc](./opencode-resolve.
 | `language` | `auto` / `en` / `ko` | `auto` | Prompt language preference. |
 | `maxParallelSubagents` | positive integer | unset | Optional prompt-level soft limit for concurrent coder dispatch. |
 | `singleAgentMode` | boolean | `false` | When `true`, the resolver makes all edits directly instead of dispatching a `coder` subagent — lower latency and token cost on simple tasks. Information/diagnostic subagents (explorer/debugger) are still available. |
+| `permissions` | object | `{}` | Opt-in rollback permissions. See below. |
+
+### Rollback Permissions
+
+`git reset --hard` and `git clean -f` are denied by default. That protects your uncommitted work, but it also means an agent that tangles the worktree mid-debug cannot get back to a clean state — it stalls. Two opt-in flags un-gate them, for resolve agents only:
+
+```json
+{
+  "permissions": {
+    "allowGitReset": true,
+    "allowGitClean": true
+  }
+}
+```
+
+Before either command runs, the plugin snapshots the **entire worktree** — tracked edits *and* untracked files — into a git ref named `refs/resolve-checkpoint/<timestamp>-<reset|clean>`. The snapshot is written through a throwaway index, so your real index, working tree, branches, and `HEAD` are never touched: nothing is staged, nothing is committed. If the snapshot cannot be written, the destructive command is blocked instead of run unprotected.
+
+To recover from a rollback you regret:
+
+```sh
+git for-each-ref refs/resolve-checkpoint    # list checkpoints
+git restore --source=<ref> -- .             # bring everything back
+```
+
+`git clean -x` and `-X` stay denied regardless of these flags. They delete gitignored files, and the checkpoint snapshots via `git add -A`, which honours `.gitignore` — so a `-x` clean would destroy files (`.env`, local secrets) the checkpoint cannot bring back.
+
+Checkpoints are taken whenever one of these commands executes under a resolve agent — including when you approve it yourself at the permission prompt with both flags left `false`. Native OpenCode agents (`build`/`plan`/chat) keep the unconditional deny and are unaffected by these flags.
 
 ### Agent Overrides
 
@@ -272,6 +299,8 @@ and every supported agent name
 Resolve agents keep bash at `ask` by default. The plugin's permission hook auto-allows common safe read/test commands and denies obviously dangerous patterns such as force pushes, shell-eval injection, and remote script pipes. Unknown commands remain `ask`.
 
 `autoApprove` is accepted for compatibility with older configs, but current behavior is controlled by explicit agent permissions and the command classifier.
+
+`git reset --hard` and `git clean -f` are denied unless you opt in — see [Rollback Permissions](#rollback-permissions). When permitted, the plugin checkpoints the worktree first.
 
 Use a sandbox or VM for untrusted repositories.
 

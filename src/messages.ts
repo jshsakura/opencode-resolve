@@ -116,6 +116,7 @@ export type MessageKey =
   | "narration.typechecking"
   | "narration.linting"
   | "narration.git"
+  | "narration.checkpoint"
   | "narration.fetch"
   | "narration.todo"
   | "narration.diagnostics"
@@ -131,6 +132,7 @@ export type MessageKey =
   | "strategy.rereadFile"
   | "strategy.tryDifferent"
   | "strategy.useDiagnostics"
+  | "strategy.reviewDiff"
   | "strategy.suggestionLabel";
 
 type Params = Record<string, string | number>;
@@ -158,8 +160,8 @@ const MESSAGES: Record<Locale, Record<MessageKey, MessageTemplate>> = {
     "system.strategyPivotHeader": ({ count }) => `🔀 STRATEGY PIVOT: ${count} total failures detected.`,
     "system.strategyPivotBody": "The current approach is not working. Dispatch ARCHITECT to analyze the problem from scratch and propose a fundamentally different strategy.",
     "system.strategyPivotTail": "Then apply the new strategy. Do NOT keep retrying the same approach.",
-    "system.ralphHeader": "🔄 Ralph Loop: heavy editing detected on same file(s):",
-    "system.ralphKeepGoing": "Keep driving — the Ralph Loop should keep iterating until verified resolution.",
+    "system.ralphHeader": "🔄 Ralph Loop: heavy editing detected on same file(s). Repetition is not itself the problem — repeating the *same* edit is:",
+    "system.ralphKeepGoing": "Read the diff before the next edit. If the root cause really is in this file, stay here — moving to an unrelated file to break the count only spreads the damage. Keep driving until verified.",
     "system.sessionStats": ({ edits, calls, elapsed }) =>
       `📊 Session stats: ${edits} edits, ${calls} tool calls, ${elapsed}s elapsed.`,
     "system.iterationWarning": "Significant iteration with failures. Consider a fundamentally different approach — but keep going.",
@@ -436,6 +438,11 @@ const MESSAGES: Record<Locale, Record<MessageKey, MessageTemplate>> = {
       "🌳 inspecting the diff",
       "🌳 listening to git",
     ],
+    "narration.checkpoint": [
+      "🛟 snapshotting the worktree before rollback",
+      "🛟 saving a checkpoint you can restore from",
+      "🛟 stashing a safety copy first",
+    ],
     "narration.fetch": [
       "🌐 fetching from the web",
       "🌐 grabbing the docs",
@@ -493,13 +500,14 @@ const MESSAGES: Record<Locale, Record<MessageKey, MessageTemplate>> = {
       "🪑 brief regroup",
     ],
     "strategy.smallerPieces": "Break the problem into smaller pieces. Edit one function at a time, verify between each.",
-    "strategy.differentFile": "Check if the error is actually in a DIFFERENT file — the real issue may be upstream.",
+    "strategy.differentFile": "Follow the evidence: if diagnostics point at a different file, the real cause may be upstream. Confirm that before editing anything else.",
     "strategy.readTest": "Read the test file if it exists — the test often reveals the expected behavior.",
     "strategy.checkImports": "Check imports — missing or wrong imports are a common cause of cascading errors.",
     "strategy.searchSimilar": "Use resolve-search to find similar patterns elsewhere in the codebase.",
     "strategy.rereadFile": "Re-read the file carefully. You may be missing existing code that conflicts with your edit.",
-    "strategy.tryDifferent": "Try a completely different approach — revert your last change and try a different fix.",
+    "strategy.tryDifferent": "The fix, not the file, is what should change. Try a different fix for the same root cause.",
     "strategy.useDiagnostics": "Use resolve-diagnostics to check current LSP errors before the next edit.",
+    "strategy.reviewDiff": "Run `git diff` on the hotspot file. Look for edits that repeat the same substitution or cancel each other out.",
     "strategy.suggestionLabel": "Strategy suggestion",
   },
   ko: {
@@ -526,8 +534,8 @@ const MESSAGES: Record<Locale, Record<MessageKey, MessageTemplate>> = {
     "system.strategyPivotHeader": ({ count }) => `🔀 전략 전환: 총 ${count}회의 실패가 감지됐어요.`,
     "system.strategyPivotBody": "지금 접근은 통하지 않아요. ARCHITECT 를 위임해서 문제를 처음부터 분석하고 근본적으로 다른 전략을 제안받으세요.",
     "system.strategyPivotTail": "그 다음 새 전략을 적용하세요. 같은 접근을 다시 시도하지 마세요.",
-    "system.ralphHeader": "🔄 Ralph Loop: 같은 파일을 너무 자주 수정 중이에요:",
-    "system.ralphKeepGoing": "계속 진행하세요 — Ralph Loop 는 검증된 해결이 나올 때까지 반복합니다.",
+    "system.ralphHeader": "🔄 Ralph Loop: 같은 파일을 반복 수정 중이에요. 반복 자체가 문제가 아니라, *같은 수정* 을 반복하는 게 문제입니다:",
+    "system.ralphKeepGoing": "다음 편집 전에 diff 를 읽으세요. 근본 원인이 정말 이 파일에 있다면 계속 여기서 작업하세요 — 횟수를 피하려고 무관한 파일로 옮겨가면 오염만 번집니다. 검증될 때까지 계속.",
     "system.sessionStats": ({ edits, calls, elapsed }) =>
       `📊 세션 통계: ${edits}회 편집, ${calls}회 도구 호출, ${elapsed}초 경과.`,
     "system.iterationWarning": "실패와 함께 반복이 많아졌어요. 근본적으로 다른 접근을 고려하세요 — 하지만 멈추지는 마세요.",
@@ -817,6 +825,11 @@ const MESSAGES: Record<Locale, Record<MessageKey, MessageTemplate>> = {
       "🌳 diff 점검 중",
       "🌳 git 말 듣는 중",
     ],
+    "narration.checkpoint": [
+      "🛟 롤백 전에 작업트리 스냅샷 뜨는 중",
+      "🛟 복구용 체크포인트 저장 중",
+      "🛟 만약을 위해 안전 사본 남기는 중",
+    ],
     "narration.fetch": [
       "🌐 웹에서 가져오는 중",
       "🌐 문서 끌어오는 중",
@@ -874,13 +887,14 @@ const MESSAGES: Record<Locale, Record<MessageKey, MessageTemplate>> = {
       "🪑 잠깐 정비",
     ],
     "strategy.smallerPieces": "문제를 더 작은 단위로 쪼개세요. 한 번에 함수 하나씩 편집하고, 각 사이에 검증하세요.",
-    "strategy.differentFile": "에러가 실제로는 다른 파일에 있는지 확인하세요 — 진짜 원인은 상류일 수 있습니다.",
+    "strategy.differentFile": "증거를 따라가세요: 진단이 다른 파일을 가리킨다면 진짜 원인은 상류일 수 있습니다. 다른 파일을 건드리기 전에 먼저 확인하세요.",
     "strategy.readTest": "테스트 파일이 있으면 먼저 읽으세요 — 기대 동작이 거기에 드러나 있을 때가 많습니다.",
     "strategy.checkImports": "import 를 확인하세요 — 누락되거나 잘못된 import 가 연쇄 에러의 흔한 원인입니다.",
     "strategy.searchSimilar": "resolve-search 로 코드베이스 내 유사 패턴을 찾으세요.",
     "strategy.rereadFile": "파일을 다시 차분히 읽으세요. 편집과 충돌하는 기존 코드를 놓쳤을 수 있습니다.",
-    "strategy.tryDifferent": "완전히 다른 접근을 시도하세요 — 마지막 변경을 되돌리고 다른 방법으로 고치세요.",
+    "strategy.tryDifferent": "바꿔야 할 건 파일이 아니라 해법입니다. 같은 근본 원인에 대해 다른 수정을 시도하세요.",
     "strategy.useDiagnostics": "다음 편집 전에 resolve-diagnostics 로 현재 LSP 에러를 확인하세요.",
+    "strategy.reviewDiff": "핫스팟 파일에 `git diff` 를 실행하세요. 같은 치환을 반복했거나 서로 상쇄되는 편집이 있는지 확인하세요.",
     "strategy.suggestionLabel": "전략 제안",
   },
 };

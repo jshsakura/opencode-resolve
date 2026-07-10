@@ -28,7 +28,7 @@ git push --follow-tags                       # workflow fires on the v* tag
 
 The plugin schema kept gaining valid names in `src/index.ts` (new agents in `VALID_AGENT_NAMES`, new aliases in `VALID_MODEL_ALIASES`) **without a corresponding `npm publish`**. The README's drop-in template told users to write a `resolve.json` that referenced those new names. When OpenCode loaded the npm-cached old plugin against a new `resolve.json`, `normalizeResolveConfig` threw on the unknown name → OpenCode silently disabled the plugin → user saw only `build` / `plan` in the agent picker.
 
-**Rule:** every commit that changes `VALID_AGENT_NAMES`, `VALID_MODEL_ALIASES`, `VALID_TOP_LEVEL_KEYS`, the `enabled` defaults, or any field referenced from the README templates **must** ship as a new published version. Don't merge a README-only update that names a new agent/alias before the supporting schema change is on npm.
+**Rule:** every commit that changes `VALID_AGENT_NAMES`, `VALID_MODEL_ALIASES`, `VALID_TOP_LEVEL_KEYS`, `VALID_PERMISSIONS_KEYS`, the `enabled` defaults, or any field referenced from the README templates **must** ship as a new published version. Don't merge a README-only update that names a new agent/alias before the supporting schema change is on npm.
 
 ## Verifying an install actually worked
 
@@ -67,7 +67,7 @@ When adding a new agent name, model alias, or top-level config key:
 - [ ] Update `opencode-resolve.reference.jsonc`
 - [ ] Add a test in `test/*.mjs` that exercises the new path
 - [ ] Update README.md and README.ko.md (Drop-in setup, Configuration Reference, Agent Reference, Default Behavior tables)
-- [ ] Run `npm test` (currently 36 tests; add one for any new branch)
+- [ ] Run `npm test` (currently 207 tests; add one for any new branch)
 - [ ] Release a new version — schema additions are a published-version event, not a docs-only event
 
 ## Drop-in setup contract

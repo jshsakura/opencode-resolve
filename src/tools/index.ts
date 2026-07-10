@@ -19,6 +19,10 @@ function readOnlyToolWriteDenied(ctx: { agent?: string }, action: string): strin
 }
 
 function commandExecutionDenied(command: string): string | undefined {
+  // Deliberately called without `permissions` — this path executes directly and
+  // never reaches `tool.execute.before`, so a rollback here would run without a
+  // checkpoint. `permissions.allowGitReset`/`allowGitClean` only relax the
+  // OpenCode bash tool, which is checkpointed.
   const action = classifyBashCommand(command)
   if (action === "allow") return undefined
   if (action === "deny") {

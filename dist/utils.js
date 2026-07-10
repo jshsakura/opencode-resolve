@@ -45,16 +45,45 @@ export function isMissingFileError(error) {
 export function formatError(error) {
     return error instanceof Error ? error.message : String(error);
 }
-export function classifyBashCommand(pattern) {
+/**
+ * Which rollback command, if any, this bash line runs. Both are destructive and
+ * denied by default; `permissions.allowGitReset` / `allowGitClean` un-gate them,
+ * and the caller writes a checkpoint ref before execution.
+ */
+export function detectRollbackCommand(pattern) {
     const cmd = pattern.trim();
+    if (GIT_HARD_RESET_PATTERN.test(cmd))
+        return "reset";
+    if (GIT_FORCE_CLEAN_PATTERN.test(cmd))
+        return "clean";
+    return undefined;
+}
+function isRollbackPermitted(kind, permissions) {
+    if (kind === "reset")
+        return permissions?.allowGitReset === true;
+    return permissions?.allowGitClean === true;
+}
+export function classifyBashCommand(pattern, permissions) {
+    const cmd = pattern.trim();
+    // A permitted rollback stops being a deny-pattern, but every *other* deny
+    // pattern in the same command line still applies — `git reset --hard && rm -rf /`
+    // must not slip through on the strength of the exemption.
+    const exempt = new Set();
+    if (permissions?.allowGitReset)
+        exempt.add(GIT_HARD_RESET_PATTERN);
+    if (permissions?.allowGitClean)
+        exempt.add(GIT_FORCE_CLEAN_PATTERN);
     for (const re of BANNED_COMMANDS) {
-        if (re.test(cmd))
+        if (!exempt.has(re) && re.test(cmd))
             return "deny";
     }
     for (const re of DANGEROUS_BASH_PATTERNS) {
-        if (re.test(cmd))
+        if (!exempt.has(re) && re.test(cmd))
             return "deny";
     }
+    const rollback = detectRollbackCommand(cmd);
+    if (rollback && isRollbackPermitted(rollback, permissions))
+        return "allow";
     const firstToken = cmd.split(/\s+/)[0];
     if (ALWAYS_SAFE_COMMANDS.includes(firstToken))
         return "allow";
@@ -235,6 +264,17 @@ export async function readFirstJson(paths) {
     }
     return undefined;
 }
+// The two destructive-but-recoverable rollback commands. Shared regex identities
+// so `classifyBashCommand` can exempt them from the deny lists by reference when
+// the matching `permissions.allow*` flag is set.
+export const GIT_HARD_RESET_PATTERN = /\bgit\s+reset\s+--hard/;
+export const GIT_FORCE_CLEAN_PATTERN = /\bgit\s+clean\s+-[a-zA-Z]*f/;
+// `git clean -x` also deletes gitignored files. Checkpoints snapshot via
+// `git add -A`, which honours .gitignore — so a `-x` clean destroys files
+// (.env, local secrets) the checkpoint cannot restore. Never exempted.
+// Matches `-x` in any flag position (`-xdf`, `-f -x`, `-Xf`), but does not
+// reach past a command separator into the next command.
+export const GIT_CLEAN_IGNORED_PATTERN = /\bgit\s+clean\b[^;&|]*\s-[a-zA-Z]*[xX]/;
 export const BANNED_COMMANDS = [
     /\b(vim?|nano|emacs|pico|ed)\b/, // interactive editors
     /\b(less|more|most|pg)\b/, // pagers
@@ -264,7 +304,7 @@ export const BANNED_COMMANDS = [
     /\bchown\s+-R\s+/, // recursive chown
     /\bsudo\s+(rm|chmod|chown|dd|mkfs)/, // sudo + destructive
     /\bgit\s+push\s+--force/, // force push
-    /\bgit\s+reset\s+--hard/, // hard reset
+    GIT_HARD_RESET_PATTERN, // hard reset (gated by permissions.allowGitReset)
     /\brm\s+(-rf?|-fr?)\s+[^.]/, // rm -rf (not dotfiles)
     /\bdd\s+if=/, // dd can destroy disks
     /\b(mkfs|format)\b/, // filesystem format
@@ -272,8 +312,9 @@ export const BANNED_COMMANDS = [
 export const DANGEROUS_BASH_PATTERNS = [
     /\brm\s+.*-[rR].*[fF].*\s+\//, // rm -rf /... (absolute path)
     /\bgit\s+push\s+.*(--force|-f\b)/, // force push
-    /\bgit\s+reset\s+--hard/, // hard reset
-    /\bgit\s+clean\s+-fd/, // clean untracked files
+    GIT_HARD_RESET_PATTERN, // hard reset (gated by permissions.allowGitReset)
+    GIT_FORCE_CLEAN_PATTERN, // clean untracked files (gated by permissions.allowGitClean)
+    GIT_CLEAN_IGNORED_PATTERN, // clean gitignored files — unrecoverable, never exempted
     /\bsudo\s+rm\b/, // sudo rm
     /\bdd\s+.*of=\/dev\//, // dd to device
     /\bchmod\s+-R\s+777\s+\//, // chmod everything
