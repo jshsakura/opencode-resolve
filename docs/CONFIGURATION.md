@@ -66,9 +66,36 @@ built-in defaults -> first config file found -> inline plugin options
 | `language` | `auto`, `en`, `ko` | `auto` | Prompt language preference. |
 | `maxParallelSubagents` | positive integer | unset | Prompt-level soft limit for concurrent coder dispatch. |
 | `singleAgentMode` | boolean | `false` | When true, the resolver edits directly instead of dispatching a coder subagent — lower latency on simple tasks. |
+| `permissions` | object | `{}` | Opt-in rollback permissions. See below. |
 | `config` | string | unset | Custom config path when used inline. |
 
 Unknown keys fail fast.
+
+## Rollback Permissions
+
+`git reset --hard` and `git clean -f` are denied by default. That protects uncommitted work, but it also means an agent that tangles the worktree mid-debug cannot get back to a clean state — it stalls. Two opt-in flags un-gate them, for resolve agents only:
+
+```json
+{
+  "permissions": {
+    "allowGitReset": true,
+    "allowGitClean": true
+  }
+}
+```
+
+Before either command runs, the plugin snapshots the **entire worktree** — tracked edits and untracked files — into a git ref named `refs/resolve-checkpoint/<timestamp>-<reset|clean>`. The snapshot is written through a throwaway index, so your real index, working tree, branches, and `HEAD` are never touched. If the snapshot cannot be written, the destructive command is blocked instead of run unprotected.
+
+Recover from a rollback you regret:
+
+```sh
+git for-each-ref refs/resolve-checkpoint    # list checkpoints
+git restore --source=<ref> -- .             # bring everything back
+```
+
+`git clean -x` and `-X` stay denied regardless of these flags. They delete gitignored files, and the checkpoint snapshots via `git add -A`, which honours `.gitignore` — so a `-x` clean would destroy files (`.env`, local secrets) the checkpoint cannot bring back.
+
+Checkpoints are taken whenever one of these commands executes under a resolve agent — including when you approve it yourself at the permission prompt with both flags left `false`. Native OpenCode agents (`build`/`plan`/chat) keep the unconditional deny.
 
 ## Agent Options
 
