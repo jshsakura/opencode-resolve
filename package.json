@@ -1,6 +1,6 @@
 {
   "name": "opencode-resolve",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "OpenCode plugin that adds a lightweight resolver/coder harness for continuous agentic coding.",
   "type": "module",
   "homepage": "https://jshsakura.github.io/opencode-resolve/",
