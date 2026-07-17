@@ -934,17 +934,25 @@ export function contextMessage(agent: string | undefined, key: MessageKey, param
 }
 
 /**
- * Print a terminal-only narration. Uses session locale (Korean if configured).
- * Does NOT enter LLM context — only the user sees it in the OpenCode UI/log.
- * Free to be playful, varied, and bilingual.
+ * Live terminal narration has been disabled.
+ *
+ * Writing to stdout conflicted with the TUI's screen-redraw cycle (lines
+ * appeared doubled). Toast was the only clean alternative but was rejected
+ * for UX reasons, and a TUI-plugin module is impossible under the V1
+ * plugin format (server XOR tui, not both). Adding playful text via
+ * `experimental.text.complete` would consume LLM tokens, which the user
+ * explicitly rejected.
+ *
+ * Kept as a no-op so existing hook call sites in `src/hooks/index.ts`
+ * don't need changes. Can be re-enabled if a zero-token, non-overlay
+ * display channel becomes available.
  */
 export function narrate(
-  state: { locale: Locale; currentAgent?: string },
-  key: MessageKey,
-  params: Params = {},
+  _state: { locale: Locale; currentAgent?: string },
+  _key: MessageKey,
+  _params: Params = {},
 ): void {
-  const line = `${brand(state.currentAgent)} ${t(key, state.locale, params)}`;
-  console.log(line);
+  // intentionally empty — see JSDoc above
 }
 
 /** All registered message keys, derived from the English table. */

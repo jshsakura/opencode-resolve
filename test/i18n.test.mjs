@@ -209,42 +209,39 @@ test("smoke: every message key renders cleanly in en and ko across all variants"
   }
 })
 
-// ── narration: terminal-only role-play ─────────────────────────────────────
+// ── narration: disabled (no-op) ────────────────────────────────────────────
+// Live narration was removed: stdout conflicted with the TUI (doubled lines),
+// toast was rejected, and text.complete would consume LLM tokens. narrate()
+// is kept as a no-op so hook call sites don't need changes.
 
-function captureConsole(fn) {
-  const original = console.log
-  const lines = []
-  console.log = (...args) => { lines.push(args.join(" ")) }
+test("narrate: is a no-op (produces no stdout output)", () => {
+  const original = process.stdout.write.bind(process.stdout)
+  const chunks = []
+  process.stdout.write = (chunk) => { chunks.push(String(chunk)); return true }
+  const savedQuiet = process.env.OPENCODE_RESOLVE_QUIET
+  delete process.env.OPENCODE_RESOLVE_QUIET
   try {
-    fn()
-  } finally {
-    console.log = original
-  }
-  return lines
-}
-
-test("narrate: writes to console (terminal-only path, not context)", () => {
-  const lines = captureConsole(() => {
     narrate({ locale: "en", currentAgent: "resolver" }, "narration.editing")
-  })
-  assert.equal(lines.length, 1)
-  assert.match(lines[0], /^\[resolver\] /)
+  } finally {
+    process.stdout.write = original
+    if (savedQuiet !== undefined) process.env.OPENCODE_RESOLVE_QUIET = savedQuiet
+  }
+  assert.equal(chunks.length, 0, "narrate must not write to stdout")
 })
 
-test("narrate: uses Korean variants when locale is ko", () => {
-  let sawKorean = false
-  for (let i = 0; i < 30; i++) {
-    const lines = captureConsole(() => {
-      narrate({ locale: "ko", currentAgent: "coder" }, "narration.editing")
-    })
-    if (/[가-힣]/.test(lines[0])) sawKorean = true
+test("narrate: does not throw for any agent or locale", () => {
+  for (const agent of ["resolver", "coder", "reviewer", undefined]) {
+    for (const locale of ["en", "ko"]) {
+      assert.doesNotThrow(() =>
+        narrate({ locale, currentAgent: agent }, "narration.editing"),
+      )
+    }
   }
-  assert.ok(sawKorean, "expected Korean characters in at least one ko narration")
 })
 
 test("hook: chat.params captures input.agent into session state", async () => {
   const hooks = await OpencodeResolve(
-    { directory: "/tmp", client: {}, project: {}, worktree: "/tmp", serverUrl: new URL("http://localhost"), $: {}, experimental_workspace: { register() {} } },
+    { directory: "/tmp", project: {}, worktree: "/tmp", serverUrl: new URL("http://localhost"), $: {}, experimental_workspace: { register() {} } },
     {},
   )
   await hooks.config({})
@@ -257,51 +254,26 @@ test("hook: chat.params captures input.agent into session state", async () => {
   assert.match(turn.text, /\[explorer\]/, "reminder should adopt latest agent name")
 })
 
-test("hook: tool.execute.before with task tool narrates dispatch (terminal only)", async () => {
+test("hook: tool.execute.before with task tool does not narrate to stdout", async () => {
   const hooks = await OpencodeResolve(
-    { directory: "/tmp", client: {}, project: {}, worktree: "/tmp", serverUrl: new URL("http://localhost"), $: {}, experimental_workspace: { register() {} } },
+    { directory: "/tmp", project: {}, worktree: "/tmp", serverUrl: new URL("http://localhost"), $: {}, experimental_workspace: { register() {} } },
     { language: "en" },
   )
   await hooks.config({})
   await hooks["chat.params"]({ agent: "resolver" }, {})
-  const lines = []
-  const original = console.log
-  console.log = (...args) => { lines.push(args.join(" ")) }
+  const original = process.stdout.write.bind(process.stdout)
+  const chunks = []
+  process.stdout.write = (chunk) => { chunks.push(String(chunk)); return true }
+  const savedQuiet = process.env.OPENCODE_RESOLVE_QUIET
+  delete process.env.OPENCODE_RESOLVE_QUIET
   try {
     await hooks["tool.execute.before"](
       { tool: "task", args: { subagent_type: "coder", description: "fix the parser bug" } },
       { args: { subagent_type: "coder", description: "fix the parser bug" } },
     )
   } finally {
-    console.log = original
+    process.stdout.write = original
+    if (savedQuiet !== undefined) process.env.OPENCODE_RESOLVE_QUIET = savedQuiet
   }
-  assert.ok(lines.length > 0, "expected at least one narration line")
-  assert.match(lines[0], /\[resolver\]/)
-  assert.match(lines[0], /coder/i)
-  assert.match(lines[0], /fix the parser bug/)
-})
-
-test("hook: tool.execute.before with task tool narrates in Korean when language is ko", async () => {
-  const hooks = await OpencodeResolve(
-    { directory: "/tmp", client: {}, project: {}, worktree: "/tmp", serverUrl: new URL("http://localhost"), $: {}, experimental_workspace: { register() {} } },
-    { language: "ko" },
-  )
-  await hooks.config({})
-  await hooks["chat.params"]({ agent: "resolver" }, {})
-  let sawKorean = false
-  for (let i = 0; i < 30; i++) {
-    const lines = []
-    const original = console.log
-    console.log = (...args) => { lines.push(args.join(" ")) }
-    try {
-      await hooks["tool.execute.before"](
-        { tool: "task", args: { subagent_type: "coder", description: "파서 버그 수정" } },
-        { args: { subagent_type: "coder", description: "파서 버그 수정" } },
-      )
-    } finally {
-      console.log = original
-    }
-    if (lines[0] && /코더/.test(lines[0])) sawKorean = true
-  }
-  assert.ok(sawKorean, "expected Korean dispatch narration with 코더")
+  assert.equal(chunks.length, 0, "narration disabled — no stdout output expected")
 })
