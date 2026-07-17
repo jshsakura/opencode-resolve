@@ -6,6 +6,15 @@ import { ResolveConfig, ProjectContext, ResolveAgentName, TierName, AgentMode, U
 import { DEFAULT_AGENT_CONFIG, buildResolverPrompt, VALID_AGENT_NAME_SET, DEFAULT_MODELS, DEFAULT_ENABLED, VALID_AGENT_NAMES, TIER_ENABLED, VALID_MODEL_ALIAS_SET, VALID_TIERS } from "./agents.js";
 import { readFirstJson } from "./utils.js";
 
+/**
+ * Emits a non-fatal config warning to stderr. Uses stderr (not stdout) because
+ * stdout corrupts the opencode TUI. Suppressed when OPENCODE_RESOLVE_QUIET=1.
+ */
+function warnResolve(message: string): void {
+    if (process.env.OPENCODE_RESOLVE_QUIET === "1") return
+    process.stderr.write(`[opencode-resolve] config warning: ${message}\n`)
+}
+
 export function applyResolveConfig(config: Config, resolveConfig: ResolveConfig, projectContext: ProjectContext) {
     const tierEnabled = resolveConfig.tier ? TIER_ENABLED[resolveConfig.tier] : undefined;
     const enabled = new Set(resolveConfig.enabled ?? tierEnabled ?? DEFAULT_ENABLED);
@@ -185,7 +194,11 @@ export function normalizeResolveConfig(value: unknown, source: string): ResolveP
     const config = expectObject(value, source);
     for (const key of Object.keys(config)) {
     if (!VALID_TOP_LEVEL_KEYS.has(key)) {
-      throw new Error(`Unknown top-level key "${key}" in ${source}`)
+      // Lenient: unknown top-level keys (e.g. "context7" from other tools,
+      // or keys from a newer opencode-resolve version) are warned and skipped.
+      // Throwing here would reject the ENTIRE config → no agents register →
+      // the plugin appears dead. One stray key must not kill the plugin.
+      warnResolve(`unknown top-level key "${key}" in ${source} — ignored.`)
     }
     }
 
@@ -199,7 +212,8 @@ export function normalizeResolveConfig(value: unknown, source: string): ResolveP
     result.models = {}
     for (const [key, model] of Object.entries(models)) {
       if (!VALID_MODEL_ALIAS_SET.has(key)) {
-        throw new Error(`Unknown model alias "${key}" in ${source}.models`)
+        warnResolve(`unknown model alias "${key}" in ${source}.models — ignored.`)
+        continue
       }
       result.models[key as ModelAlias] = expectString(model, `${source}.models.${key}`)
     }
@@ -255,7 +269,9 @@ export function normalizePermissions(value: unknown, source: string): ResolvePer
     const result: ResolvePermissions = {};
     for (const key of Object.keys(permissions)) {
     if (!VALID_PERMISSIONS_KEYS.has(key)) {
-      throw new Error(`Unknown permissions key "${key}" in ${source}. Valid: ${[...VALID_PERMISSIONS_KEYS].join(", ")}`)
+      // Lenient: unknown permissions keys (e.g. from a newer plugin version
+      // or another tool writing to resolve.json) are warned and skipped.
+      warnResolve(`unknown permissions key "${key}" in ${source} — ignored.`)
     }
     }
 
@@ -268,7 +284,8 @@ export function normalizeAgentConfig(value: unknown, source: string): ResolveAge
     const config = expectObject(value, source);
     for (const key of Object.keys(config)) {
     if (!VALID_AGENT_KEYS.has(key)) {
-      throw new Error(`Unknown agent key "${key}" in ${source}`)
+      // Lenient: unknown agent keys are warned and skipped.
+      warnResolve(`unknown agent key "${key}" in ${source} — ignored.`)
     }
     }
 
@@ -322,7 +339,8 @@ export function normalizePermission(value: unknown, source: string): ResolveAgen
       result[key] = permissionValue
       continue
     }
-    throw new Error(`Unknown permission key "${key}" in ${source}`)
+    // Lenient: unknown permission keys are warned and skipped.
+    warnResolve(`unknown permission key "${key}" in ${source} — ignored.`)
     }
 
     return result

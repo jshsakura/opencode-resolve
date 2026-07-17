@@ -3031,13 +3031,37 @@ test("permission.ask: rollback stays denied for native (non-resolve) agents", as
   }
 })
 
-test("config: rejects unknown permissions keys", async () => {
+test("config: warns about unknown permissions keys but continues", async () => {
   const project = await createProject({
     "opencode-resolve.json": { permissions: { allowEverything: true } },
     "package.json": { name: "t" },
   })
   try {
-    await assert.rejects(() => hooksFor(project.path), /Unknown permissions key "allowEverything"/)
+    // Unknown permissions keys are warned and skipped, not rejected.
+    // The plugin must still load and register agents.
+    const hooks = await hooksFor(project.path)
+    assert.ok(hooks, "hooks loaded despite unknown permissions key")
+  } finally {
+    await project.cleanup()
+  }
+})
+
+test("config: ignores unknown top-level keys and still registers agents", async () => {
+  // Reproduces the user's bug: a stray key like "context7" (from another tool
+  // writing to resolve.json) used to reject the ENTIRE config, leaving zero
+  // agents registered. Now it must warn and continue.
+  const project = await createProject({
+    "opencode-resolve.json": {
+      context7: true,
+      "another-future-key": { nested: "value" },
+      enabled: ["coder", "resolver"],
+    },
+    "package.json": { name: "t" },
+  })
+  try {
+    const { config } = await runPlugin({ model: "provider/model" }, project)
+    assert.ok(config.agent.coder, "coder registered despite unknown top-level keys")
+    assert.ok(config.agent.resolver, "resolver registered despite unknown top-level keys")
   } finally {
     await project.cleanup()
   }
