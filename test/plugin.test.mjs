@@ -141,12 +141,14 @@ test("write agents: edit=allow, bash=ask (hook decides); read-only agents: edit/
   assert.equal(config.agent.reviewer.permission.webfetch, "allow")
 })
 
-test("autoApprove is a no-op — bash permissions stay as ask/deny", async () => {
+test("autoApprove does not change agent permission defaults (bash stays ask/deny)", async () => {
   const { config } = await runPlugin({
     plugin: [["opencode-resolve", { autoApprove: false }]],
   })
 
-  // autoApprove is now a no-op: bash=ask for write agents, bash=deny for read-only
+  // autoApprove operates at the permission.ask hook (runtime classification),
+  // not at the agent permission defaults. Bash stays "ask" for write agents and
+  // "deny" for read-only — the hook then decides allow/deny/ask per command.
   assert.equal(config.agent.coder.permission.edit, "allow")
   assert.equal(config.agent.coder.permission.bash, "ask")
   assert.equal(config.agent.coder.permission.webfetch, "allow")
@@ -745,13 +747,16 @@ async function createProject(files) {
 
 // ── permission.ask hook tests ──────────────────────────────────────────────
 
-async function getHooks() {
+async function getHooks(pluginOptions = {}) {
   const hooks = await OpencodeResolve(
     { directory: "/tmp", client: {}, project: {}, worktree: "/tmp", serverUrl: new URL("http://localhost"), $: {}, experimental_workspace: { register() {} } },
-    {},
+    pluginOptions,
   )
   // Behavioral hooks are scoped to resolve agents (isActiveResolve guard).
   // Tests exercise resolve-agent behavior, so activate resolver mode up front.
+  // The config hook populates sessionState.storedConfig (needed by permission.ask
+  // to read autoApprove and permissions).
+  await hooks.config({})
   await hooks["chat.params"]({ agent: "resolver" }, {})
   return hooks
 }
@@ -805,8 +810,8 @@ test("permission.ask auto-denies dangerous commands", async () => {
   }
 })
 
-test("permission.ask leaves unknown commands as ask (user dialog)", async () => {
-  const hooks = await getHooks()
+test("permission.ask leaves unknown commands as ask when autoApprove is false", async () => {
+  const hooks = await getHooks({ autoApprove: false })
   const askCases = [
     "python3 script.py",
     "docker build .",
@@ -817,6 +822,40 @@ test("permission.ask leaves unknown commands as ask (user dialog)", async () => 
     const output = { status: "ask" }
     await hooks["permission.ask"]({ type: "bash", pattern: cmd }, output)
     assert.equal(output.status, "ask", `expected ask for: ${cmd}`)
+  }
+})
+
+test("permission.ask auto-allows unknown commands when autoApprove is true", async () => {
+  // autoApprove defaults to true; unknown commands that pass the danger check
+  // are auto-allowed instead of prompting the user.
+  const hooks = await getHooks()
+  const autoAllowCases = [
+    "python3 script.py",
+    "docker build .",
+    "some-custom-command",
+    "git add src/index.ts",
+    "git commit -m 'feat: x'",
+  ]
+  for (const cmd of autoAllowCases) {
+    const output = { status: "ask" }
+    await hooks["permission.ask"]({ type: "bash", pattern: cmd }, output)
+    assert.equal(output.status, "allow", `expected allow for: ${cmd}`)
+  }
+})
+
+test("permission.ask still denies dangerous commands even when autoApprove is true", async () => {
+  // autoApprove must NOT bypass the deny list — dangerous commands stay denied.
+  const hooks = await getHooks()
+  const denyCases = [
+    "rm -rf /",
+    "git push --force origin main",
+    "git reset --hard HEAD~1",
+    "DROP TABLE users",
+  ]
+  for (const cmd of denyCases) {
+    const output = { status: "ask" }
+    await hooks["permission.ask"]({ type: "bash", pattern: cmd }, output)
+    assert.equal(output.status, "deny", `expected deny even with autoApprove: ${cmd}`)
   }
 })
 

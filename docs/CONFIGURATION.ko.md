@@ -61,7 +61,7 @@
 | `agents` | object | `{}` | 에이전트별 override. |
 | `preserveNative` | boolean | `true` | OpenCode 네이티브 에이전트 보존. |
 | `commands` | boolean | `false` | `/resolve`, `/resolve-code`, `/resolve-review` 추가. |
-| `autoApprove` | boolean | `true` | 하위 호환 플래그. 권한 동작은 명시 설정이 제어. |
+| `autoApprove` | boolean | `true` | `true`이면 위험 검사를 통과한 알 수 없는 명령을 자동 허용(프롬프트 없음). 위험 명령은 여전히 거부. 알 수 없는 명령을 묻고 싶으면 `false`. |
 | `autoUpdate` | boolean | `true` | 설치기 추가 마이그레이션 허용. |
 | `language` | `auto`, `en`, `ko` | `auto` | 프롬프트 언어 선호. |
 | `maxParallelSubagents` | positive integer | 미설정 | 동시 coder 디스패치에 대한 프롬프트 수준 soft limit. |

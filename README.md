@@ -192,7 +192,7 @@ Full commented reference: [opencode-resolve.reference.jsonc](./opencode-resolve.
 | `agents` | object | `{}` | Per-agent overrides. |
 | `preserveNative` | boolean | `true` | Keep native OpenCode agents unless explicitly overridden. |
 | `commands` | boolean | `false` | Add `/resolve`, `/resolve-code`, and `/resolve-review`. |
-| `autoApprove` | boolean | `true` | Backward-compatible config flag; current permissions remain explicit. |
+| `autoApprove` | boolean | `true` | When `true`, commands that pass the danger check but aren't on the safe list are auto-allowed instead of prompting. Dangerous/banned commands are still denied. Set `false` to restore the interactive prompt for unknown commands. |
 | `autoUpdate` | boolean | (no-op) | **Deprecated.** Field is accepted for backward compatibility but ignored. Auto-update spawned `opencode plugin` per `hooks.config()` call, which fanned out into hundreds of parallel installs when multiple OpenCode instances loaded the plugin at once. Update manually with `npm i -g opencode-resolve`. |
 | `language` | `auto` / `en` / `ko` | `auto` | Prompt language preference. |
 | `maxParallelSubagents` | positive integer | unset | Optional prompt-level soft limit for concurrent coder dispatch. |
@@ -296,9 +296,9 @@ and every supported agent name
 
 ## Permissions
 
-Resolve agents keep bash at `ask` by default. The plugin's permission hook auto-allows common safe read/test commands and denies obviously dangerous patterns such as force pushes, shell-eval injection, and remote script pipes. Unknown commands remain `ask`.
+Resolve agents keep bash at `ask` by default. The plugin's permission hook auto-allows common safe read/test commands and denies obviously dangerous patterns such as force pushes, shell-eval injection, and remote script pipes.
 
-`autoApprove` is accepted for compatibility with older configs, but current behavior is controlled by explicit agent permissions and the command classifier.
+`autoApprove` (default `true`) lifts the interactive prompt for unknown commands — anything that passes the danger check but isn't on the safe list (e.g. `git add <file>`, `git commit -m`, custom scripts) is auto-allowed. Set `"autoApprove": false` to keep the prompt for unknown commands. Banned and dangerous commands are denied regardless of this setting.
 
 `git reset --hard` and `git clean -f` are denied unless you opt in — see [Rollback Permissions](#rollback-permissions). When permitted, the plugin checkpoints the worktree first.
 

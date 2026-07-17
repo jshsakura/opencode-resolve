@@ -61,7 +61,7 @@ built-in defaults -> first config file found -> inline plugin options
 | `agents` | object | `{}` | Per-agent overrides. |
 | `preserveNative` | boolean | `true` | Preserve native OpenCode agents. |
 | `commands` | boolean | `false` | Add `/resolve`, `/resolve-code`, `/resolve-review`. |
-| `autoApprove` | boolean | `true` | Compatibility flag. Permission behavior is explicit. |
+| `autoApprove` | boolean | `true` | When `true`, unknown commands that pass the danger check are auto-allowed (no prompt). Dangerous commands are still denied. Set `false` to prompt for unknown commands. |
 | `autoUpdate` | boolean | `true` | Allow additive installer migrations. |
 | `language` | `auto`, `en`, `ko` | `auto` | Prompt language preference. |
 | `maxParallelSubagents` | positive integer | unset | Prompt-level soft limit for concurrent coder dispatch. |

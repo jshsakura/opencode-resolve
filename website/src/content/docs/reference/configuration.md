@@ -24,7 +24,7 @@ Inline plugin options override file config.
 | `preserveNative` | `true` | Preserve native OpenCode agents. |
 | `singleAgentMode` | `false` | When `true`, the resolver edits directly instead of dispatching a `coder` subagent — lower latency and token cost on simple tasks. |
 | `commands` | `false` | Add `/resolve`, `/resolve-code`, `/resolve-review`. |
-| `autoApprove` | `true` | Compatibility flag. |
+| `autoApprove` | `true` | When `true`, unknown commands that pass the danger check are auto-allowed (no prompt). Dangerous commands are still denied. Set `false` to prompt for unknown commands. |
 | `autoUpdate` | `true` | Allow additive installer migrations. |
 | `language` | `auto` | Prompt language preference. |
 | `maxParallelSubagents` | unset | Prompt-level soft limit for coder fan-out. |

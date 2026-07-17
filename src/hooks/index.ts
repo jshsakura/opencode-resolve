@@ -318,6 +318,11 @@ config: async (config: any) => {
           // Auto-approve safe commands only when a resolve agent drives the turn;
           // native agents keep opencode's own permission flow.
           output.status = "allow"
+        } else if (action === "ask" && isActiveResolve() && sessionState.storedConfig?.autoApprove === true) {
+          // autoApprove lifts the "ask" prompt for commands that passed the danger
+          // check but aren't on the safe list (e.g. git add, git commit, custom scripts).
+          // Banned/dangerous commands are still denied above.
+          output.status = "allow"
         }
       }
     },

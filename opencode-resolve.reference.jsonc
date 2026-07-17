@@ -66,10 +66,12 @@
 
   // -----------------------------------------------------------------------
   // autoApprove (boolean)
-  // When true, the plugin's permission.ask hook auto-approves safe bash
-  // commands on resolve agents (read-only probes, verify commands) and
-  // denies dangerous ones. Native OpenCode sessions are untouched — this
-  // only applies while a resolve agent is active. Default: true.
+  // When true, the plugin's permission.ask hook auto-approves bash commands on
+  // resolve agents: safe commands are allowed, dangerous ones are denied, and
+  // unknown commands (that pass the danger check) are auto-allowed instead of
+  // prompting. Set false to keep the interactive prompt for unknown commands.
+  // Native OpenCode sessions are untouched — this only applies while a resolve
+  // agent is active. Default: true.
   // -----------------------------------------------------------------------
   "autoApprove": true,
 

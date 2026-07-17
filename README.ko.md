@@ -192,7 +192,7 @@ irm https://raw.githubusercontent.com/jshsakura/awesome-opencode-skills/main/ins
 | `agents` | object | `{}` | 에이전트별 override. |
 | `preserveNative` | boolean | `true` | 명시 override가 없으면 OpenCode 기본 에이전트 보존. |
 | `commands` | boolean | `false` | `/resolve`, `/resolve-code`, `/resolve-review` 추가. |
-| `autoApprove` | boolean | `true` | 하위 호환용 플래그. 현재 권한은 명시 설정과 분류기가 제어. |
+| `autoApprove` | boolean | `true` | `true`이면 위험 검사를 통과했지만 안전 목록에 없는 명령을 프롬프트 없이 자동 허용합니다. 위험/금지 명령은 여전히 거부됩니다. 알 수 없는 명령을 대화형으로 묻고 싶으면 `false`로 설정. |
 | `autoUpdate` | boolean | (no-op) | **사용 중단.** 하위 호환을 위해 필드는 받되 무시합니다. 기존 auto-update는 `hooks.config()` 호출마다 `opencode plugin`을 spawn했고, 여러 OpenCode 인스턴스가 동시에 플러그인을 로드하면 수백 건의 병렬 설치로 폭주했습니다. 업데이트는 `npm i -g opencode-resolve`로 수동 실행하세요. |
 | `language` | `auto` / `en` / `ko` | `auto` | 프롬프트 언어 선호. |
 | `maxParallelSubagents` | positive integer | 미설정 | 동시 coder 디스패치에 대한 선택적 프롬프트 수준 soft limit. |
@@ -296,9 +296,9 @@ bronze, silver, gold,
 
 ## 권한
 
-resolve 에이전트의 bash는 기본적으로 `ask`입니다. 플러그인의 권한 훅은 흔한 읽기/테스트 명령은 자동 허용하고, force push, shell eval injection, remote script pipe 같은 위험 패턴은 거부합니다. 알 수 없는 명령은 계속 `ask`로 남습니다.
+resolve 에이전트의 bash는 기본적으로 `ask`입니다. 플러그인의 권한 훅은 흔한 읽기/테스트 명령은 자동 허용하고, force push, shell eval injection, remote script pipe 같은 위험 패턴은 거부합니다.
 
-`autoApprove`는 오래된 설정과의 호환을 위해 허용되지만, 현재 동작은 명시적 에이전트 권한과 명령 분류기가 제어합니다.
+`autoApprove` (기본 `true`)는 알 수 없는 명령의 대화형 프롬프트를 생략합니다 — 위험 검사는 통과했지만 안전 목록에 없는 명령(`git add <file>`, `git commit -m`, 커스텀 스크립트 등)을 자동 허용합니다. 알 수 없는 명령을 계속 묻고 싶으면 `"autoApprove": false`로 설정하세요. 금지/위험 명령은 이 설정과 무관하게 항상 거부됩니다.
 
 `git reset --hard` 와 `git clean -f` 는 옵트인하지 않으면 차단됩니다 — [롤백 권한](#롤백-권한) 참조. 허용된 경우 플러그인이 먼저 작업트리를 체크포인트합니다.
 
