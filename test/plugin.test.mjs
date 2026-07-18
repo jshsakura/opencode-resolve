@@ -50,11 +50,12 @@ test("injects default coder, resolver, and internal specialist subagents using t
   assert.equal(config.agent["deep-reviewer"].mode, "subagent")
   assert.equal(config.agent.planner.mode, "subagent")
   assert.equal(config.agent.planner.model, "provider/default-model")
-  // Disabled agents remain undefined
+  // architect + debugger are enabled by default (recovery ladder for autonomous loops)
+  assert.equal(config.agent.architect.mode, "subagent")
+  assert.equal(config.agent.debugger.mode, "subagent")
+  // Unknown agent names remain undefined
   assert.equal(config.agent.codex, undefined)
-  assert.equal(config.agent.architect, undefined)
   assert.equal(config.agent["gpt-coder"], undefined)
-  assert.equal(config.agent.debugger, undefined)
   assert.equal(config.agent.researcher, undefined)
 })
 

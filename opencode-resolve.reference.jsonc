@@ -226,7 +226,7 @@
       "maxSteps": 15,
       "permission": {
         "edit": "allow",
-        "bash": "allow",
+        "bash": "ask",
         "webfetch": "allow"
       }
     },
@@ -237,7 +237,7 @@
       "maxSteps": 25,
       "permission": {
         "edit": "allow",
-        "bash": "allow",
+        "bash": "ask",
         "webfetch": "allow"
       }
     },
@@ -253,7 +253,7 @@
       "maxSteps": 5,
       "permission": {
         "edit": "deny",
-        "bash": "allow",
+        "bash": "deny",
         "webfetch": "allow"
       }
     },
@@ -289,18 +289,23 @@
       "maxSteps": 8
     },
 
-    // Disabled by default — enable explicitly when needed.
-
+    // Architect: enabled by default — recovery ladder pivot agent.
+    // Resolver dispatches after repeated dispatch failures to rethink strategy.
     "architect": {
-      "enabled": false,
+      "enabled": true,
       "mode": "subagent",
       "maxSteps": 10
     },
+
+    // Debugger: enabled by default — recovery ladder diagnosis agent.
+    // Resolver dispatches on verify failure to diagnose root cause before retry.
     "debugger": {
-      "enabled": false,
+      "enabled": true,
       "mode": "subagent",
       "maxSteps": 14
     },
+
+    // Disabled by default — enable explicitly when needed.
     "researcher": {
       "enabled": false,
       "mode": "subagent",

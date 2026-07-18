@@ -1,7 +1,7 @@
 import { ResolveAgentName, ResolveAgentConfig, ModelAlias, TierName } from "./types.js";
 
 export const DEFAULT_MODELS: Partial<Record<ModelAlias, string>> = {};
-export const DEFAULT_ENABLED: ResolveAgentName[] = ["coder", "resolver", "explorer", "reviewer", "deep-reviewer", "planner"];
+export const DEFAULT_ENABLED: ResolveAgentName[] = ["coder", "resolver", "explorer", "reviewer", "deep-reviewer", "planner", "architect", "debugger"];
 export const VALID_AGENT_NAMES = [
       "coder",
       "reviewer",

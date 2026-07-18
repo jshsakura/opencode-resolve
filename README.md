@@ -290,8 +290,8 @@ and every supported agent name
 | `reviewer` | yes | `subagent` | deny | deny | allow | Read-only verification-gap review. |
 | `deep-reviewer` | yes | `subagent` | deny | deny | allow | Read-only review for risky/high-impact changes. |
 | `planner` | yes | `subagent` | deny | deny | allow | Read-only planning when explicitly useful. |
-| `architect` | no | `subagent` | deny | deny | allow | Design/decomposition helper. |
-| `debugger` | no | `subagent` | allow | ask | allow | Failure reproduction/root-cause helper. |
+| `architect` | yes | `subagent` | deny | deny | allow | Design/decomposition helper. |
+| `debugger` | yes | `subagent` | allow | ask | allow | Failure reproduction/root-cause helper. |
 | `researcher` | no | `subagent` | deny | deny | allow | Codebase/docs research helper. |
 
 ## Permissions

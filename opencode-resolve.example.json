@@ -29,10 +29,10 @@
       "mode": "subagent"
     },
     "architect": {
-      "enabled": false
+      "enabled": true
     },
     "debugger": {
-      "enabled": false
+      "enabled": true
     },
     "researcher": {
       "enabled": false

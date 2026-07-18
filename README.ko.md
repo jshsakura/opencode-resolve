@@ -290,8 +290,8 @@ bronze, silver, gold,
 | `reviewer` | yes | `subagent` | deny | deny | allow | 읽기 전용 검증 갭 리뷰. |
 | `deep-reviewer` | yes | `subagent` | deny | deny | allow | 위험/고영향 변경 리뷰. |
 | `planner` | yes | `subagent` | deny | deny | allow | 필요할 때만 읽기 전용 계획. |
-| `architect` | no | `subagent` | deny | deny | allow | 설계/분해 보조. |
-| `debugger` | no | `subagent` | allow | ask | allow | 재현/root-cause 보조. |
+| `architect` | yes | `subagent` | deny | deny | allow | 설계/분해 보조. |
+| `debugger` | yes | `subagent` | allow | ask | allow | 재현/root-cause 보조. |
 | `researcher` | no | `subagent` | deny | deny | allow | 코드베이스/문서 리서치 보조. |
 
 ## 권한

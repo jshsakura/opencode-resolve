@@ -209,7 +209,7 @@ export function getHooks(directory, options, sessionState) {
             if (evt.type === "message.part.updated") {
                 const props = evt.properties;
                 const part = props.part;
-                if (part?.type === "tool-result" || part?.type === "tool-result") {
+                if (part?.type === "tool-result" || part?.type === "tool") {
                     const exitCode = part?.metadata?.exitCode ?? part?.output?.metadata?.exitCode;
                     const toolName = part?.toolID ?? part?.tool ?? "";
                     if (exitCode !== undefined && exitCode !== 0 && typeof toolName === "string") {
@@ -520,8 +520,12 @@ export function getHooks(directory, options, sessionState) {
                 const dmeta = { ...(output.metadata ?? {}) };
                 const c = sessionState.consecutiveDispatchFailures;
                 if (failed) {
+                    const enabledAgents = new Set(sessionState.storedConfig?.enabled ?? []);
+                    const architectAvailable = enabledAgents.has("architect") || enabledAgents.size === 0;
                     if (c >= DISPATCH_PIVOT_THRESHOLD) {
-                        dmeta._resolve_loop_directive = `Ralph Loop: ${c} consecutive dispatch failures. Dispatch ARCHITECT to rethink the approach.`;
+                        dmeta._resolve_loop_directive = architectAvailable
+                            ? `Ralph Loop: ${c} consecutive dispatch failures. Dispatch ARCHITECT to rethink the approach.`
+                            : `Ralph Loop: ${c} consecutive dispatch failures. STOP and rethink the approach from scratch — try a fundamentally different strategy.`;
                     }
                     else if (c >= DISPATCH_STOP_THRESHOLD) {
                         dmeta._resolve_loop_directive = `Ralph Loop: ${c} consecutive dispatch failures. STOP — revert the last change and report to the user exactly what is blocked.`;

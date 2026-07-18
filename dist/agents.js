@@ -1,5 +1,5 @@
 export const DEFAULT_MODELS = {};
-export const DEFAULT_ENABLED = ["coder", "resolver", "explorer", "reviewer", "deep-reviewer", "planner"];
+export const DEFAULT_ENABLED = ["coder", "resolver", "explorer", "reviewer", "deep-reviewer", "planner", "architect", "debugger"];
 export const VALID_AGENT_NAMES = [
     "coder",
     "reviewer",
