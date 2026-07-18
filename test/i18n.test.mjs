@@ -247,8 +247,9 @@ test("hook: chat.params captures input.agent into session state", async () => {
   await hooks.config({})
   const output = {}
   await hooks["chat.params"]({ agent: "explorer" }, output)
-  // We can't directly read state, but the next end-of-turn reminder should
-  // brand as [explorer].
+  // Trigger awaitingVerify so text.complete actually fires (gated on this state)
+  await hooks["tool.execute.after"]({ tool: "edit", args: { filePath: "src/foo.ts" } }, { output: "" })
+  // The end-of-turn reminder should brand as [explorer].
   const turn = { text: "I edited the file:\n```\nconst x = 1\n```" }
   await hooks["experimental.text.complete"]({}, turn)
   assert.match(turn.text, /\[explorer\]/, "reminder should adopt latest agent name")

@@ -566,9 +566,8 @@ export function getHooks(directory, options, sessionState) {
             if (!ctx && !cfg)
                 return;
             const contextLines = [];
-            // Tier info
-            if (cfg?.tier)
-                contextLines.push(`Tier: ${cfg.tier}.`);
+            // Tier info removed — when all tiers point to the same model (common case),
+            // "Tier: gold" is pure noise that the model can't act on.
             // Project context
             if (ctx?.knowledgeFiles.length) {
                 contextLines.push(`Project knowledge files: ${ctx.knowledgeFiles.join(", ")}.`);
@@ -737,7 +736,7 @@ export function getHooks(directory, options, sessionState) {
                 }));
             }
             if (lines.length > 0) {
-                output.system.push(`${brand(undefined)}\n${lines.join("\n")}`);
+                output.system.push(`${brand(sessionState.currentAgent)}\n${lines.join("\n")}`);
             }
         },
         "experimental.text.complete": async (_input, output) => {
@@ -747,24 +746,33 @@ export function getHooks(directory, options, sessionState) {
             const text = output.text ?? "";
             if (!text)
                 return;
-            // Detect if this turn involved code changes
-            const editSignals = ["```", "edit", "wrote", "changed", "created", "updated", "modified", "deleted", "removed", "added", "renamed"];
-            const looksLikeEdit = editSignals.some(s => text.toLowerCase().includes(s));
-            // Detect if verification was already mentioned
-            const verifySignals = ["verified", "pass", "✅", "tsc --noEmit", "eslint", "npm test", "vitest pass", "all tests pass", "no errors", "0 errors", "build succeeded"];
+            // Primary gate: only nudge when the plugin knows an edit is pending
+            // verification. This replaces fragile text-pattern matching (every code
+            // block, common words like "changed"/"added") with the authoritative
+            // state flag set by tool.execute.after on edit/write operations.
+            // Token savings: ~30 tokens/turn × every code-block-containing response
+            // that wasn't actually a pending edit.
+            if (!sessionState.awaitingVerify)
+                return;
+            // Detect if verification was already mentioned in THIS response.
+            // Tightened from bare "pass" (false-positive magnet) to multi-word phrases.
+            const verifySignals = ["tests pass", "typecheck pass", "lint pass", "build succeeded", "0 errors", "exit code 0", "✅", "verified"];
             const alreadyVerified = verifySignals.some(s => text.toLowerCase().includes(s));
-            // Detect if the turn ended with a question or handoff (shouldn't nudge)
+            if (alreadyVerified)
+                return;
+            // Don't nudge handoffs/questions
             const handoffPatterns = [/\?$/, /let me know/i, /would you like/i, /what do you think/i];
-            const isHandoff = handoffPatterns.some(p => p.test(text.trim()));
-            // Ralph Loop: detect loop-like patterns in the response text
-            const loopSignals = ["trying again", "attempting", "retrying", "second attempt", "third attempt", "another approach", "let me try"];
-            const looksLikeLoop = loopSignals.some(s => text.toLowerCase().includes(s));
-            if (looksLikeEdit && !alreadyVerified && !isHandoff) {
-                output.text = text + "\n\n" + contextMessage(sessionState.currentAgent, "reminder.verify");
-            }
-            // Ralph Loop: if loop detected in text AND hotspot exists, suggest strategy change
-            if (looksLikeLoop && sessionState.loopWarnings.length > 0) {
-                output.text = (output.text ?? text) + "\n\n" + contextMessage(sessionState.currentAgent, "reminder.ralphLoopText");
+            if (handoffPatterns.some(p => p.test(text.trim())))
+                return;
+            output.text = text + "\n\n" + contextMessage(sessionState.currentAgent, "reminder.verify");
+            // Ralph Loop: if hotspot exists AND this response shows retry intent,
+            // suggest strategy pivot. Only fires when loopWarnings already exist,
+            // so this never triggers on the first occurrence of "trying".
+            if (sessionState.loopWarnings.length > 0) {
+                const loopSignals = ["trying again", "attempting", "retrying", "second attempt", "third attempt", "another approach", "let me try"];
+                if (loopSignals.some(s => text.toLowerCase().includes(s))) {
+                    output.text = (output.text ?? text) + "\n\n" + contextMessage(sessionState.currentAgent, "reminder.ralphLoopText");
+                }
             }
         }
     };
