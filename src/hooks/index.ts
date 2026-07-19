@@ -24,23 +24,6 @@ const HANDOFF_PATTERNS: ReadonlyArray<RegExp> = [
   /\bcan i\b/i,
 ];
 
-// Code-file extensions. Only edits to code trigger the verify gate; docs/config
-// (.md/.txt/.json/...) are exempt so trivial doc changes don't force a build.
-const CODE_EXTENSIONS: ReadonlyArray<string> = [
-  "ts", "tsx", "js", "jsx", "mjs", "cjs", "mts", "cts",
-  "py", "go", "rs", "java", "kt", "scala", "rb", "php",
-  "c", "cc", "cpp", "cxx", "h", "hh", "hpp", "hxx",
-  "cs", "swift", "sh", "bash", "zsh", "fish",
-  "vue", "svelte", "astro", "gleam", "ex", "exs", "erl", "lua",
-];
-
-function isCodeFile(filePath: string | undefined): boolean {
-  if (!filePath) return true // unknown target — be conservative, require verify
-  const dot = filePath.lastIndexOf(".")
-  if (dot < 0) return true // no extension — treat as code
-  return CODE_EXTENSIONS.includes(filePath.slice(dot + 1).toLowerCase())
-}
-
 // Harness boilerplate — not the model's words, so rewriting them wholesale
 // costs nothing and buys a sharper instruction.
 const HARNESS_BOILERPLATE_REWRITES: ReadonlyArray<readonly [string | RegExp, string]> = [
@@ -111,18 +94,6 @@ function extractDispatchGoal(args: any): string {
   if (typeof candidate !== "string") return ""
   const trimmed = candidate.trim().split("\n")[0] ?? ""
   return trimmed.length > 80 ? trimmed.slice(0, 77) + "…" : trimmed
-}
-
-// Ralph Loop: does a bash command run one of the project's verify commands
-// (typecheck / lint / test)? Used to clear the awaitingVerify flag so the
-// loop can tell the resolver the edit was actually checked.
-function isVerifyCommand(cmd: unknown, verifyCommands: unknown): boolean {
-  if (typeof cmd !== "string" || cmd.length === 0) return false
-  if (!Array.isArray(verifyCommands) || verifyCommands.length === 0) return false
-  const normalized = cmd.trim()
-  return verifyCommands.some(
-    (vc) => typeof vc === "string" && vc.length > 0 && normalized.includes(vc),
-  )
 }
 
 // Ralph Loop: classify a task (subagent dispatch) result as success/failure.
@@ -483,16 +454,6 @@ config: async (config: any) => {
         }
         output.metadata = meta
 
-        // Ralph Loop: an edit just happened — mark that verification is now
-        // required before the resolver may report completion. Cleared when a
-        // verify command (typecheck/lint/test) runs via bash. Adaptive: skip
-        // the gate for non-code files (.md/.txt/.json/...) so trivial doc
-        // changes don't force a build/test round-trip.
-        if (isCodeFile(editedPath)) {
-          sessionState.awaitingVerify = true
-          sessionState.awaitingVerifyFile = editedPath
-        }
-
         // Ralph Loop: update sessionState.loopWarnings after every edit/write
         sessionState.loopWarnings = []
         for (const [file, data] of sessionState.editHotspots) {
@@ -540,13 +501,6 @@ config: async (config: any) => {
 
       // For bash: extract key error lines from failing commands
       if (input.tool === "bash") {
-        // Ralph Loop: running a verify command clears the awaitingVerify flag —
-        // the resolver has now checked the edit it made.
-        const cmd = (input.args as any)?.command ?? (input.args as any)?.cmd
-        if (isVerifyCommand(cmd, sessionState.storedProjectContext?.verifyCommands)) {
-          sessionState.awaitingVerify = false
-          sessionState.awaitingVerifyFile = undefined
-        }
         const outputText = typeof output.output === "string" ? output.output
           : (output.output as any)?.output ?? ""
         const exitCode = (output.metadata as any)?.exitCode ?? (output.output as any)?.metadata?.exitCode
@@ -647,8 +601,7 @@ config: async (config: any) => {
       const hasFailures = sessionState.failureWarnings.length > 0
       const hasLoops = sessionState.loopWarnings.length > 0
       const hasDispatchFailures = sessionState.consecutiveDispatchFailures > 0
-      const needsVerify = sessionState.awaitingVerify
-      if (!ctx && !hasFailures && !hasLoops && !hasDispatchFailures && !needsVerify) return
+      if (!ctx && !hasFailures && !hasLoops && !hasDispatchFailures) return
 
       const lines: string[] = []
       const agent = sessionState.currentAgent
@@ -738,13 +691,6 @@ config: async (config: any) => {
         }
       }
 
-      // Ralph Loop: a pending edit MUST be verified before reporting done.
-      if (sessionState.awaitingVerify) {
-        lines.push(contextMessage(agent, "system.awaitingVerify", {
-          file: sessionState.awaitingVerifyFile ?? "",
-        }))
-      }
-
       if (lines.length > 0) {
         output.system.push(`${brand(sessionState.currentAgent)}\n${lines.join("\n")}`)
       }
@@ -755,33 +701,16 @@ config: async (config: any) => {
       const text = output.text ?? ""
       if (!text) return
 
-      // Primary gate: only nudge when the plugin knows an edit is pending
-      // verification. This replaces fragile text-pattern matching (every code
-      // block, common words like "changed"/"added") with the authoritative
-      // state flag set by tool.execute.after on edit/write operations.
-      // Token savings: ~30 tokens/turn × every code-block-containing response
-      // that wasn't actually a pending edit.
-      if (!sessionState.awaitingVerify) return
-
-      // Detect if verification was already mentioned in THIS response.
-      // Tightened from bare "pass" (false-positive magnet) to multi-word phrases.
-      const verifySignals = ["tests pass", "typecheck pass", "lint pass", "build succeeded", "0 errors", "exit code 0", "✅", "verified"]
-      const alreadyVerified = verifySignals.some(s => text.toLowerCase().includes(s))
-      if (alreadyVerified) return
-
-      // Don't nudge handoffs/questions
-      const handoffPatterns = [/\?$/, /let me know/i, /would you like/i, /what do you think/i]
-      if (handoffPatterns.some(p => p.test(text.trim()))) return
-
-      output.text = text + "\n\n" + contextMessage(sessionState.currentAgent, "reminder.verify")
-
-      // Ralph Loop: if hotspot exists AND this response shows retry intent,
-      // suggest strategy pivot. Only fires when loopWarnings already exist,
-      // so this never triggers on the first occurrence of "trying".
+      // Ralph Loop: if a genuine edit hotspot exists AND this response shows
+      // retry intent, suggest a strategy pivot. Gated purely on loopWarnings —
+      // a real repeated-failure signal — so it never fires on ordinary
+      // completions. (The old per-edit "verify your changes" nag was removed:
+      // it re-injected the same reminder every turn until a verify command ran,
+      // polluting context and annoying users.)
       if (sessionState.loopWarnings.length > 0) {
         const loopSignals = ["trying again", "attempting", "retrying", "second attempt", "third attempt", "another approach", "let me try"]
         if (loopSignals.some(s => text.toLowerCase().includes(s))) {
-          output.text = (output.text ?? text) + "\n\n" + contextMessage(sessionState.currentAgent, "reminder.ralphLoopText")
+          output.text = text + "\n\n" + contextMessage(sessionState.currentAgent, "reminder.ralphLoopText")
         }
       }
     }

@@ -88,8 +88,8 @@ test("agentDisplayName: unknown agent passes through unchanged", () => {
 })
 
 test("t: returns English reminder string", () => {
-  const msg = t("reminder.verify", "en")
-  assert.match(msg, /verify/i)
+  const msg = t("reminder.ralphLoopText", "en")
+  assert.match(msg, /Ralph Loop/i)
 })
 
 test("t: tool definition hints localize", () => {
@@ -128,15 +128,15 @@ test("t: variant arrays produce more than one distinct value across many calls",
 test("contextMessage: always English regardless of session locale", () => {
   // This is the key invariant: context-bound messages stay English so they
   // don't bloat non-English prompts or break consistency on cached tokens.
-  const msg = contextMessage("resolver", "reminder.verify")
+  const msg = contextMessage("resolver", "reminder.ralphLoopText")
   assert.match(msg, /^\[resolver\] /)
-  assert.match(msg, /verify/i)
+  assert.match(msg, /Ralph Loop/i)
   assert.doesNotMatch(msg, /[가-힣]/) // no Korean characters
 })
 
 test("contextMessage: agent name appears as brand", () => {
-  assert.match(contextMessage("coder", "reminder.verify"), /^\[coder\] /)
-  assert.match(contextMessage(undefined, "reminder.verify"), /^\[opencode-resolve\] /)
+  assert.match(contextMessage("coder", "reminder.ralphLoopText"), /^\[coder\] /)
+  assert.match(contextMessage(undefined, "reminder.ralphLoopText"), /^\[opencode-resolve\] /)
 })
 
 test("pluginMessage: uses plugin brand regardless of agent", () => {
@@ -247,12 +247,14 @@ test("hook: chat.params captures input.agent into session state", async () => {
   await hooks.config({})
   const output = {}
   await hooks["chat.params"]({ agent: "explorer" }, output)
-  // Trigger awaitingVerify so text.complete actually fires (gated on this state)
-  await hooks["tool.execute.after"]({ tool: "edit", args: { filePath: "src/foo.ts" } }, { output: "" })
-  // The end-of-turn reminder should brand as [explorer].
-  const turn = { text: "I edited the file:\n```\nconst x = 1\n```" }
-  await hooks["experimental.text.complete"]({}, turn)
-  assert.match(turn.text, /\[explorer\]/, "reminder should adopt latest agent name")
+  // A failed dispatch makes system.transform inject a branded escalation line.
+  await hooks["tool.execute.after"]({ tool: "task", args: { subagent_type: "coder" } }, { error: "boom" })
+  const sys = { system: [] }
+  await hooks["experimental.chat.system.transform"]({}, sys)
+  assert.ok(
+    sys.system.some((s) => /\[explorer\]/.test(s)),
+    "injected context should adopt latest agent name",
+  )
 })
 
 test("hook: tool.execute.before with task tool does not narrate to stdout", async () => {

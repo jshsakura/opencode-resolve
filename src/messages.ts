@@ -63,7 +63,6 @@ const AGENT_DISPLAY: Record<Locale, Record<string, string>> = {
 };
 
 export type MessageKey =
-  | "reminder.verify"
   | "reminder.ralphLoopText"
   | "system.driveResolution"
   | "system.projectKnowledge"
@@ -82,7 +81,6 @@ export type MessageKey =
   | "system.dispatchEscalate"
   | "system.dispatchStop"
   | "system.dispatchPivot"
-  | "system.awaitingVerify"
   | "compaction.contextHeader"
   | "tool.edit"
   | "tool.write"
@@ -148,7 +146,6 @@ function nextVariantSeed(): number {
 
 const MESSAGES: Record<Locale, Record<MessageKey, MessageTemplate>> = {
   en: {
-    "reminder.verify": "Reminder: verify your changes (run resolve-verify — typecheck/lint/test) before reporting completion.",
     "reminder.ralphLoopText": "🔄 Ralph Loop: heavy iteration detected. Check resolve-diagnostics (current LSP errors snapshot) and pivot the approach before the next attempt.",
     "system.driveResolution": "Drive to verified resolution. Classify intent, dispatch focused subagents, verify after each, iterate on failure. Report completion only when verified.",
     "system.projectKnowledge": ({ files }) => `Project knowledge: ${files}. Read when relevant before modifying code.`,
@@ -170,8 +167,6 @@ const MESSAGES: Record<Locale, Record<MessageKey, MessageTemplate>> = {
     "system.dispatchStop": ({ count }) =>
       `🛑 Ralph Loop: ${count} consecutive dispatch failures. STOP now — revert your last change or restore a safe state, then report to the user EXACTLY what is blocked. Do not keep retrying.`,
     "system.dispatchPivot": "🔀 STRATEGY PIVOT: repeated dispatch failure on the same task. Dispatch ARCHITECT to design a fundamentally different approach before continuing.",
-    "system.awaitingVerify": ({ file }) =>
-      `⏳ Awaiting verification: ${file ?? "the file you just edited"} has NOT been verified yet. Run typecheck/lint/test before reporting completion. NO EVIDENCE = NOT COMPLETE.`,
     "compaction.contextHeader": ({ body }) => `Project context (preserve): ${body}`,
     "tool.edit": "Read the file first. Make the smallest correct change. Verify after editing.",
     "tool.write": "Only write new files when explicitly needed. Prefer editing existing files.",
@@ -511,14 +506,6 @@ const MESSAGES: Record<Locale, Record<MessageKey, MessageTemplate>> = {
     "strategy.suggestionLabel": "Strategy suggestion",
   },
   ko: {
-    "reminder.verify": [
-      "리마인더: 완료 보고 전에 변경사항을 검증하세요 (resolve-verify).",
-      "잠깐 — typecheck/lint/test 가 통과하기 전에는 완료 보고 금지.",
-      "확인: 검증 명령은 실제로 돌렸어요? 'diff 가 그럴듯해 보임' 은 증거가 아니에요.",
-      "마무리 전에: 검증 게이트를 통과시키세요. 컴파일된다 ≠ 동작한다.",
-      "리마인더: 빌드가 초록색이어야 완료입니다. resolve-verify 실행하세요.",
-      "주의: 검증이 통과했을 때 알려주세요. diff 가 좋아 보일 때 말고요.",
-    ],
     "reminder.ralphLoopText": [
       "🔄 Ralph Loop: 반복이 많이 감지됐어요. resolve-diagnostics 로 현재 상태를 확인하고, 다른 접근을 시도해보세요. 멈추지 말고 끝까지 갑니다.",
       "🔄 Ralph Loop 진행 중. 같은 자리에서 맴돌고 있어요 — 다음 시도 전에 접근을 바꾸세요.",
@@ -544,8 +531,6 @@ const MESSAGES: Record<Locale, Record<MessageKey, MessageTemplate>> = {
     "system.dispatchStop": ({ count }) =>
       `🛑 Ralph Loop: ${count}회 연속 dispatch 실패. 여기서 멈추고, 마지막 변경을 되돌리거나 안전 상태로 복구한 뒤, 구체적으로 무엇이 막혔는지 사용자에게 보고하세요.`,
     "system.dispatchPivot": "🔀 전략 전환: 같은 작업의 dispatch 반복 실패. ARCHITECT 를 위임해 근본적으로 다른 접근을 설계받으세요.",
-    "system.awaitingVerify": ({ file }) =>
-      `⏳ 검증 대기: ${file ?? "방금 편집한 파일"} 이(가) 아직 검증되지 않았습니다. 완료 보고 전에 반드시 typecheck/lint/test 를 실행하세요. NO EVIDENCE = NOT COMPLETE.`,
     "compaction.contextHeader": ({ body }) => `프로젝트 컨텍스트 (보존): ${body}`,
     "tool.edit": "먼저 파일을 읽으세요. 가장 작은 정확한 변경을 만드세요. 편집 후 검증하세요.",
     "tool.write": "명시적으로 필요할 때만 새 파일을 만드세요. 기존 파일 편집을 우선합니다.",

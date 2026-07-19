@@ -34,14 +34,11 @@ export interface SessionState {
 
   // Ralph Loop: dispatch lifecycle tracking (resolver→coder verify loop).
   // consecutiveDispatchFailures counts failed task dispatches in a row; a
-  // successful dispatch resets it. awaitingVerify flips true after any edit
-  // and is cleared when a verify command (typecheck/lint/test) runs via bash.
+  // successful dispatch resets it.
   consecutiveDispatchFailures: number;
   lastDispatchAgent?: string;
   lastDispatchSucceeded?: boolean;
   lastDispatchAt?: number;
-  awaitingVerify: boolean;
-  awaitingVerifyFile?: string;
 
   currentAgent?: string;
   locale: Locale;
@@ -61,7 +58,6 @@ export function createSessionState(): SessionState {
     loopWarnings: [],
     lastStrategyHint: "",
     consecutiveDispatchFailures: 0,
-    awaitingVerify: false,
     locale: "en"
   };
 }

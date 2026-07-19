@@ -41,8 +41,6 @@ export interface SessionState {
     lastDispatchAgent?: string;
     lastDispatchSucceeded?: boolean;
     lastDispatchAt?: number;
-    awaitingVerify: boolean;
-    awaitingVerifyFile?: string;
     currentAgent?: string;
     locale: Locale;
 }

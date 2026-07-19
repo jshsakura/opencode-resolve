@@ -24,7 +24,6 @@ export function createSessionState() {
         loopWarnings: [],
         lastStrategyHint: "",
         consecutiveDispatchFailures: 0,
-        awaitingVerify: false,
         locale: "en"
     };
 }

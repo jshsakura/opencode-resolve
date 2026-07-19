@@ -910,35 +910,6 @@ test("shell.env sets non-interactive guard variables without polluting CI/NO_COL
   assert.equal(output.env.PIP_NO_INPUT, "1")
 })
 
-// ── Adaptive verification (non-code files skip the verify gate) ──────────────
-
-test("awaitingVerify triggers for code file edits (.ts)", async () => {
-  const hooks = await getHooks()
-  await hooks["tool.execute.after"]({ tool: "edit", args: { filePath: "src/foo.ts" } }, { output: "" })
-  const out = { system: [] }
-  await hooks["experimental.chat.system.transform"]({}, out)
-  const sys = JSON.stringify(out.system).toLowerCase()
-  assert.ok(
-    sys.includes("awaiting") || sys.includes("verif"),
-    "code edit should require verification",
-  )
-})
-
-test("awaitingVerify is skipped for non-code files (.md/.txt/.json)", async () => {
-  const hooks = await getHooks()
-  for (const file of ["README.md", "notes.txt", "config.json", "package.json"]) {
-    await hooks["tool.execute.after"]({ tool: "edit", args: { filePath: file } }, { output: "" })
-  }
-  const out = { system: [] }
-  await hooks["experimental.chat.system.transform"]({}, out)
-  const sys = JSON.stringify(out.system).toLowerCase()
-  assert.ok(
-    !sys.includes("awaiting") && !sys.includes("verif"),
-    "non-code edits should NOT require verification",
-  )
-})
-
-
 test("chat.params caps temperature deterministically for resolve agents", async () => {
   const project = await createProject({
     "opencode.json": {},
@@ -1209,31 +1180,6 @@ test("chat.headers skips retry strategy for non-GLM providers", async () => {
     output,
   )
   assert.equal(output.headers["X-Custom-Retry-Strategy"], undefined)
-})
-
-test("experimental.text.complete adds verification reminder when awaitingVerify is true", async () => {
-  const hooks = await getHooks()
-  // Trigger awaitingVerify via a code-file edit (the authoritative signal)
-  await hooks["tool.execute.after"]({ tool: "edit", args: { filePath: "src/foo.ts" } }, { output: "" })
-  const output = { text: "I edited the file:\n```typescript\nconst x = 1;\n```" }
-  await hooks["experimental.text.complete"]({ sessionID: "s1", messageID: "m1", partID: "p1" }, output)
-  assert.ok(output.text.includes("verify your changes"), "should add verification reminder when awaitingVerify is true")
-})
-
-test("experimental.text.complete skips reminder when awaitingVerify is false", async () => {
-  const hooks = await getHooks()
-  // No edit triggered — awaitingVerify is false. Even edit-looking text should NOT nudge.
-  const output = { text: "I edited the file:\n```typescript\nconst x = 1;\n```" }
-  await hooks["experimental.text.complete"]({ sessionID: "s1", messageID: "m1", partID: "p1" }, output)
-  assert.ok(!output.text.includes("Reminder"), "should NOT add reminder when awaitingVerify is false (no text-pattern guessing)")
-})
-
-test("experimental.text.complete skips reminder when text mentions verification", async () => {
-  const hooks = await getHooks()
-  await hooks["tool.execute.after"]({ tool: "edit", args: { filePath: "src/foo.ts" } }, { output: "" })
-  const output = { text: "Done. All tests pass ✅, 0 errors." }
-  await hooks["experimental.text.complete"]({ sessionID: "s1", messageID: "m1", partID: "p1" }, output)
-  assert.ok(!output.text.includes("Reminder"), "should NOT add reminder when text already mentions verification")
 })
 
 // ── LSP diagnostics event + tool.execute.after integration ────────────────
@@ -2054,27 +2000,15 @@ test("messages.transform preserves 'Let me know if' handoffs (no hijack)", async
 
 // ── Enhanced text.complete tests ─────────────────────────────────────────────
 
-test("text.complete nudges when awaitingVerify is true and text lacks verification", async () => {
+test("text.complete does NOT append a per-edit verify reminder (removed feature)", async () => {
   const hooks = await getHooks()
+  // A code edit used to arm a "verify your changes" nag on every following
+  // completion. That reminder was removed — an edit must NOT trigger any append.
   await hooks["tool.execute.after"]({ tool: "edit", args: { filePath: "src/foo.ts" } }, { output: "" })
   const output = { text: "I've updated the module and changed the exports." }
   await hooks["experimental.text.complete"]({}, output)
-  assert.ok(output.text.includes("resolve-verify"), "should mention resolve-verify tool when awaitingVerify is true")
-})
-
-test("text.complete does NOT nudge on handoff questions even when awaitingVerify", async () => {
-  const hooks = await getHooks()
-  await hooks["tool.execute.after"]({ tool: "edit", args: { filePath: "src/foo.ts" } }, { output: "" })
-  const output = { text: "I've updated the module. What do you think?" }
-  await hooks["experimental.text.complete"]({}, output)
-  assert.ok(!output.text.includes("resolve-verify"), "should not nudge on handoff questions")
-})
-
-test("text.complete does NOT nudge when already verified", async () => {
-  const hooks = await getHooks()
-  const output = { text: "I've updated the module and all tests pass ✅" }
-  await hooks["experimental.text.complete"]({}, output)
-  assert.ok(!output.text.includes("resolve-verify"), "should not nudge when already verified")
+  assert.equal(output.text, "I've updated the module and changed the exports.", "edits must not append a verify reminder")
+  assert.ok(!output.text.includes("resolve-verify"), "no verify nudge should be appended")
 })
 
 test("text.complete does NOT nudge on empty text", async () => {
