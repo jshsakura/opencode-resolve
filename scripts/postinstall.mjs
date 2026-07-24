@@ -101,7 +101,7 @@ async function printSummaryBanner(version) {
 try {
   await registerPlugin()
   await refreshSelfPluginCache(pluginVersion)
-  console.log(`[${packageName}] v${pluginVersion} install complete — restart OpenCode to load the plugin`)
+  console.log(`[${packageName}] v${pluginVersion} install complete`)
   await printSummaryBanner(pluginVersion)
 } catch (error) {
   console.warn(`[${packageName}] automatic OpenCode registration skipped: ${formatError(error)}`)

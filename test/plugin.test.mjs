@@ -406,15 +406,28 @@ test("custom config path is resolved relative to project directory", async () =>
   }
 })
 
-test("rejects unknown agent names with clear errors", async () => {
+test("leniently skips unknown agent names instead of killing the whole config", async () => {
+  // A single stray name (e.g. a removed/renamed agent like "gpt-coder") must NOT
+  // throw and disable every agent. It is warned to stderr and skipped, leaving
+  // the valid names intact. This is the documented "one stray key must not kill
+  // the plugin" contract.
   const project = await createProject({
     "opencode-resolve.json": {
       enabled: ["coder", "oracle"],
+      agents: {
+        resolver: { enabled: true },
+        "gpt-coder": { enabled: false },
+      },
     },
   })
 
   try {
-    await assert.rejects(() => runPlugin({}, project), /Unknown agent "oracle"/)
+    const { config } = await runPlugin({}, project)
+    // "oracle" dropped from enabled; "coder" (default) + "resolver" still register
+    assert.ok(config.agent.coder, "coder must still register despite unknown peer names")
+    assert.ok(config.agent.resolver, "resolver must still register")
+    assert.equal(config.agent.oracle, undefined, "unknown agent 'oracle' must not register")
+    assert.equal(config.agent["gpt-coder"], undefined, "unknown agent 'gpt-coder' must not register")
   } finally {
     await project.cleanup()
   }

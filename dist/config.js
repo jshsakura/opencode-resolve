@@ -187,7 +187,9 @@ export function normalizeResolveConfig(value, source) {
     }
     const result = {};
     if (config.enabled !== undefined) {
-        result.enabled = expectStringArray(config.enabled, `${source}.enabled`).map((name) => expectAgentName(name, `${source}.enabled`));
+        result.enabled = expectStringArray(config.enabled, `${source}.enabled`)
+            .map((name) => acceptAgentName(name, `${source}.enabled`))
+            .filter((name) => name !== undefined);
     }
     if (config.models !== undefined) {
         const models = expectObject(config.models, `${source}.models`);
@@ -204,7 +206,9 @@ export function normalizeResolveConfig(value, source) {
         const agents = expectObject(config.agents, `${source}.agents`);
         result.agents = {};
         for (const [name, agentConfig] of Object.entries(agents)) {
-            const agentName = expectAgentName(name, `${source}.agents`);
+            const agentName = acceptAgentName(name, `${source}.agents.${name}`);
+            if (agentName === undefined)
+                continue;
             result.agents[agentName] = normalizeAgentConfig(agentConfig, `${source}.agents.${name}`);
         }
     }
@@ -330,6 +334,21 @@ export function normalizePermission(value, source) {
 export function expectAgentName(value, source) {
     if (!VALID_AGENT_NAME_SET.has(value)) {
         throw new Error(`Unknown agent "${value}" in ${source}. Valid agents: ${VALID_AGENT_NAMES.join(", ")}`);
+    }
+    return value;
+}
+/**
+ * Lenient variant of expectAgentName: an unknown agent NAME is warned and
+ * skipped (returns undefined) instead of throwing. This matches how every
+ * other unknown key is handled (see normalizeResolveConfig) so a single stray
+ * name — e.g. "gpt-coder" left over from a renamed/removed agent — cannot kill
+ * the ENTIRE config load and disable every agent. The throw version lives on
+ * for strict callers/tests; config normalization uses this lenient path.
+ */
+export function acceptAgentName(value, source) {
+    if (!VALID_AGENT_NAME_SET.has(value)) {
+        warnResolve(`unknown agent "${value}" in ${source} — ignored. Valid agents: ${VALID_AGENT_NAMES.join(", ")}`);
+        return undefined;
     }
     return value;
 }

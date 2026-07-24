@@ -15,7 +15,9 @@ if (process.env.OPENCODE_RESOLVE_QUIET !== "1") {
         where = ` (from: ${dirname(fileURLToPath(import.meta.url))})`;
     }
     catch { /* ignore */ }
-    console.log(`[opencode-resolve] v${PLUGIN_VERSION} loaded${where}`);
+    // stderr, NOT stdout — stdout corrupts the opencode TUI (renders into the
+    // chat window). See the same note in config.ts warnResolve().
+    process.stderr.write(`[opencode-resolve] v${PLUGIN_VERSION} loaded${where}\n`);
 }
 export const OpencodeResolve = async ({ directory }, options) => {
     const sessionState = createSessionState();

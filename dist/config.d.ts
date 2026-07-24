@@ -16,6 +16,15 @@ export declare function normalizeAgentConfig(value: unknown, source: string): Re
 export declare function normalizeTools(value: unknown, source: string): Record<string, boolean>;
 export declare function normalizePermission(value: unknown, source: string): ResolveAgentConfig["permission"];
 export declare function expectAgentName(value: string, source: string): ResolveAgentName;
+/**
+ * Lenient variant of expectAgentName: an unknown agent NAME is warned and
+ * skipped (returns undefined) instead of throwing. This matches how every
+ * other unknown key is handled (see normalizeResolveConfig) so a single stray
+ * name — e.g. "gpt-coder" left over from a renamed/removed agent — cannot kill
+ * the ENTIRE config load and disable every agent. The throw version lives on
+ * for strict callers/tests; config normalization uses this lenient path.
+ */
+export declare function acceptAgentName(value: string, source: string): ResolveAgentName | undefined;
 export declare function expectPermissionValue(value: unknown, source: string): PermissionValue;
 export declare function expectStringArray(value: unknown, source: string): string[];
 export declare function expectObject(value: unknown, source: string): UnknownRecord;
