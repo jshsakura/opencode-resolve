@@ -132,9 +132,16 @@ OpenCode가 계속 오래된 플러그인을 로드하면:
 
 ```sh
 export OPENCODE_CACHE_ROOT="${XDG_CACHE_HOME:-$HOME/.cache}/opencode"
-rm -rf "$OPENCODE_CACHE_ROOT/packages/opencode-resolve@latest"
-opencode plugin opencode-resolve@latest --global --force
+rm -rf "$OPENCODE_CACHE_ROOT/packages/opencode-resolve" \
+       "$OPENCODE_CACHE_ROOT/packages/opencode-resolve@latest"
+opencode plugin opencode-resolve --global --force
 ```
+
+OpenCode는 플러그인 spec 문자열마다 별도 캐시 디렉터리를 만듭니다. 그래서
+`opencode-resolve`와 `opencode-resolve@latest`가 동시에 존재할 수 있고, 하나만
+지우면 나머지가 옛 버전에 고정된 채 남습니다. 실제로 로드된 빌드는 `resolve_version`
+도구로 확인하세요(또는 `OPENCODE_RESOLVE_DEBUG=1`로 OpenCode를 실행하면 로드 배너가
+출력됩니다).
 
 ## 추천 스킬
 

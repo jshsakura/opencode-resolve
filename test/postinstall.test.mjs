@@ -767,3 +767,84 @@ async function writeJson(path, value) {
   await mkdir(dirname(path), { recursive: true })
   await writeFile(path, `${JSON.stringify(value, null, 2)}\n`)
 }
+
+// ── Plugin cache dirs are per spec string — refresh must cover both ──────────
+// opencode.json registers the bare name, so `packages/opencode-resolve` is what
+// OpenCode loads; `packages/opencode-resolve@latest` is left over from older
+// installs. Refreshing only one leaves the other pinned at an old version, which
+// is how a machine ended up loading v0.3.0 with npm-global at v0.3.7.
+
+test("cache refresh detects and wipes a stale bare-name cache dir, not just @latest", async () => {
+  const configHome = await mkdtemp(join(tmpdir(), "opencode-resolve-postinstall-"))
+  const cacheHome = await mkdtemp(join(tmpdir(), "opencode-resolve-cache-"))
+  const binHome = await mkdtemp(join(tmpdir(), "opencode-resolve-bin-"))
+  const ownVersion = await readOwnVersion()
+
+  try {
+    const bareDir = join(cacheHome, "packages", "opencode-resolve")
+    const latestDir = join(cacheHome, "packages", "opencode-resolve@latest")
+    await writeCachedPluginVersion(bareDir, "0.0.1")
+    await writeCachedPluginVersion(latestDir, ownVersion)
+    await writeFakeOpenCodeBin(binHome)
+
+    const { stdout } = runPostinstall(configHome, {
+      OPENCODE_RESOLVE_AUTO_PRESET: "1",
+      OPENCODE_RESOLVE_SKIP_CACHE_REFRESH: "0",
+      OPENCODE_CACHE_HOME: cacheHome,
+      PATH: `${binHome}:${process.env.PATH}`,
+    })
+
+    assert.match(stdout, /stale OpenCode plugin cache detected: v0\.0\.1/, `stale bare dir should be reported, got: ${stdout}`)
+    assert.match(stdout, /packages\/opencode-resolve\)/, "the reported path should be the bare-name dir")
+    assert.deepEqual(await readdir(join(cacheHome, "packages")), [], "both spec dirs should be wiped before reinstall")
+  } finally {
+    await rm(configHome, { recursive: true, force: true })
+    await rm(cacheHome, { recursive: true, force: true })
+    await rm(binHome, { recursive: true, force: true })
+  }
+})
+
+test("cache refresh is a no-op when the only present cache dir is current", async () => {
+  const configHome = await mkdtemp(join(tmpdir(), "opencode-resolve-postinstall-"))
+  const cacheHome = await mkdtemp(join(tmpdir(), "opencode-resolve-cache-"))
+  const ownVersion = await readOwnVersion()
+
+  try {
+    await writeCachedPluginVersion(join(cacheHome, "packages", "opencode-resolve"), ownVersion)
+
+    const { stdout } = runPostinstall(configHome, {
+      OPENCODE_RESOLVE_AUTO_PRESET: "1",
+      OPENCODE_RESOLVE_SKIP_CACHE_REFRESH: "0",
+      OPENCODE_CACHE_HOME: cacheHome,
+      PATH: "/nonexistent",
+    })
+
+    assert.match(stdout, new RegExp(`OpenCode plugin cache already at v${ownVersion.replace(/\./g, "\\.")}`))
+    assert.deepEqual(
+      await readdir(join(cacheHome, "packages")),
+      ["opencode-resolve"],
+      "an up-to-date cache must not be wiped",
+    )
+  } finally {
+    await rm(configHome, { recursive: true, force: true })
+    await rm(cacheHome, { recursive: true, force: true })
+  }
+})
+
+async function writeCachedPluginVersion(cachePath, version) {
+  await writeJson(join(cachePath, "node_modules", "opencode-resolve", "package.json"), {
+    name: "opencode-resolve",
+    version,
+  })
+}
+
+async function writeFakeOpenCodeBin(binHome) {
+  const binPath = join(binHome, "opencode")
+  await writeFile(binPath, "#!/bin/sh\nexit 0\n", { mode: 0o755 })
+  return binPath
+}
+
+async function readOwnVersion() {
+  const pkg = await readJson(new URL("../package.json", import.meta.url).pathname)
+  return pkg.version
+}

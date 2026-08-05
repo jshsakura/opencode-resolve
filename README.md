@@ -132,9 +132,16 @@ If OpenCode still loads an old plugin copy:
 
 ```sh
 export OPENCODE_CACHE_ROOT="${XDG_CACHE_HOME:-$HOME/.cache}/opencode"
-rm -rf "$OPENCODE_CACHE_ROOT/packages/opencode-resolve@latest"
-opencode plugin opencode-resolve@latest --global --force
+rm -rf "$OPENCODE_CACHE_ROOT/packages/opencode-resolve" \
+       "$OPENCODE_CACHE_ROOT/packages/opencode-resolve@latest"
+opencode plugin opencode-resolve --global --force
 ```
+
+OpenCode caches one directory per plugin spec string, so both `opencode-resolve`
+and `opencode-resolve@latest` can exist side by side — deleting only one leaves
+the other pinned at an old version. Use the `resolve_version` tool (or start
+OpenCode with `OPENCODE_RESOLVE_DEBUG=1` to print a load banner) to confirm which
+build is actually loaded.
 
 ## Recommended Skills
 

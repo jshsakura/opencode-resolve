@@ -32,16 +32,21 @@ The plugin schema kept gaining valid names in `src/index.ts` (new agents in `VAL
 
 ## Verifying an install actually worked
 
-From v0.1.4 onward, the plugin logs `[opencode-resolve] v<version> loaded` on every plugin module load. Postinstall logs `installing v<version>` and `install complete`.
+The plugin logs `[opencode-resolve] v<version> loaded` on plugin module load **only when `OPENCODE_RESOLVE_DEBUG=1`**. It is opt-in as of v0.3.8: OpenCode renders plugin stderr into the TUI chat window, so an unconditional banner polluted every session. Postinstall still logs `installing v<version>` and `install complete` (that's a normal shell, not the TUI).
 
 End-to-end check after release:
 
 ```sh
 opencode plugin opencode-resolve --global --force        # should print: installing v<X>, install complete
 opencode run "list available agents" 2>&1 | tail -20     # must include resolver and coder
+OPENCODE_RESOLVE_DEBUG=1 opencode run "/dev/null" 2>&1 | grep opencode-resolve   # load banner + version
 ```
 
-If the load line doesn't appear, the plugin wasn't imported — typically a stale cache (delete `~/.cache/opencode/packages/opencode-resolve@latest` and re-run `opencode plugin ... --global --force`) or a JSON parse error in `resolve.json`.
+The `resolve_version` tool reports the loaded version and cache path from inside a session — prefer it over the banner.
+
+If the load line doesn't appear under `OPENCODE_RESOLVE_DEBUG=1`, the plugin wasn't imported — typically a stale cache or a JSON parse error in `resolve.json`.
+
+**Cache dirs are per spec string.** `~/.cache/opencode/packages/opencode-resolve` (bare name, what postinstall registers in `opencode.json`) and `~/.cache/opencode/packages/opencode-resolve@latest` can both exist, at *different* versions. OpenCode loads the one matching the spec in `opencode.json`. Clearing only one leaves the other pinned — this is exactly how a machine ended up loading v0.3.0 while npm-global and the `@latest` cache were both at v0.3.7. `refreshSelfPluginCache()` in `scripts/postinstall.mjs` now checks and wipes both.
 
 If the load line appears but no agents register, `normalizeResolveConfig` threw. The throw message goes to stderr on plugin load.
 
@@ -49,9 +54,11 @@ If the load line appears but no agents register, `normalizeResolveConfig` threw.
 
 ```sh
 npm run build
-# Replace the cache for this machine only:
-rsync -a --delete dist/ scripts/ package.json opencode-resolve.example.json \
-  ~/.cache/opencode/packages/opencode-resolve@latest/node_modules/opencode-resolve/
+# Replace the cache for this machine only (both spec dirs — see above):
+for d in opencode-resolve opencode-resolve@latest; do
+  [ -d ~/.cache/opencode/packages/$d ] && rsync -a --delete dist/ scripts/ package.json \
+    opencode-resolve.example.json ~/.cache/opencode/packages/$d/node_modules/opencode-resolve/
+done
 ```
 
 Restart OpenCode. Confirms the new code on one machine before publishing.

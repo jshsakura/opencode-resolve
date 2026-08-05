@@ -13,8 +13,17 @@ const cacheDir = process.env.OPENCODE_CACHE_HOME || join(homedir(), ".cache", "o
 const opencodeConfigPath = join(configDir, "opencode.json")
 const resolveConfigPath = join(configDir, "resolve.json")
 const exampleConfigPath = join(root, "opencode-resolve.example.json")
-const selfPluginCachePath = join(cacheDir, "packages", `${packageName}@latest`)
-const selfPluginCachedPackageJson = join(selfPluginCachePath, "node_modules", packageName, "package.json")
+// opencode caches one directory per plugin *spec string*. We register the bare
+// name in opencode.json, so `packages/opencode-resolve` is the one it actually
+// loads — but older installs (and `opencode plugin foo@latest`) also leave a
+// `packages/opencode-resolve@latest` dir behind. Refreshing only one of them
+// leaves the other pinned at whatever version it was installed at, and the TUI
+// silently keeps loading the stale copy. Manage both.
+const selfPluginCachePaths = [
+  join(cacheDir, "packages", packageName),
+  join(cacheDir, "packages", `${packageName}@latest`),
+]
+const selfPluginCachedPackageJson = (cachePath) => join(cachePath, "node_modules", packageName, "package.json")
 
 const ADDITIVE_DEFAULTS = {
   autoApprove: true,
@@ -147,21 +156,30 @@ async function refreshSelfPluginCache(expectedVersion) {
   if (process.env.OPENCODE_RESOLVE_REFRESHING_CACHE === "1") return
 
   const forceRefresh = readInstallerOption("force_cache_refresh") === "1"
-  const cachedVersion = await readCachedSelfVersion()
-  if (!forceRefresh && cachedVersion === expectedVersion) {
+  const cached = await readCachedSelfVersions()
+  const stale = cached.filter((entry) => entry.version !== undefined && entry.version !== expectedVersion)
+  const upToDate = cached.filter((entry) => entry.version === expectedVersion)
+
+  if (!forceRefresh && stale.length === 0 && upToDate.length > 0) {
     console.log(`[${packageName}] OpenCode plugin cache already at v${expectedVersion}`)
     return
   }
 
-  if (forceRefresh && cachedVersion === expectedVersion) {
+  if (forceRefresh && stale.length === 0) {
     console.log(`[${packageName}] forcing OpenCode plugin cache refresh at v${expectedVersion}`)
-  } else if (cachedVersion) {
-    console.log(`[${packageName}] stale OpenCode plugin cache detected: v${cachedVersion} -> v${expectedVersion}`)
+  } else if (stale.length > 0) {
+    for (const entry of stale) {
+      console.log(`[${packageName}] stale OpenCode plugin cache detected: v${entry.version} -> v${expectedVersion} (${entry.path})`)
+    }
   } else {
     console.log(`[${packageName}] OpenCode plugin cache missing; refreshing cache`)
   }
 
-  await rm(selfPluginCachePath, { recursive: true, force: true })
+  // Wipe every spec dir, not just the stale one: opencode picks the dir by the
+  // spec string in opencode.json, and we can't be sure which one it will read.
+  for (const cachePath of selfPluginCachePaths) {
+    await rm(cachePath, { recursive: true, force: true })
+  }
   const refreshed = await runOpenCodePluginInstall()
   if (!refreshed) {
     console.warn(`[${packageName}] could not refresh OpenCode plugin cache automatically`)
@@ -169,17 +187,29 @@ async function refreshSelfPluginCache(expectedVersion) {
     return
   }
 
-  const nextVersion = await readCachedSelfVersion()
-  if (nextVersion && nextVersion !== expectedVersion) {
-    console.warn(`[${packageName}] OpenCode plugin cache refreshed but still reports v${nextVersion}; expected v${expectedVersion}`)
+  const next = await readCachedSelfVersions()
+  const stillStale = next.filter((entry) => entry.version !== undefined && entry.version !== expectedVersion)
+  if (stillStale.length > 0) {
+    for (const entry of stillStale) {
+      console.warn(`[${packageName}] OpenCode plugin cache refreshed but ${entry.path} still reports v${entry.version}; expected v${expectedVersion}`)
+    }
     return
   }
-  console.log(`[${packageName}] OpenCode plugin cache refreshed to v${nextVersion ?? expectedVersion}`)
+  console.log(`[${packageName}] OpenCode plugin cache refreshed to v${expectedVersion}`)
 }
 
-async function readCachedSelfVersion() {
+async function readCachedSelfVersions() {
+  return Promise.all(
+    selfPluginCachePaths.map(async (cachePath) => ({
+      path: cachePath,
+      version: await readCachedSelfVersion(cachePath),
+    })),
+  )
+}
+
+async function readCachedSelfVersion(cachePath) {
   try {
-    const raw = await readFile(selfPluginCachedPackageJson, "utf8")
+    const raw = await readFile(selfPluginCachedPackageJson(cachePath), "utf8")
     const parsed = JSON.parse(raw)
     return typeof parsed?.version === "string" ? parsed.version : undefined
   } catch (error) {

@@ -3148,3 +3148,38 @@ test("edit hotspot warning asks for a diff review instead of a different file", 
   assert.ok(!/different approach/i.test(warning), `should not push a blind pivot, got: ${warning}`)
   assert.ok(/keep working here/i.test(warning), `should permit staying in the file, got: ${warning}`)
 })
+
+// ── Load banner must not pollute the OpenCode TUI ────────────────────────────
+// opencode renders plugin stderr into the chat window, so the banner is opt-in.
+
+test("plugin module load is silent by default", () => {
+  const result = spawnPluginImport({ OPENCODE_RESOLVE_DEBUG: undefined, OPENCODE_RESOLVE_QUIET: undefined })
+  assert.equal(result.stderr.trim(), "", `nothing should be written to stderr, got: ${result.stderr}`)
+  assert.equal(result.stdout.trim(), "", `nothing should be written to stdout, got: ${result.stdout}`)
+})
+
+test("plugin module load prints the version banner under OPENCODE_RESOLVE_DEBUG=1", () => {
+  const result = spawnPluginImport({ OPENCODE_RESOLVE_DEBUG: "1", OPENCODE_RESOLVE_QUIET: undefined })
+  assert.match(result.stderr, /\[opencode-resolve\] v\d+\.\d+\.\d+ loaded/, `expected banner, got: ${result.stderr}`)
+  assert.match(result.stderr, /\(from: .*\)/, "banner should include the load path")
+})
+
+test("OPENCODE_RESOLVE_QUIET=1 still wins over OPENCODE_RESOLVE_DEBUG=1", () => {
+  const result = spawnPluginImport({ OPENCODE_RESOLVE_DEBUG: "1", OPENCODE_RESOLVE_QUIET: "1" })
+  assert.equal(result.stderr.trim(), "", `quiet should suppress the banner, got: ${result.stderr}`)
+})
+
+function spawnPluginImport(envOverrides) {
+  const entry = new URL("../dist/index.js", import.meta.url).pathname
+  const env = { ...process.env, OPENCODE_RESOLVE_SKIP_POSTINSTALL: "1" }
+  for (const [key, value] of Object.entries(envOverrides)) {
+    if (value === undefined) delete env[key]
+    else env[key] = value
+  }
+  const result = cp.spawnSync(process.execPath, ["--input-type=module", "-e", `await import(${JSON.stringify(entry)})`], {
+    encoding: "utf8",
+    env,
+  })
+  assert.equal(result.status, 0, result.stderr)
+  return result
+}
