@@ -2045,13 +2045,15 @@ test("text.complete does NOT nudge on empty text", async () => {
 // ── Shell argument sanitization tests ────────────────────────────────────────
 
 test("sanitizeShellArg strips dangerous metacharacters", async () => {
-  // Access the function via resolve-search tool (indirect test)
-  // The tool should handle inputs with shell metacharacters gracefully
+  // Access the function via resolve-search tool (indirect test).
+  // Run inside a small temp project — scanning system /tmp made this test
+  // take 16-19s and tipped the coverage gate's per-file timeout.
+  const project = await createProject({ "package.json": { name: "sanitize-test" } })
   const hooks = await getHooks()
   // These should not throw — they're sanitized before shell execution
   const result = await hooks.tool["resolve-search"].execute(
     { query: "test; rm -rf /" },
-    { sessionID: "s1", messageID: "m1", agent: "resolver", directory: "/tmp", worktree: "/tmp", abort: new AbortController().signal, metadata() {}, ask: () => ({}) },
+    { sessionID: "s1", messageID: "m1", agent: "resolver", directory: project.path, worktree: project.path, abort: new AbortController().signal, metadata() {}, ask: () => ({}) },
   )
   // Should not error — the dangerous part is stripped
   const text = typeof result === "string" ? result : result.output
