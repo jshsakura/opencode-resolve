@@ -64,8 +64,13 @@ export const DEFAULT_AGENT_CONFIG = {
         maxSteps: 25,
         description: "Primary orchestrator in the fixed-role verified loop (resolver→coder). Decomposes work into verified checkpoints, dispatches coder, verifies each, and carries forward progress. Internal subagents (explorer, reviewer, deep-reviewer) are available by default but dispatched only when justified.",
         prompt: buildResolverPrompt(undefined),
+        // Orchestrator: MUST dispatch coder for ALL edits. edit is DENIED so the
+        // harness physically blocks a direct edit and forces a coder dispatch
+        // (a prompt request alone was too weak — the resolver kept editing
+        // itself, collapsing to "just like build"). singleAgentMode (direct
+        // mode) re-enables edit in applyResolveConfig.
         permission: {
-            edit: "allow",
+            edit: "deny",
             bash: "ask",
             webfetch: "allow",
         },
@@ -206,7 +211,6 @@ export function buildResolverPrompt(maxParallelSubagents, singleAgentMode = fals
             "  2. after EVERY coder return, run the verify command (type check / lint / test) — NO EXCEPTION",
             "  3. on verify FAIL → re-dispatch coder with the exact error + a precise fix instruction. Do NOT repeat the same change.",
             "  4. loop steps 1-3 until the change is verified. Only THEN report done.",
-            "  5. trivial fix → apply it yourself (no subagent), then verify.",
         ].join("\n");
     const recovery = singleAgentMode
         ? "INTELLIGENT RECOVERY: On verify failure, run resolve-diagnostics and read the error closely before re-editing. Never blindly retry the identical change."
@@ -217,6 +221,12 @@ export function buildResolverPrompt(maxParallelSubagents, singleAgentMode = fals
         "Token budget is finite. Minimize unnecessary reads; one focused change beats several exploratory ones.",
         "",
         modeRule,
+        ...(singleAgentMode ? [] : [
+            "ORCHESTRATOR DISCIPLINE (enforced by the harness): You are an orchestrator, NOT an editor.",
+            "Your edit/write permission is DENIED — the harness blocks any direct edit, so dispatching the coder is the ONLY way to change code.",
+            "ALL code changes, however small, go through coder. Your own tools: read, grep, glob, task (dispatch coder/specialists), verify commands (typecheck/test).",
+            "There is NO 'trivial fix' shortcut — if it touches code, dispatch the coder. This is what makes the resolve loop a real loop and not 'just build'.",
+        ]),
         loopSteps,
         recovery,
         "ESCALATION (enforced by the harness, follow it): 3 consecutive failures → STOP, revert the last change, report to the user. 6 → pivot to architect for a different approach.",

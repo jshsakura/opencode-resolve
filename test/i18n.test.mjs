@@ -209,12 +209,13 @@ test("smoke: every message key renders cleanly in en and ko across all variants"
   }
 })
 
-// ── narration: disabled (no-op) ────────────────────────────────────────────
-// Live narration was removed: stdout conflicted with the TUI (doubled lines),
-// toast was rejected, and text.complete would consume LLM tokens. narrate()
-// is kept as a no-op so hook call sites don't need changes.
+// ── narration: routed to the file logger ───────────────────────────────────
+// narrate() now writes the rendered role-play line to the per-session file
+// logger (state.logger) instead of stdout. stdout is never touched (the TUI
+// redraw conflict that forced the original no-op). When no logger is wired,
+// narrate() stays quiet — back-compat for call sites that predate the field.
 
-test("narrate: is a no-op (produces no stdout output)", () => {
+test("narrate: without a logger produces no stdout output", () => {
   const original = process.stdout.write.bind(process.stdout)
   const chunks = []
   process.stdout.write = (chunk) => { chunks.push(String(chunk)); return true }
@@ -257,7 +258,7 @@ test("hook: chat.params captures input.agent into session state", async () => {
   )
 })
 
-test("hook: tool.execute.before with task tool does not narrate to stdout", async () => {
+test("hook: tool.execute.before with task tool never writes to stdout", async () => {
   const hooks = await OpencodeResolve(
     { directory: "/tmp", project: {}, worktree: "/tmp", serverUrl: new URL("http://localhost"), $: {}, experimental_workspace: { register() {} } },
     { language: "en" },
@@ -278,5 +279,5 @@ test("hook: tool.execute.before with task tool does not narrate to stdout", asyn
     process.stdout.write = original
     if (savedQuiet !== undefined) process.env.OPENCODE_RESOLVE_QUIET = savedQuiet
   }
-  assert.equal(chunks.length, 0, "narration disabled — no stdout output expected")
+  assert.equal(chunks.length, 0, "narration routes to the file logger — no stdout output expected")
 })

@@ -6,6 +6,8 @@
 // the user wants. For plugin-level notices unrelated to an agent (auto-update,
 // tool-definition hints loaded once), use `PLUGIN_BRAND` instead.
 
+import type { ResolveLogger } from "./log.js";
+
 export type Locale = "en" | "ko";
 
 export const PLUGIN_BRAND = "opencode-resolve";
@@ -919,25 +921,29 @@ export function contextMessage(agent: string | undefined, key: MessageKey, param
 }
 
 /**
- * Live terminal narration has been disabled.
+ * Role-play narration, now routed to the structured file logger.
  *
- * Writing to stdout conflicted with the TUI's screen-redraw cycle (lines
- * appeared doubled). Toast was the only clean alternative but was rejected
- * for UX reasons, and a TUI-plugin module is impossible under the V1
- * plugin format (server XOR tui, not both). Adding playful text via
- * `experimental.text.complete` would consume LLM tokens, which the user
- * explicitly rejected.
+ * History: this used to write to stdout, which conflicted with the TUI's
+ * screen-redraw cycle (lines appeared doubled). Toast, the TUI-plugin module
+ * (impossible under the V1 plugin format), and `experimental.text.complete`
+ * (token cost) were all rejected, so it became a no-op — which left the plugin
+ * with zero live visibility. It now writes the rendered message to the
+ * per-session file logger (`state.logger`), which has none of those downsides:
+ * no stdout corruption, no tokens, and `tail -f .opencode/resolve.log` gives
+ * live output. The stderr mirror stays opt-in via OPENCODE_RESOLVE_DEBUG=1.
  *
- * Kept as a no-op so existing hook call sites in `src/hooks/index.ts`
- * don't need changes. Can be re-enabled if a zero-token, non-overlay
- * display channel becomes available.
+ * Quiet by default when no logger is wired (back-compat with call sites that
+ * predate the logger field).
  */
 export function narrate(
-  _state: { locale: Locale; currentAgent?: string },
-  _key: MessageKey,
-  _params: Params = {},
+  state: { locale: Locale; currentAgent?: string; logger?: Pick<ResolveLogger, "log"> },
+  key: MessageKey,
+  params: Params = {},
 ): void {
-  // intentionally empty — see JSDoc above
+  const logger = state.logger;
+  if (!logger) return; // no logger wired up → stay quiet (back-compat)
+  const rendered = `${brand(state.currentAgent)} ${t(key, state.locale, params)}`;
+  logger.log("info", `narrate.${key}`, rendered);
 }
 
 /** All registered message keys, derived from the English table. */

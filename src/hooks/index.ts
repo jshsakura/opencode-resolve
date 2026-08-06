@@ -114,6 +114,9 @@ export function getHooks(directory: string, options: any, sessionState: SessionS
       const to = agentDisplayName(sub, sessionState.locale)
       const key = DISPATCH_KEYS[sub] ?? "dispatch.fromResolver"
       narrate(sessionState, key, { to, goal })
+      // Structured event so `tail -f` shows the role handoff cleanly:
+      //   dispatch.start → (coder works) → dispatch.end → next dispatch.start
+      sessionState.logger?.log("info", "dispatch.start", { agent: sub, goal: goal ?? undefined })
       return
     }
     if (tool === "edit" || tool === "write") {
@@ -142,6 +145,9 @@ export function getHooks(directory: string, options: any, sessionState: SessionS
     const errorPresent = Boolean(output?.error) ||
       (typeof output?.metadata === "object" && output.metadata?.error)
       narrate(sessionState, errorPresent ? "dispatch.failed" : "dispatch.completed", { to })
+      // Mirror the role-play as a structured event so the dispatch loop is
+      // legible in the log: start → end(success|fail) → next start.
+      sessionState.logger?.log(errorPresent ? "warn" : "info", "dispatch.end", { agent: sub, success: !errorPresent })
   }
 
   // Is the current turn driven by an agent this plugin registered? Native
@@ -241,7 +247,7 @@ event: async (input: any) => {
         }
       }
     },
-config: async (config: any) => {
+    config: async (config: any) => {
       const resolveConfig = await loadResolveConfig(directory, config, options)
       const projectContext = await detectProjectContext(directory)
       sessionState.storedConfig = resolveConfig
@@ -249,6 +255,16 @@ config: async (config: any) => {
       sessionState.locale = resolveLocale(resolveConfig.language, process.env.LANG)
       applyResolveConfig(config, resolveConfig, projectContext)
       // Auto-update removed — see src/utils.ts header. Users update manually.
+      // Structured log: one line per session confirms the plugin is live and
+      // shows what it detected. The primary "I can't tell it's working" signal.
+      sessionState.logger?.log("info", "config.loaded", {
+        locale: sessionState.locale,
+        enabled: resolveConfig.enabled ?? "default",
+        agentOverrides: Object.keys(resolveConfig.agents ?? {}).length,
+        verifyCommands: projectContext.verifyCommands,
+        hasTypeScript: projectContext.hasTypeScript,
+        packageManager: projectContext.packageManager ?? "none",
+      })
     },
 "shell.env": async (_input: any, output: any) => {
       output.env = {
@@ -285,6 +301,7 @@ config: async (config: any) => {
         // Banned/dangerous commands are denied universally (protect everyone).
         if (action === "deny") {
           output.status = "deny"
+          sessionState.logger?.log("warn", "permission.denied", { cmd: cmd.slice(0, 200) })
         } else if (action === "allow" && isActiveResolve()) {
           // Auto-approve safe commands only when a resolve agent drives the turn;
           // native agents keep opencode's own permission flow.
@@ -477,6 +494,10 @@ config: async (config: any) => {
         sessionState.lastDispatchAt = Date.now()
         if (failed) {
           sessionState.consecutiveDispatchFailures++
+          sessionState.logger?.log("warn", "dispatch.failed", {
+            agent: sub ?? "subagent",
+            consecutive: sessionState.consecutiveDispatchFailures,
+          })
         } else {
           sessionState.consecutiveDispatchFailures = 0
         }

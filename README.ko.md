@@ -30,6 +30,7 @@ opencode-resolve setup
 - [에이전트](#에이전트)
 - [권한](#권한)
 - [프로젝트 컨텍스트](#프로젝트-컨텍스트)
+- [로깅](#로깅)
 - [업그레이드](#업그레이드)
 - [개발](#개발)
 - [릴리스](#릴리스)
@@ -331,6 +332,39 @@ resolve 에이전트의 bash는 기본적으로 `ask`입니다. 플러그인의 
 - TypeScript 프로젝트 여부
 
 resolver는 관련 있는 컨텍스트 문서만 읽도록 지시받습니다.
+
+## 로깅
+
+플러그인은 배경에서 꽤 많은 일을 합니다 — 디스패치 라이프사이클 추적, 편집 핫스팟 감지, 실패 패턴, LSP 진단 수집, Ralph-Loop 에스컬레이션. 하지만 화면 재그리기와 충돌을 막으려 TUI 내부 나레이션 채널을 no-op으로 둬서 **아무것도** 실시간으로 보이지 않았습니다. 이제 매 세션이 구조화 로그 파일을 남겨서 플러그인이 뭘 하고 있는지 드디어 확인할 수 있습니다 — 루프의 핵심인 resolver→coder 역할 인계까지:
+
+```sh
+tail -f .opencode/resolve.log
+```
+
+파일은 첫 기록 시점에 프로젝트 디렉토리 아래에 지연 생성됩니다. 이벤트당 한 줄, ISO 타임스탬프:
+
+```
+2026-08-06T12:34:56.789Z INFO  plugin.loaded   {"version":"0.3.9","directory":"/repo"}
+2026-08-06T12:34:57.000Z INFO  config.loaded   {"locale":"ko","verifyCommands":["npm test"],"hasTypeScript":true}
+2026-08-06T12:35:10.111Z INFO  dispatch.start  {"agent":"coder","goal":"fix the parser bug"}
+2026-08-06T12:35:10.112Z INFO  narrate.narration.dispatch.coder — [resolver] 코더를 출동시킵니다…
+2026-08-06T12:35:40.000Z INFO  dispatch.end    {"agent":"coder","success":true}
+2026-08-06T12:36:01.000Z WARN  dispatch.failed {"agent":"coder","consecutive":2}
+2026-08-06T12:36:02.000Z WARN  permission.denied {"cmd":"rm -rf /"}
+```
+
+> 이제 루프가 진짜인 이유: resolver의 `edit` 권한이 기본적으로 **거부(deny)**됩니다. 그래서 harness가 직접 편집을 물리적으로 막고 coder 디스패치를 강제합니다. resolver가 직접 편집하는 싼 단일 에이전트 모드를 원하면 `resolve.json`에 `"singleAgentMode": true`를 설정하세요 — 자동으로 `edit`이 다시 허용됩니다.
+
+환경변수 (모두 선택):
+
+| 변수 | 효과 |
+|---|---|
+| `OPENCODE_RESOLVE_LOG=0` | 파일 로깅을 완전히 끕니다. |
+| `OPENCODE_RESOLVE_LOG_FILE=path` | `.opencode/resolve.log` 대신 커스텀 경로에 기록합니다. |
+| `OPENCODE_RESOLVE_DEBUG=1` | 파일 레벨을 `debug`로 낮추고 `info` 이상을 stderr에도 출력합니다. opencode가 플러그인 stderr를 TUI에 렌더링하므로 opt-in으로만 둡니다. |
+| `OPENCODE_RESOLVE_QUIET=1` | stderr 미러만 억제합니다 (파일 로깅은 영향 없음). |
+
+파일은 2 MB를 넘기면 `.1`로 회전합니다(백업 1개 보관). 기록은 best-effort이며 절대 throw하지 않습니다 — 로깅 실패가 resolve 루프를 망가뜨리지 않습니다. 이 로그는 로컬 진단 보조 수단이며 gitignore되고 어디에도 전송되지 않습니다.
 
 ## 업그레이드
 

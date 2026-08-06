@@ -126,14 +126,17 @@ test("autoUpdate parses as boolean and rejects non-boolean values", async () => 
   )
 })
 
-test("write agents: edit=allow, bash=ask (hook decides); read-only agents: edit/bash=deny", async () => {
+test("coder edits (allow); resolver orchestrator edit=deny (forces coder dispatch); read-only deny", async () => {
   const { config } = await runPlugin({})
 
-  // Write agents: coder, resolver — edit allowed, bash via hook
+  // coder is the implementer — edit allowed, bash via hook.
   assert.equal(config.agent.coder.permission.edit, "allow")
   assert.equal(config.agent.coder.permission.bash, "ask")
   assert.equal(config.agent.coder.permission.webfetch, "allow")
-  assert.equal(config.agent.resolver.permission.edit, "allow")
+  // resolver is the ORCHESTRATOR — edit is DENIED by default so the harness
+  // physically forces a coder dispatch instead of the resolver editing itself.
+  // (singleAgentMode re-enables edit; covered in its own test below.)
+  assert.equal(config.agent.resolver.permission.edit, "deny")
   assert.equal(config.agent.resolver.permission.bash, "ask")
   assert.equal(config.agent.resolver.permission.webfetch, "allow")
   // Read-only agents: reviewer — deny edit/bash, allow webfetch
@@ -153,7 +156,8 @@ test("autoApprove does not change agent permission defaults (bash stays ask/deny
   assert.equal(config.agent.coder.permission.edit, "allow")
   assert.equal(config.agent.coder.permission.bash, "ask")
   assert.equal(config.agent.coder.permission.webfetch, "allow")
-  assert.equal(config.agent.resolver.permission.edit, "allow")
+  // resolver stays an orchestrator (edit denied) regardless of autoApprove.
+  assert.equal(config.agent.resolver.permission.edit, "deny")
 })
 
 test("resolver prompt defaults to serial dispatch with loop discipline", async () => {
@@ -161,6 +165,11 @@ test("resolver prompt defaults to serial dispatch with loop discipline", async (
 
   assert.match(config.agent.resolver.prompt, /Serial dispatch: ONE coder at a time/)
   assert.match(config.agent.resolver.prompt, /LOOP DISCIPLINE/)
+  // Orchestrator discipline: the resolver is told it is NOT an editor, its edit
+  // is harness-denied, and there is no trivial-fix shortcut.
+  assert.match(config.agent.resolver.prompt, /ORCHESTRATOR DISCIPLINE/)
+  assert.match(config.agent.resolver.prompt, /NOT an editor/)
+  assert.match(config.agent.resolver.prompt, /NO 'trivial fix' shortcut/)
 })
 
 test("maxParallelSubagents = 1 produces an explicit single-coder cap", async () => {
@@ -581,6 +590,8 @@ test("singleAgentMode makes the resolver edit directly without dispatching a cod
   assert.match(config.agent.resolver.prompt, /DIRECT MODE/)
   assert.match(config.agent.resolver.prompt, /Make ALL edits yourself/)
   assert.doesNotMatch(config.agent.resolver.prompt, /Serial dispatch: ONE coder/)
+  // singleAgentMode restores the edit permission the default (orchestrator) mode denies.
+  assert.equal(config.agent.resolver.permission.edit, "allow", "singleAgentMode restores resolver edit access for direct editing")
   // Coder subagent is still registered but the resolver must not delegate implementation to it.
   assert.ok(config.agent.coder, "coder agent still registered for non-resolver use")
 })

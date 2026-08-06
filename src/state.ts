@@ -1,5 +1,6 @@
 import { ProjectContext, ResolveConfig } from "./types.js";
 import type { Locale } from "./messages.js";
+import type { ResolveLogger } from "./log.js";
 
 export const DIAGNOSTICS_TTL_MS = 30_000;
 export const FAILURE_PATTERN_TTL_MS = 120_000;
@@ -42,6 +43,10 @@ export interface SessionState {
 
   currentAgent?: string;
   locale: Locale;
+
+  // Structured file logger. Injected by the plugin entry (src/index.ts) once
+  // the working directory is known; hooks and narrate() read it from here.
+  logger?: ResolveLogger;
 }
 
 export function createSessionState(): SessionState {

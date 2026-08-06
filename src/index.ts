@@ -4,12 +4,14 @@ export * from "./agents.js";
 export * from "./utils.js";
 export * from "./config.js";
 export * from "./state.js";
+export * from "./log.js";
 
 import { fileURLToPath } from "node:url";
 import { dirname } from "node:path";
 import { getTools } from "./tools/index.js";
 import { getHooks } from "./hooks/index.js";
 import { createSessionState } from "./state.js";
+import { createResolveLogger } from "./log.js";
 import { PLUGIN_VERSION } from "./utils.js";
 import type { Plugin } from "@opencode-ai/plugin";
 
@@ -25,6 +27,13 @@ if (process.env.OPENCODE_RESOLVE_DEBUG === "1" && process.env.OPENCODE_RESOLVE_Q
 
 export const OpencodeResolve: Plugin = async ({ directory }, options) => {
   const sessionState = createSessionState();
+  // Wire the file logger before any hook can fire. Hooks + narrate() read it
+  // from sessionState, so this is the single injection point.
+  const logger = createResolveLogger(directory);
+  sessionState.logger = logger;
+  // Always record the load in the file log (independent of the opt-in stderr
+  // banner) so users can confirm the plugin is active via `tail` without DEBUG.
+  logger.log("info", "plugin.loaded", { version: PLUGIN_VERSION, directory });
   return {
     ...getHooks(directory, options, sessionState),
     tool: getTools(sessionState)

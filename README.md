@@ -30,6 +30,7 @@ opencode-resolve setup
 - [Agents](#agents)
 - [Permissions](#permissions)
 - [Project Context](#project-context)
+- [Logging](#logging)
 - [Upgrade](#upgrade)
 - [Development](#development)
 - [Release](#release)
@@ -331,6 +332,39 @@ The plugin exposes committed project context without stuffing the entire repo in
 - TypeScript projects
 
 Resolvers are instructed to read only relevant context documents.
+
+## Logging
+
+The plugin works hard in the background — dispatch lifecycle tracking, edit-hotspot detection, failure patterns, LSP diagnostics, Ralph-Loop escalation — but historically surfaced **none** of it live (the in-TUI narration channel was a no-op to avoid corrupting the screen redraw). Every session now writes a structured log file so you can finally see what it is doing — including the resolver→coder role handoff that is the whole point of the loop:
+
+```sh
+tail -f .opencode/resolve.log
+```
+
+The file is created lazily on first write under your project directory. One line per event, ISO-timestamped, e.g.:
+
+```
+2026-08-06T12:34:56.789Z INFO  plugin.loaded   {"version":"0.3.9","directory":"/repo"}
+2026-08-06T12:34:57.000Z INFO  config.loaded   {"locale":"ko","verifyCommands":["npm test"],"hasTypeScript":true}
+2026-08-06T12:35:10.111Z INFO  dispatch.start  {"agent":"coder","goal":"fix the parser bug"}
+2026-08-06T12:35:10.112Z INFO  narrate.narration.dispatch.coder — [resolver] dispatching Coder…
+2026-08-06T12:35:40.000Z INFO  dispatch.end    {"agent":"coder","success":true}
+2026-08-06T12:36:01.000Z WARN  dispatch.failed {"agent":"coder","consecutive":2}
+2026-08-06T12:36:02.000Z WARN  permission.denied {"cmd":"rm -rf /"}
+```
+
+> Why the loop is now real: the resolver's `edit` permission is **denied** by default, so the harness physically blocks it from editing and forces a coder dispatch. Set `"singleAgentMode": true` in `resolve.json` if you want the resolver to edit directly (cheap single-agent mode) — it re-enables `edit` automatically.
+
+Environment variables (all optional):
+
+| Variable | Effect |
+|---|---|
+| `OPENCODE_RESOLVE_LOG=0` | Disable file logging entirely. |
+| `OPENCODE_RESOLVE_LOG_FILE=path` | Write to a custom path instead of `.opencode/resolve.log`. |
+| `OPENCODE_RESOLVE_DEBUG=1` | Lower the file level to `debug` **and** mirror `info`+ to stderr. opencode renders plugin stderr into the TUI, so this stays opt-in. |
+| `OPENCODE_RESOLVE_QUIET=1` | Suppress the stderr mirror (file logging is unaffected). |
+
+The file rotates to `.1` past 2 MB (one backup kept). Writes are best-effort and never throw — a logging failure can never break the resolve loop. The log is a local diagnostic aid; it is gitignored and never sent anywhere.
 
 ## Upgrade
 

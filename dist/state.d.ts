@@ -1,5 +1,6 @@
 import { ProjectContext, ResolveConfig } from "./types.js";
 import type { Locale } from "./messages.js";
+import type { ResolveLogger } from "./log.js";
 export declare const DIAGNOSTICS_TTL_MS = 30000;
 export declare const FAILURE_PATTERN_TTL_MS = 120000;
 export declare const FAILURE_THRESHOLD = 10;
@@ -43,5 +44,6 @@ export interface SessionState {
     lastDispatchAt?: number;
     currentAgent?: string;
     locale: Locale;
+    logger?: ResolveLogger;
 }
 export declare function createSessionState(): SessionState;

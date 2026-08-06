@@ -29,6 +29,13 @@ export function applyResolveConfig(config, resolveConfig, projectContext) {
         const { enabled: _enabled, model: requestedModel, permission: userPermission, ...agentOverride } = override ?? {};
         const model = resolveModel(requestedModel ?? models[name] ?? defaultModel, models);
         const permission = buildPermission(base.permission, userPermission);
+        // singleAgentMode (direct mode): the resolver edits directly, so restore edit
+        // access. In the default multi-agent mode the resolver's edit is DENIED (see
+        // DEFAULT_AGENT_CONFIG in agents.ts) to physically force a coder dispatch —
+        // a prompt-only request was too weak and the resolver kept editing itself.
+        if (name === "resolver" && singleAgentMode && permission) {
+            permission.edit = "allow";
+        }
         const agentConfig = {
             ...base,
             ...agentOverride,
